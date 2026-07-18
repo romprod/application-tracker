@@ -33,6 +33,8 @@ describe("SqliteApplicationsRepository", () => {
         createdAt,
         createdByUserId: setup.administrator.id,
         location: "Remote",
+        nextAction: "Send the portfolio follow-up.",
+        nextActionDue: "2026-07-21",
         notes: "Referred by a former colleague.",
         roleTitle: "Product Designer",
         sourceUrl: "https://jobs.example.com/product-designer",
@@ -44,6 +46,8 @@ describe("SqliteApplicationsRepository", () => {
         appliedOn: "2026-07-18",
         companyName: "Example Studio",
         location: "Remote",
+        nextAction: "Send the portfolio follow-up.",
+        nextActionDue: "2026-07-21",
         status: "applied",
       });
       expect(created).not.toHaveProperty("workspaceId");
@@ -78,6 +82,8 @@ describe("SqliteApplicationsRepository", () => {
         createdAt,
         createdByUserId: setup.administrator.id,
         location: null,
+        nextAction: injection,
+        nextActionDue: null,
         notes: null,
         roleTitle: "Security Engineer",
         sourceUrl: null,
@@ -98,6 +104,8 @@ describe("SqliteApplicationsRepository", () => {
           createdAt,
           createdByUserId: setup.administrator.id,
           location: null,
+          nextAction: null,
+          nextActionDue: null,
           notes: null,
           roleTitle: "Invalid record",
           sourceUrl: null,
@@ -136,6 +144,44 @@ describe("SqliteApplicationsRepository", () => {
     }
   });
 
+  it("enforces next-action storage constraints below the domain boundary", () => {
+    const { database, repository, setup } = createRepository();
+    const record = {
+      appliedOn: null,
+      companyName: "Example Studio",
+      createdAt,
+      createdByUserId: setup.administrator.id,
+      location: null,
+      notes: null,
+      roleTitle: "Product Designer",
+      sourceUrl: null,
+      status: "prospect" as const,
+      workspaceId: setup.workspace.id,
+    };
+
+    try {
+      expect(() =>
+        repository.createApplication({
+          ...record,
+          nextAction: "x".repeat(501),
+          nextActionDue: null,
+        }),
+      ).toThrow();
+      expect(() =>
+        repository.createApplication({
+          ...record,
+          nextAction: "Follow up",
+          nextActionDue: "21/07/2026",
+        }),
+      ).toThrow();
+      expect(
+        database.prepare("SELECT count(*) FROM applications").pluck().get(),
+      ).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
   it("updates fields and records only real status transitions", () => {
     const { database, repository, setup } = createRepository();
 
@@ -146,6 +192,8 @@ describe("SqliteApplicationsRepository", () => {
         createdAt,
         createdByUserId: setup.administrator.id,
         location: "Remote",
+        nextAction: "Prepare portfolio examples.",
+        nextActionDue: "2026-07-21",
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
@@ -157,6 +205,8 @@ describe("SqliteApplicationsRepository", () => {
         applicationId: created.id,
         companyName: "Example Labs",
         location: null,
+        nextAction: "Send a thank-you note.",
+        nextActionDue: "2026-07-19",
         status: "interview",
         updatedAt: "2026-07-18T13:00:00.000Z",
         workspaceId: setup.workspace.id,
@@ -165,6 +215,8 @@ describe("SqliteApplicationsRepository", () => {
       expect(transitioned).toMatchObject({
         companyName: "Example Labs",
         location: null,
+        nextAction: "Send a thank-you note.",
+        nextActionDue: "2026-07-19",
         status: "interview",
         updatedAt: "2026-07-18T13:00:00.000Z",
       });
@@ -190,6 +242,8 @@ describe("SqliteApplicationsRepository", () => {
         actorUserId: setup.administrator.id,
         applicationId: created.id,
         notes: "Updated without changing stage.",
+        nextAction: null,
+        nextActionDue: null,
         status: "interview",
         updatedAt: "2026-07-18T14:00:00.000Z",
         workspaceId: setup.workspace.id,
@@ -197,6 +251,10 @@ describe("SqliteApplicationsRepository", () => {
       expect(
         repository.listApplicationEvents(setup.workspace.id, created.id),
       ).toHaveLength(2);
+      expect(repository.listApplications(setup.workspace.id)[0]).toMatchObject({
+        nextAction: null,
+        nextActionDue: null,
+      });
     } finally {
       database.close();
     }
@@ -212,6 +270,8 @@ describe("SqliteApplicationsRepository", () => {
         createdAt,
         createdByUserId: setup.administrator.id,
         location: null,
+        nextAction: null,
+        nextActionDue: null,
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
@@ -249,6 +309,8 @@ describe("SqliteApplicationsRepository", () => {
         createdAt,
         createdByUserId: setup.administrator.id,
         location: null,
+        nextAction: null,
+        nextActionDue: null,
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,

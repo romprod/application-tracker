@@ -25,7 +25,8 @@ tests and user documentation.
 - [ ] Application deletion
 - [x] Application search, filtering, and sorting controls
 - [x] Creation and built-in status transition timeline events
-- [ ] Contacts, additional links, and next actions
+- [x] Current next action and optional due date
+- [ ] Contacts and additional links
 - [x] Dashboard metrics scoped to the active workspace
 - [ ] Configurable statuses, sources, role types, and document types
 

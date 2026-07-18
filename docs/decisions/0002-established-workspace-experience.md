@@ -23,9 +23,9 @@ surfaces, coral actions, dashboard hierarchy, shared application table, detail
 drawer, and modal form workflow.
 
 Only expose capabilities supported by the public backend. Do not add placeholder
-data for private-only features such as documents, next actions, configurable
-lists, or contacts. Preserve the public edition's session, authorization,
-workspace isolation, validation, migration, and API boundaries.
+data for private-only features such as documents, configurable lists, or
+contacts. Preserve the public edition's session, authorization, workspace
+isolation, validation, migration, and API boundaries.
 
 ## Consequences
 

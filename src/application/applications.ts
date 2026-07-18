@@ -11,6 +11,8 @@ export interface ApplicationRecord {
   createdAt: string;
   id: string;
   location: string | null;
+  nextAction: string | null;
+  nextActionDue: string | null;
   notes: string | null;
   roleTitle: string;
   sourceUrl: string | null;
@@ -24,6 +26,8 @@ export interface CreateApplicationRecord {
   createdAt: string;
   createdByUserId: string;
   location: string | null;
+  nextAction: string | null;
+  nextActionDue: string | null;
   notes: string | null;
   roleTitle: string;
   sourceUrl: string | null;
@@ -84,6 +88,8 @@ export class ApplicationLedgerService {
       createdAt: this.clock().toISOString(),
       createdByUserId: actor.userId,
       location: input.location ?? null,
+      nextAction: input.nextAction ?? null,
+      nextActionDue: input.nextActionDue ?? null,
       notes: input.notes ?? null,
       roleTitle: input.roleTitle,
       sourceUrl: input.sourceUrl ?? null,

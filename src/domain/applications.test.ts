@@ -13,6 +13,8 @@ describe("createApplicationSchema", () => {
         appliedOn: "2026-07-18",
         companyName: "  Example Studio  ",
         location: "  Remote  ",
+        nextAction: "  Send the portfolio follow-up.  ",
+        nextActionDue: "2026-07-21",
         notes: "  Referred by a former colleague.  ",
         roleTitle: "  Product Designer  ",
         sourceUrl: "  https://jobs.example.com/product-designer  ",
@@ -22,6 +24,8 @@ describe("createApplicationSchema", () => {
       appliedOn: "2026-07-18",
       companyName: "Example Studio",
       location: "Remote",
+      nextAction: "Send the portfolio follow-up.",
+      nextActionDue: "2026-07-21",
       notes: "Referred by a former colleague.",
       roleTitle: "Product Designer",
       sourceUrl: "https://jobs.example.com/product-designer",
@@ -34,6 +38,8 @@ describe("createApplicationSchema", () => {
       createApplicationSchema.parse({
         companyName: "Example Studio",
         location: "   ",
+        nextAction: "",
+        nextActionDue: "",
         notes: "",
         roleTitle: "Product Designer",
         sourceUrl: "",
@@ -77,6 +83,8 @@ describe("updateApplicationSchema", () => {
         appliedOn: null,
         companyName: "  Example Labs  ",
         location: "   ",
+        nextAction: "  ",
+        nextActionDue: "",
         sourceUrl: null,
         status: "interview",
       }),
@@ -84,6 +92,8 @@ describe("updateApplicationSchema", () => {
       appliedOn: null,
       companyName: "Example Labs",
       location: null,
+      nextAction: null,
+      nextActionDue: null,
       sourceUrl: null,
       status: "interview",
     });
@@ -93,6 +103,12 @@ describe("updateApplicationSchema", () => {
     expect(() => updateApplicationSchema.parse({})).toThrow();
     expect(() =>
       updateApplicationSchema.parse({ sourceUrl: "javascript:alert(1)" }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({ nextActionDue: "21/07/2026" }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({ nextAction: "x".repeat(501) }),
     ).toThrow();
     expect(() =>
       updateApplicationSchema.parse({ workspaceId: "other" }),

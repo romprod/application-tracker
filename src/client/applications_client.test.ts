@@ -11,6 +11,8 @@ const application = {
   createdAt: "2026-07-18T12:15:00.000Z",
   id: "11111111-1111-4111-8111-111111111111",
   location: "Remote",
+  nextAction: "Send the portfolio follow-up.",
+  nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
   roleTitle: "Product Designer",
   sourceUrl: "https://jobs.example.com/product-designer",
@@ -162,6 +164,24 @@ describe("browserApplicationsClient", () => {
             applications: [
               { ...application, sourceUrl: "javascript:alert(1)" },
             ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+  });
+
+  it("rejects a malformed next-action due date returned by the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, nextActionDue: "21/07/2026" }],
           }),
           { status: 200 },
         ),

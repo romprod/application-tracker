@@ -7,6 +7,8 @@ export interface ApplicationRecord {
   createdAt: string;
   id: string;
   location: string | null;
+  nextAction: string | null;
+  nextActionDue: string | null;
   notes: string | null;
   roleTitle: string;
   sourceUrl: string | null;
@@ -18,6 +20,8 @@ export interface CreateApplicationInput {
   appliedOn?: string;
   companyName: string;
   location?: string;
+  nextAction?: string;
+  nextActionDue?: string;
   notes?: string;
   roleTitle: string;
   sourceUrl?: string;
@@ -28,6 +32,8 @@ export interface UpdateApplicationInput {
   appliedOn?: string | null;
   companyName?: string;
   location?: string | null;
+  nextAction?: string | null;
+  nextActionDue?: string | null;
   notes?: string | null;
   roleTitle?: string;
   sourceUrl?: string | null;
@@ -68,6 +74,17 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+function isNullableIsoDate(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+
 function isNullableHttpUrl(value: unknown): value is string | null {
   if (value === null) return true;
   if (typeof value !== "string") return false;
@@ -97,6 +114,8 @@ function parseApplication(value: unknown): ApplicationRecord {
     typeof value.createdAt !== "string" ||
     typeof value.id !== "string" ||
     !isNullableString(value.location) ||
+    !isNullableString(value.nextAction) ||
+    !isNullableIsoDate(value.nextActionDue) ||
     !isNullableString(value.notes) ||
     typeof value.roleTitle !== "string" ||
     !isNullableHttpUrl(value.sourceUrl) ||
@@ -111,6 +130,8 @@ function parseApplication(value: unknown): ApplicationRecord {
     createdAt: value.createdAt,
     id: value.id,
     location: value.location,
+    nextAction: value.nextAction,
+    nextActionDue: value.nextActionDue,
     notes: value.notes,
     roleTitle: value.roleTitle,
     sourceUrl: value.sourceUrl,

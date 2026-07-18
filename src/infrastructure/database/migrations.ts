@@ -6,6 +6,7 @@ import { workspaceIdentityMigration } from "./migrations/001_workspace_identity.
 import { installationStateMigration } from "./migrations/002_installation_state.js";
 import { applicationLedgerMigration } from "./migrations/003_application_ledger.js";
 import { applicationHistoryMigration } from "./migrations/004_application_history.js";
+import { applicationNextActionsMigration } from "./migrations/005_application_next_actions.js";
 
 export interface Migration {
   name: string;
@@ -24,6 +25,7 @@ export const applicationMigrations: readonly Migration[] = [
   installationStateMigration,
   applicationLedgerMigration,
   applicationHistoryMigration,
+  applicationNextActionsMigration,
 ];
 
 const createMigrationTable = `

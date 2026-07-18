@@ -19,6 +19,8 @@ function publicApplicationSelect(): string {
             location,
             source_url AS sourceUrl,
             applied_on AS appliedOn,
+            next_action AS nextAction,
+            next_action_due AS nextActionDue,
             notes,
             created_at AS createdAt,
             updated_at AS updatedAt
@@ -36,9 +38,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         .prepare(
           `INSERT INTO applications
            (id, workspace_id, company_name, role_title, status, location,
-            source_url, applied_on, notes, created_by_user_id, created_at,
-            updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            source_url, applied_on, next_action, next_action_due, notes,
+            created_by_user_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -49,6 +51,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.location,
           input.sourceUrl,
           input.appliedOn,
+          input.nextAction,
+          input.nextActionDue,
           input.notes,
           input.createdByUserId,
           input.createdAt,
@@ -78,6 +82,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       createdAt: input.createdAt,
       id,
       location: input.location,
+      nextAction: input.nextAction,
+      nextActionDue: input.nextActionDue,
       notes: input.notes,
       roleTitle: input.roleTitle,
       sourceUrl: input.sourceUrl,
@@ -147,6 +153,14 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         id: current.id,
         location:
           input.location === undefined ? current.location : input.location,
+        nextAction:
+          input.nextAction === undefined
+            ? current.nextAction
+            : input.nextAction,
+        nextActionDue:
+          input.nextActionDue === undefined
+            ? current.nextActionDue
+            : input.nextActionDue,
         notes: input.notes === undefined ? current.notes : input.notes,
         roleTitle: input.roleTitle ?? current.roleTitle,
         sourceUrl:
@@ -159,7 +173,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         .prepare(
           `UPDATE applications
            SET company_name = ?, role_title = ?, status = ?, location = ?,
-               source_url = ?, applied_on = ?, notes = ?, updated_at = ?
+               source_url = ?, applied_on = ?, next_action = ?,
+               next_action_due = ?, notes = ?, updated_at = ?
            WHERE workspace_id = ? AND id = ?`,
         )
         .run(
@@ -169,6 +184,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           updated.location,
           updated.sourceUrl,
           updated.appliedOn,
+          updated.nextAction,
+          updated.nextActionDue,
           updated.notes,
           updated.updatedAt,
           input.workspaceId,

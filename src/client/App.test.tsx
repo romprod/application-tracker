@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -33,6 +39,8 @@ const applicationRecord: ApplicationRecord = {
   createdAt: "2026-07-18T12:15:00.000Z",
   id: "44444444-4444-4444-8444-444444444444",
   location: "Remote",
+  nextAction: "Send the portfolio follow-up.",
+  nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
   roleTitle: "Product Designer",
   sourceUrl: "https://jobs.example.com/product-designer",
@@ -207,6 +215,7 @@ describe("application shell", () => {
   it("opens the workspace for an existing authenticated session", async () => {
     render(
       <App
+        applicationsClient={createApplicationsClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -222,6 +231,12 @@ describe("application shell", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Alex Example")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Next actions" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Send the portfolio follow-up.").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Sign out" }),
     ).toBeInTheDocument();
@@ -324,6 +339,9 @@ describe("application shell", () => {
       screen.getByRole("heading", { name: "Edit application" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Company")).toHaveValue("Example Studio");
+    expect(screen.getByLabelText("Next action")).toHaveValue(
+      "Send the portfolio follow-up.",
+    );
     fireEvent.change(screen.getByLabelText("Stage"), {
       target: { value: "interview" },
     });
@@ -336,6 +354,8 @@ describe("application shell", () => {
           appliedOn: "2026-07-18",
           companyName: "Example Studio",
           location: "Remote",
+          nextAction: "Send the portfolio follow-up.",
+          nextActionDue: "2026-07-21",
           notes: "Referred by a former colleague.",
           roleTitle: "Product Designer",
           sourceUrl: "https://jobs.example.com/product-designer",
@@ -349,6 +369,36 @@ describe("application shell", () => {
       }),
     ).not.toHaveLength(0);
     expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
+  });
+
+  it("shows the current next action in the application drawer", async () => {
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+
+    const drawer = await screen.findByRole("dialog", {
+      name: "Product Designer",
+    });
+    expect(
+      within(drawer).getByRole("heading", {
+        name: "Send the portfolio follow-up.",
+      }),
+    ).toBeInTheDocument();
+    expect(within(drawer).getByText("Due in 3d")).toBeInTheDocument();
   });
 
   it("loads and displays an application's stage history", async () => {

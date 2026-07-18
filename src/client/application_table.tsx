@@ -9,6 +9,7 @@ import {
   type ApplicationSort,
   type ApplicationSortKey,
 } from "./application_sort";
+import { dueLabel } from "./application_next_action";
 
 export function ApplicationTable({
   applications,
@@ -68,6 +69,7 @@ export function ApplicationTable({
             {sortableHeader("Stage", "status")}
             {!compact && sortableHeader("Applied", "appliedOn")}
             {!compact && sortableHeader("Location", "location")}
+            {sortableHeader("Next action", "nextAction")}
             {sortableHeader("Updated", "updatedAt")}
             <th scope="col">
               <span className="sr-only">Open</span>
@@ -101,6 +103,7 @@ export function ApplicationTable({
               </td>
               {!compact && <td>{formatDate(application.appliedOn)}</td>}
               {!compact && <td>{application.location ?? "—"}</td>}
+              <NextActionCell application={application} />
               <td>{formatDate(application.updatedAt)}</td>
               <td>
                 <button
@@ -120,6 +123,17 @@ export function ApplicationTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function NextActionCell({ application }: { application: ApplicationRecord }) {
+  if (!application.nextAction) return <td>—</td>;
+  const due = dueLabel(application.nextActionDue);
+  return (
+    <td className="tracker-next-action-cell">
+      <strong>{application.nextAction}</strong>
+      <span className={`tracker-due-label ${due.tone}`}>{due.text}</span>
+    </td>
   );
 }
 

@@ -36,6 +36,8 @@ export const createApplicationSchema = z.strictObject({
   appliedOn: z.preprocess(blankToUndefined, z.iso.date().optional()),
   companyName: z.string().trim().min(1).max(160),
   location: optionalText(160),
+  nextAction: optionalText(500),
+  nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
   notes: optionalText(5000),
   roleTitle: z.string().trim().min(1).max(160),
   sourceUrl: z.preprocess(
@@ -54,6 +56,10 @@ export const updateApplicationSchema = z
     appliedOn: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
     companyName: z.string().trim().min(1).max(160).optional(),
     location: nullableText(160).optional(),
+    nextAction: nullableText(500).optional(),
+    nextActionDue: z
+      .preprocess(blankToNull, z.iso.date().nullable())
+      .optional(),
     notes: nullableText(5000).optional(),
     roleTitle: z.string().trim().min(1).max(160).optional(),
     sourceUrl: z

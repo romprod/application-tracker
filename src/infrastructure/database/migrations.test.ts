@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4]);
+      ).toEqual([1, 2, 3, 4, 5]);
       expect(
         database
           .prepare(
@@ -163,6 +163,17 @@ describe("migrateDatabase", () => {
         "application_events_reject_delete",
         "application_events_reject_update",
       ]);
+      expect(tableSql).toContain("next_action TEXT");
+      expect(tableSql).toContain("next_action_due TEXT");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'index' AND name = 'applications_by_workspace_next_action_due'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("applications_by_workspace_next_action_due");
     } finally {
       database.close();
     }
@@ -240,6 +251,86 @@ describe("migrateDatabase", () => {
         occurredAt: "2026-07-17T11:00:00.000Z",
         toStatus: "interview",
         type: "application_created",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("adds nullable next-action fields without changing version-four records", () => {
+    const database = new Database(":memory:");
+    const applicationId = "application-version-four";
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 4));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          "workspace-version-four",
+          "Version Four",
+          "version-four",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?)`,
+        )
+        .run(
+          "user-version-four",
+          "version-four",
+          "Version Four User",
+          "2026-07-18T10:00:00.000Z",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES (?, ?, 'admin', ?)`,
+        )
+        .run(
+          "workspace-version-four",
+          "user-version-four",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO applications
+             (id, workspace_id, company_name, role_title, status,
+              created_by_user_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          applicationId,
+          "workspace-version-four",
+          "Example Studio",
+          "Product Designer",
+          "applied",
+          "user-version-four",
+          "2026-07-18T11:00:00.000Z",
+          "2026-07-18T11:00:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT company_name AS companyName, next_action AS nextAction,
+                    next_action_due AS nextActionDue
+             FROM applications WHERE id = ?`,
+          )
+          .get(applicationId),
+      ).toEqual({
+        companyName: "Example Studio",
+        nextAction: null,
+        nextActionDue: null,
       });
     } finally {
       database.close();

@@ -66,6 +66,10 @@ of that workspace. Creation and stage-transition writes use immediate
 transactions. Database triggers reject event updates and deletions, while a
 workspace-and-application index serves timeline reads.
 
+The fifth migration adds optional current-next-action text and due-date columns
+to `applications`. Existing rows receive `NULL` values. A partial
+workspace-and-due-date index includes only open records with a next action.
+
 ## Backup status
 
 Online backup and verified restore tooling have not been implemented yet. Do

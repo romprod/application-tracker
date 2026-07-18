@@ -110,6 +110,8 @@ const applicationInput = {
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
   location: "Remote",
+  nextAction: "Send the portfolio follow-up.",
+  nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
   roleTitle: "Product Designer",
   sourceUrl: "https://jobs.example.com/product-designer",
@@ -175,6 +177,8 @@ describe("application ledger routes", () => {
     expect(application).toMatchObject({
       companyName: "Example Studio",
       roleTitle: "Product Designer",
+      nextAction: "Send the portfolio follow-up.",
+      nextActionDue: "2026-07-21",
       status: "applied",
     });
     expect(JSON.stringify(application)).not.toMatch(
@@ -209,6 +213,14 @@ describe("application ledger routes", () => {
       .set("Cookie", cookie)
       .send({ ...applicationInput, notes: "x".repeat(5001) })
       .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send({ ...applicationInput, nextActionDue: "21/07/2026" })
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send({ ...applicationInput, nextAction: "x".repeat(501) })
+      .expect(400, { error: { code: "validation_error" } });
   });
 
   it("edits an application and returns its immutable stage history", async () => {
@@ -230,6 +242,8 @@ describe("application ledger routes", () => {
       .set("Cookie", cookie)
       .send({
         location: "",
+        nextAction: "Prepare interview questions.",
+        nextActionDue: "2026-07-20",
         notes: "Interview arranged.",
         status: "interview",
       })
@@ -237,6 +251,8 @@ describe("application ledger routes", () => {
     expect(createdApplication(updated)).toMatchObject({
       companyName: "Example Studio",
       location: null,
+      nextAction: "Prepare interview questions.",
+      nextActionDue: "2026-07-20",
       notes: "Interview arranged.",
       status: "interview",
     });

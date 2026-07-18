@@ -20,6 +20,7 @@ import {
   ApplicationTable,
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
+import { dueLabel, nextActionApplications } from "./application_next_action";
 
 export function ApplicationWorkspace({
   applicationsClient,
@@ -246,10 +247,7 @@ function DashboardView({
     { label: "Offer", status: "offer" as const },
     { label: "Closed", status: "closed" as const },
   ];
-  const activeFocus =
-    applications?.filter(
-      ({ status }) => status === "interview" || status === "offer",
-    ) ?? [];
+  const activeFocus = nextActionApplications(applications ?? []);
 
   return (
     <div className="workspace-page dashboard-page">
@@ -348,30 +346,36 @@ function DashboardView({
               <div className="tracker-panel-heading">
                 <div>
                   <span className="eyebrow">Current focus</span>
-                  <h2 id="focus-title">Conversations and offers</h2>
+                  <h2 id="focus-title">Next actions</h2>
                 </div>
                 <span>{activeFocus.length} active</span>
               </div>
               {activeFocus.length === 0 ? (
                 <div className="tracker-quiet-state">
                   <span aria-hidden="true">◎</span>
-                  <p>
-                    Interview and offer-stage applications will appear here.
-                  </p>
+                  <p>Add a next action to an application to see it here.</p>
                 </div>
               ) : (
                 <ol>
-                  {activeFocus.slice(0, 4).map((application) => (
-                    <li key={application.id}>
-                      <button type="button" onClick={() => onOpen(application)}>
-                        <span data-status={application.status}>
-                          {titleCase(application.status)}
-                        </span>
-                        <strong>{application.companyName}</strong>
-                        <small>{application.roleTitle}</small>
-                      </button>
-                    </li>
-                  ))}
+                  {activeFocus.slice(0, 4).map((application) => {
+                    const due = dueLabel(application.nextActionDue);
+                    return (
+                      <li key={application.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpen(application)}
+                        >
+                          <span className={`tracker-due-label ${due.tone}`}>
+                            {due.text}
+                          </span>
+                          <strong>{application.nextAction}</strong>
+                          <small>
+                            {application.companyName} · {application.roleTitle}
+                          </small>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </section>
@@ -462,6 +466,7 @@ function ApplicationsPage({
           application.companyName,
           application.roleTitle,
           application.location,
+          application.nextAction,
           application.notes,
           application.sourceUrl,
         ].some((value) => value?.toLocaleLowerCase().includes(query));
@@ -559,8 +564,4 @@ function ApplicationsPage({
       )}
     </div>
   );
-}
-
-function titleCase(value: string): string {
-  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }

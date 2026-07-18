@@ -19,11 +19,14 @@ import {
   formatDate,
   formatDateTime,
 } from "./application_table";
+import { dueLabel } from "./application_next_action";
 
 export interface ApplicationFormState {
   appliedOn: string;
   companyName: string;
   location: string;
+  nextAction: string;
+  nextActionDue: string;
   notes: string;
   roleTitle: string;
   sourceUrl: string;
@@ -34,6 +37,8 @@ const emptyApplicationForm: ApplicationFormState = {
   appliedOn: "",
   companyName: "",
   location: "",
+  nextAction: "",
+  nextActionDue: "",
   notes: "",
   roleTitle: "",
   sourceUrl: "",
@@ -47,6 +52,8 @@ export function applicationInput(
 ): CreateApplicationInput {
   const appliedOn = form.appliedOn.trim();
   const location = form.location.trim();
+  const nextAction = form.nextAction.trim();
+  const nextActionDue = form.nextActionDue.trim();
   const notes = form.notes.trim();
   const sourceUrl = form.sourceUrl.trim();
   return {
@@ -55,6 +62,8 @@ export function applicationInput(
     status: form.status,
     ...(appliedOn ? { appliedOn } : {}),
     ...(location ? { location } : {}),
+    ...(nextAction ? { nextAction } : {}),
+    ...(nextActionDue ? { nextActionDue } : {}),
     ...(notes ? { notes } : {}),
     ...(sourceUrl ? { sourceUrl } : {}),
   };
@@ -67,6 +76,8 @@ export function applicationUpdateInput(
     appliedOn: form.appliedOn.trim() || null,
     companyName: form.companyName.trim(),
     location: form.location.trim() || null,
+    nextAction: form.nextAction.trim() || null,
+    nextActionDue: form.nextActionDue.trim() || null,
     notes: form.notes.trim() || null,
     roleTitle: form.roleTitle.trim(),
     sourceUrl: form.sourceUrl.trim() || null,
@@ -79,6 +90,8 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
     appliedOn: application.appliedOn ?? "",
     companyName: application.companyName,
     location: application.location ?? "",
+    nextAction: application.nextAction ?? "",
+    nextActionDue: application.nextActionDue ?? "",
     notes: application.notes ?? "",
     roleTitle: application.roleTitle,
     sourceUrl: application.sourceUrl ?? "",
@@ -158,6 +171,7 @@ export function ApplicationDrawer({
   onEdit: () => void;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
+  const nextActionDue = dueLabel(application.nextActionDue);
   useDialogFocus(drawerRef, ".tracker-drawer-close");
   return (
     <div
@@ -222,6 +236,23 @@ export function ApplicationDrawer({
             >
               Open source listing <span aria-hidden="true">↗</span>
             </a>
+          )}
+          {application.nextAction && (
+            <section
+              className="tracker-next-action-panel"
+              aria-labelledby="next-action-title"
+            >
+              <span aria-hidden="true">◷</span>
+              <div>
+                <small className={`tracker-due-label ${nextActionDue.tone}`}>
+                  {nextActionDue.text}
+                </small>
+                <h3 id="next-action-title">{application.nextAction}</h3>
+                {application.nextActionDue && (
+                  <p>{formatDate(application.nextActionDue)}</p>
+                )}
+              </div>
+            </section>
           )}
           <section
             className="tracker-drawer-section"
@@ -440,6 +471,37 @@ export function ApplicationDialog({
                   rows={4}
                   value={form.notes}
                   onChange={(event) => updateText("notes", event.target.value)}
+                />
+              </div>
+            </div>
+          </fieldset>
+          <fieldset className="tracker-form-section">
+            <legend>
+              <span>03</span> Next step
+            </legend>
+            <div className="tracker-form-grid">
+              <div className="field tracker-form-wide">
+                <label htmlFor="application-next-action">Next action</label>
+                <input
+                  autoComplete="off"
+                  id="application-next-action"
+                  maxLength={500}
+                  placeholder="Follow up, prepare, send…"
+                  value={form.nextAction}
+                  onChange={(event) =>
+                    updateText("nextAction", event.target.value)
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-next-action-due">Due date</label>
+                <input
+                  id="application-next-action-due"
+                  type="date"
+                  value={form.nextActionDue}
+                  onChange={(event) =>
+                    updateText("nextActionDue", event.target.value)
+                  }
                 />
               </div>
             </div>

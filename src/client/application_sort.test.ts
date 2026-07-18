@@ -10,6 +10,8 @@ const applications: ApplicationRecord[] = [
     createdAt: "2026-07-16T09:00:00.000Z",
     id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     location: null,
+    nextAction: "Prepare questions",
+    nextActionDue: null,
     notes: null,
     roleTitle: "Researcher",
     sourceUrl: null,
@@ -22,6 +24,8 @@ const applications: ApplicationRecord[] = [
     createdAt: "2026-07-17T09:00:00.000Z",
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     location: "Remote",
+    nextAction: "Send the portfolio follow-up",
+    nextActionDue: "2026-07-21",
     notes: null,
     roleTitle: "Designer",
     sourceUrl: null,
@@ -70,5 +74,14 @@ describe("application table sorting", () => {
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]);
+  });
+
+  it("sorts next actions by due date before their description", () => {
+    expect(
+      sortApplications(applications, {
+        direction: "ascending",
+        key: "nextAction",
+      }).map(({ companyName }) => companyName),
+    ).toEqual(["Acme Studio", "Zulu Works"]);
   });
 });
