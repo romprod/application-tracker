@@ -45,9 +45,9 @@ Development standards are defined in
 
 The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
-identity schema, local authentication APIs, automated tests, and CI. It does
-not yet persist job applications. The browser login screen is the current
-identity milestone.
+identity schema, closed administrator setup, local browser login and logout,
+revocable sessions, automated tests, and CI. It does not yet persist job
+applications or manage additional users through Settings.
 
 ## Run the foundation
 
@@ -64,7 +64,8 @@ an address assigned to the host. Both development services listen on all
 interfaces; Vite forwards API requests to the backend on port 3333. A new
 database opens the documented
 [`closed first-run setup`](docs/initial-setup.md) before exposing the application
-shell.
+login screen. The installation does not create an `admin/admin` account or any
+other default credentials.
 
 To exercise the production build locally:
 

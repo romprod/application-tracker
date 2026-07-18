@@ -31,6 +31,18 @@ the database session before expiring the browser cookie. Disabled users,
 expired sessions, and users without a current workspace membership cannot
 authenticate. Expired rows are cleaned up during login.
 
+The browser checks `GET /api/auth/session` when it opens. An unauthenticated
+visitor sees the local login form; a successful `POST /api/auth/login` opens
+the workspace without exposing the session token to JavaScript. Signing out
+uses `POST /api/auth/logout`, and the browser returns to the login form only
+after the server has revoked the session.
+
+Submitting another valid login while the browser already has a session rotates
+the credential: the old database session is revoked and a fresh random token
+is issued. The client keeps the username and password only in component memory
+while the form is mounted. It does not write credentials or tokens to local or
+session storage.
+
 Configure the policy with `SESSION_IDLE_SECONDS`,
 `SESSION_ABSOLUTE_SECONDS`, `SESSION_REFRESH_SECONDS`, and
 `SESSION_COOKIE_SECURE`. The absolute lifetime must exceed the idle lifetime,

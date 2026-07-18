@@ -47,6 +47,9 @@ restart the service. The database completion marker permanently closes setup,
 so retaining or later restoring the same token cannot create another
 administrator.
 
-Local login and the Settings user-management screen are separate upcoming
-features. Until login is implemented, completing setup does not make the
-application ready for production use.
+Local login is available immediately after setup. Completing setup clears the
+form from memory and sends the operator to the login screen.
+
+The Settings user-management screen remains a separate upcoming feature. The
+first administrator is currently the only account that can be created through
+the browser.

@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import {
+  browserAuthClient,
+  AuthClientError,
+  type AuthClient,
+  type AuthenticatedSession,
+} from "./auth_client";
+import {
   browserSetupClient,
   SetupClientError,
   type InitialSetupInput,
@@ -15,12 +21,12 @@ const buildSteps = [
   },
   {
     label: "Identity",
-    status: "In progress",
-    summary: "Closed administrator setup is ready; local login comes next.",
+    status: "Ready",
+    summary: "Closed administrator setup and revocable local sessions.",
   },
   {
     label: "Application ledger",
-    status: "Planned",
+    status: "Next",
     summary: "Applications, events, documents, actions, and outcomes.",
   },
 ] as const;
@@ -31,49 +37,102 @@ type AppView =
   | { kind: "loading" }
   | { kind: "error" }
   | { kind: "setup"; tokenConfigured: boolean }
-  | { kind: "ready"; notice?: string };
+  | { kind: "login"; notice?: string }
+  | {
+      kind: "ready";
+      logoutError?: string;
+      notice?: string;
+      session: AuthenticatedSession;
+      signingOut: boolean;
+    };
 
 interface AppProps {
+  authClient?: AuthClient;
   setupClient?: SetupClient;
 }
 
-export function App({ setupClient = browserSetupClient }: AppProps) {
+export function App({
+  authClient = browserAuthClient,
+  setupClient = browserSetupClient,
+}: AppProps) {
   const [view, setView] = useState<AppView>({ kind: "loading" });
 
   useEffect(() => {
     let active = true;
-    void setupClient
-      .getStatus()
-      .then((status) => {
+    void (async () => {
+      try {
+        const status = await setupClient.getStatus();
+        if (!active) return;
+        if (status.required) {
+          setView({
+            kind: "setup",
+            tokenConfigured: status.tokenConfigured,
+          });
+          return;
+        }
+
+        const session = await authClient.getSession();
         if (!active) return;
         setView(
-          status.required
-            ? { kind: "setup", tokenConfigured: status.tokenConfigured }
-            : { kind: "ready" },
+          session.authenticated
+            ? { kind: "ready", session, signingOut: false }
+            : { kind: "login" },
         );
-      })
-      .catch(() => {
+      } catch {
         if (active) setView({ kind: "error" });
-      });
+      }
+    })();
 
     return () => {
       active = false;
     };
-  }, [setupClient]);
+  }, [authClient, setupClient]);
+
+  function signOut() {
+    if (view.kind !== "ready" || view.signingOut) return;
+    const currentSession = view.session;
+    setView({ kind: "ready", session: currentSession, signingOut: true });
+    void authClient
+      .logout()
+      .then(() =>
+        setView({ kind: "login", notice: "You have signed out safely." }),
+      )
+      .catch(() =>
+        setView({
+          kind: "ready",
+          logoutError: "Sign out could not be completed. Please try again.",
+          session: currentSession,
+          signingOut: false,
+        }),
+      );
+  }
 
   const isSetup = view.kind === "setup";
+  const isLogin = view.kind === "login";
   const statusLabel =
     view.kind === "loading"
       ? "Checking installation"
       : isSetup
         ? "Setup required"
-        : "Foundation ready";
+        : isLogin
+          ? "Sign in required"
+          : view.kind === "ready"
+            ? "Signed in"
+            : "Connection unavailable";
+  const session = view.kind === "ready" ? view.session : undefined;
 
   return (
     <div className="app-shell">
-      <Masthead statusLabel={statusLabel} />
-      <div className={`workspace-frame${isSetup ? " setup-frame" : ""}`}>
-        <Sidebar setupMode={isSetup} />
+      <Masthead
+        onLogout={view.kind === "ready" ? signOut : undefined}
+        session={session}
+        signingOut={view.kind === "ready" && view.signingOut}
+        statusLabel={statusLabel}
+      />
+      <div
+        className={`workspace-frame${isSetup || isLogin ? " identity-frame" : ""}`}
+      >
+        <Sidebar mode={isSetup ? "setup" : isLogin ? "login" : "workspace"} />
         {view.kind === "loading" && <LoadingView />}
         {view.kind === "error" && <StatusErrorView />}
         {view.kind === "setup" && !view.tokenConfigured && <MissingTokenView />}
@@ -82,21 +141,49 @@ export function App({ setupClient = browserSetupClient }: AppProps) {
             setupClient={setupClient}
             onComplete={() =>
               setView({
-                kind: "ready",
-                notice: "Administrator created. Setup is now closed.",
+                kind: "login",
+                notice: "Administrator created. Sign in with your new account.",
               })
             }
           />
         )}
+        {view.kind === "login" && (
+          <LoginView
+            authClient={authClient}
+            onAuthenticated={(authenticated) =>
+              setView({
+                kind: "ready",
+                notice: `Welcome, ${authenticated.user.displayName}.`,
+                session: authenticated,
+                signingOut: false,
+              })
+            }
+            {...(view.notice ? { notice: view.notice } : {})}
+          />
+        )}
         {view.kind === "ready" && (
-          <Overview {...(view.notice ? { notice: view.notice } : {})} />
+          <Overview
+            session={view.session}
+            {...(view.logoutError ? { error: view.logoutError } : {})}
+            {...(view.notice ? { notice: view.notice } : {})}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function Masthead({ statusLabel }: { statusLabel: string }) {
+function Masthead({
+  onLogout,
+  session,
+  signingOut,
+  statusLabel,
+}: {
+  onLogout: (() => void) | undefined;
+  session: AuthenticatedSession | undefined;
+  signingOut: boolean;
+  statusLabel: string;
+}) {
   return (
     <header className="masthead">
       <a
@@ -112,34 +199,67 @@ function Masthead({ statusLabel }: { statusLabel: string }) {
           <span>Private application ledger</span>
         </span>
       </a>
-      <div className="build-label" aria-label="Installation status">
-        <span className="status-dot" aria-hidden="true" />
-        {statusLabel}
+      <div className="masthead-actions">
+        {session && (
+          <div className="account-summary">
+            <span>
+              <strong>{session.user.displayName}</strong>
+              <small>{session.user.role}</small>
+            </span>
+            <button type="button" disabled={signingOut} onClick={onLogout}>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
+        )}
+        <div className="build-label" aria-label="Installation status">
+          <span className="status-dot" aria-hidden="true" />
+          {statusLabel}
+        </div>
       </div>
     </header>
   );
 }
 
-function Sidebar({ setupMode }: { setupMode: boolean }) {
-  if (setupMode) {
+function Sidebar({ mode }: { mode: "login" | "setup" | "workspace" }) {
+  if (mode !== "workspace") {
     return (
       <aside className="sidebar setup-sidebar">
         <p className="sidebar-label">Installation</p>
         <nav aria-label="Primary navigation">
           <ul>
-            <li>
-              <a href="#main-content" aria-current="page">
-                <span>01</span>
-                Administrator
-              </a>
-            </li>
-            <li>
-              <span className="future-navigation" aria-disabled="true">
-                <span>02</span>
-                Sign in
-                <small>next</small>
-              </span>
-            </li>
+            {mode === "setup" ? (
+              <>
+                <li>
+                  <a href="#main-content" aria-current="page">
+                    <span>01</span>
+                    Administrator
+                  </a>
+                </li>
+                <li>
+                  <span className="future-navigation" aria-disabled="true">
+                    <span>02</span>
+                    Sign in
+                    <small>next</small>
+                  </span>
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  <span className="completed-navigation">
+                    <span>01</span>
+                    Administrator
+                    <small>ready</small>
+                  </span>
+                </li>
+                <li>
+                  <a href="#main-content" aria-current="page">
+                    <span>02</span>
+                    Sign in
+                  </a>
+                </li>
+              </>
+            )}
           </ul>
         </nav>
         <p className="privacy-note">
@@ -223,6 +343,129 @@ function MissingTokenView() {
           <p>No account or default password has been created.</p>
         </div>
       </section>
+    </main>
+  );
+}
+
+function LoginView({
+  authClient,
+  notice,
+  onAuthenticated,
+}: {
+  authClient: AuthClient;
+  notice?: string;
+  onAuthenticated: (session: AuthenticatedSession) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string>();
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(undefined);
+    void authClient
+      .login({ password, username })
+      .then(onAuthenticated)
+      .catch((caught: unknown) => {
+        const message =
+          caught instanceof AuthClientError &&
+          caught.code === "invalid_credentials"
+            ? "The username or password was not accepted."
+            : "Sign in could not be completed. Check the connection and try again.";
+        setError(message);
+        setPassword("");
+        setSubmitting(false);
+      });
+  }
+
+  return (
+    <main id="main-content" tabIndex={-1} className="login-main">
+      {notice && (
+        <div className="success-notice login-notice" role="status">
+          {notice}
+        </div>
+      )}
+      <div className="login-layout">
+        <section className="login-intro" aria-labelledby="login-title">
+          <p className="eyebrow">Local identity · Step 02</p>
+          <h1 id="login-title">Sign in to your workspace.</h1>
+          <p className="lede">
+            Continue to the private ledger with the local account created for
+            this installation.
+          </p>
+          <dl className="session-details">
+            <div>
+              <dt>Credential storage</dt>
+              <dd>One-way password hash</dd>
+            </div>
+            <div>
+              <dt>Browser session</dt>
+              <dd>HttpOnly cookie</dd>
+            </div>
+            <div>
+              <dt>Account recovery</dt>
+              <dd>Operator controlled</dd>
+            </div>
+          </dl>
+        </section>
+
+        <form
+          className="login-form"
+          aria-labelledby="credentials-title"
+          onSubmit={submit}
+        >
+          <div className="login-form-heading">
+            <span className="index-number">02</span>
+            <div>
+              <p className="eyebrow">Workspace credentials</p>
+              <h2 id="credentials-title">Local account</h2>
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="login-username">Username</label>
+            <input
+              autoCapitalize="none"
+              autoComplete="username"
+              autoFocus
+              id="login-username"
+              maxLength={64}
+              minLength={3}
+              required
+              spellCheck={false}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="login-password">Password</label>
+            <input
+              autoComplete="current-password"
+              id="login-password"
+              maxLength={128}
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="login-actions">
+            <p>
+              Credentials stay in this request and are never stored by the
+              browser app.
+            </p>
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Signing in…" : "Sign in"}
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }
@@ -384,7 +627,15 @@ function SetupView({
   );
 }
 
-function Overview({ notice }: { notice?: string }) {
+function Overview({
+  error,
+  notice,
+  session,
+}: {
+  error?: string;
+  notice?: string;
+  session: AuthenticatedSession;
+}) {
   return (
     <main id="main-content" tabIndex={-1}>
       {notice && (
@@ -392,9 +643,16 @@ function Overview({ notice }: { notice?: string }) {
           {notice}
         </div>
       )}
+      {error && (
+        <div className="error-notice" role="alert">
+          {error}
+        </div>
+      )}
       <section className="hero" aria-labelledby="page-title">
         <div className="hero-copy">
-          <p className="eyebrow">Application ledger · Build 004</p>
+          <p className="eyebrow">
+            {session.workspace.name} · Application ledger · Build 005
+          </p>
           <h1 id="page-title">Your search, kept in order.</h1>
           <p className="lede">
             A calm, self-hosted record for every application, conversation,
@@ -406,7 +664,7 @@ function Overview({ notice }: { notice?: string }) {
           <div>
             <p>Current chapter</p>
             <strong>Local identity</strong>
-            <span>Administrator setup is closed; sign-in comes next.</span>
+            <span>Administrator setup and browser sessions are ready.</span>
           </div>
         </div>
       </section>

@@ -13,7 +13,7 @@ tests and user documentation.
 ## Identity and administration
 
 - [x] Closed first-run setup with one-time administrator creation
-- [ ] Local login, logout, session rotation, expiry, and revocation
+- [x] Local login, logout, session rotation, expiry, and revocation
 - [ ] Administrator and member workspace roles
 - [ ] Optional OpenID Connect login and identity linking
 - [ ] Settings navigation with Lists, Users, and MCP sections
