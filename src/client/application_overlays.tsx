@@ -24,6 +24,8 @@ import { dueLabel } from "./application_next_action";
 export interface ApplicationFormState {
   appliedOn: string;
   companyName: string;
+  contacts: ApplicationContactForm[];
+  links: ApplicationLinkForm[];
   location: string;
   nextAction: string;
   nextActionDue: string;
@@ -33,9 +35,23 @@ export interface ApplicationFormState {
   status: ApplicationStatus;
 }
 
+interface ApplicationContactForm {
+  email: string;
+  name: string;
+  phone: string;
+  role: string;
+}
+
+interface ApplicationLinkForm {
+  label: string;
+  url: string;
+}
+
 const emptyApplicationForm: ApplicationFormState = {
   appliedOn: "",
   companyName: "",
+  contacts: [],
+  links: [],
   location: "",
   nextAction: "",
   nextActionDue: "",
@@ -45,7 +61,26 @@ const emptyApplicationForm: ApplicationFormState = {
   status: "prospect",
 };
 
-type ApplicationTextField = Exclude<keyof ApplicationFormState, "status">;
+type ApplicationTextField = Exclude<
+  keyof ApplicationFormState,
+  "contacts" | "links" | "status"
+>;
+
+function contactInput(contact: ApplicationContactForm) {
+  const email = contact.email.trim();
+  const phone = contact.phone.trim();
+  const role = contact.role.trim();
+  return {
+    name: contact.name.trim(),
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+    ...(role ? { role } : {}),
+  };
+}
+
+function linkInput(link: ApplicationLinkForm) {
+  return { label: link.label.trim(), url: link.url.trim() };
+}
 
 export function applicationInput(
   form: ApplicationFormState,
@@ -58,6 +93,8 @@ export function applicationInput(
   const sourceUrl = form.sourceUrl.trim();
   return {
     companyName: form.companyName.trim(),
+    contacts: form.contacts.map(contactInput),
+    links: form.links.map(linkInput),
     roleTitle: form.roleTitle.trim(),
     status: form.status,
     ...(appliedOn ? { appliedOn } : {}),
@@ -75,6 +112,8 @@ export function applicationUpdateInput(
   return {
     appliedOn: form.appliedOn.trim() || null,
     companyName: form.companyName.trim(),
+    contacts: form.contacts.map(contactInput),
+    links: form.links.map(linkInput),
     location: form.location.trim() || null,
     nextAction: form.nextAction.trim() || null,
     nextActionDue: form.nextActionDue.trim() || null,
@@ -89,6 +128,13 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
   return {
     appliedOn: application.appliedOn ?? "",
     companyName: application.companyName,
+    contacts: application.contacts.map((contact) => ({
+      email: contact.email ?? "",
+      name: contact.name,
+      phone: contact.phone ?? "",
+      role: contact.role ?? "",
+    })),
+    links: application.links.map((link) => ({ ...link })),
     location: application.location ?? "",
     nextAction: application.nextAction ?? "",
     nextActionDue: application.nextActionDue ?? "",
@@ -109,6 +155,14 @@ function eventDetail(event: ApplicationEvent): string {
   return event.type === "application_created"
     ? `Filed in ${titleCase(event.toStatus)}`
     : "Stage changed";
+}
+
+function linkHost(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return value;
+  }
 }
 
 function useDialogFocus(
@@ -265,10 +319,75 @@ export function ApplicationDrawer({
           )}
           <section
             className="tracker-drawer-section"
-            aria-labelledby="notes-title"
+            aria-labelledby="contacts-title"
           >
             <div className="tracker-drawer-section-heading">
               <span>01</span>
+              <h3 id="contacts-title">Contacts</h3>
+            </div>
+            {application.contacts.length > 0 ? (
+              <ul className="tracker-contact-list">
+                {application.contacts.map((contact, index) => (
+                  <li key={`${contact.name}-${index}`}>
+                    <span aria-hidden="true">◎</span>
+                    <div>
+                      <strong>{contact.name}</strong>
+                      {contact.role && <small>{contact.role}</small>}
+                      <p>
+                        {contact.email && (
+                          <a href={`mailto:${contact.email}`}>
+                            {contact.email}
+                          </a>
+                        )}
+                        {contact.phone && (
+                          <a href={`tel:${contact.phone}`}>{contact.phone}</a>
+                        )}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No contacts have been recorded.</p>
+            )}
+          </section>
+          <section
+            className="tracker-drawer-section"
+            aria-labelledby="related-links-title"
+          >
+            <div className="tracker-drawer-section-heading">
+              <span>02</span>
+              <h3 id="related-links-title">Related links</h3>
+            </div>
+            {application.links.length > 0 ? (
+              <ul className="tracker-related-links">
+                {application.links.map((link, index) => (
+                  <li key={`${link.url}-${index}`}>
+                    <a
+                      aria-label={`${link.label} — ${linkHost(link.url)} (opens in a new tab)`}
+                      href={link.url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <span aria-hidden="true">↗</span>
+                      <span>
+                        <strong>{link.label}</strong>
+                        <small>{linkHost(link.url)}</small>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No additional links have been recorded.</p>
+            )}
+          </section>
+          <section
+            className="tracker-drawer-section"
+            aria-labelledby="notes-title"
+          >
+            <div className="tracker-drawer-section-heading">
+              <span>03</span>
               <h3 id="notes-title">Notes</h3>
             </div>
             <p>{application.notes ?? "No notes have been recorded."}</p>
@@ -278,7 +397,7 @@ export function ApplicationDrawer({
             aria-labelledby="history-title"
           >
             <div className="tracker-drawer-section-heading">
-              <span>02</span>
+              <span>04</span>
               <h3 id="history-title">Stage history</h3>
             </div>
             {eventsLoading && (
@@ -418,6 +537,32 @@ export function ApplicationDialog({
 
   function updateText(field: ApplicationTextField, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateContact(
+    index: number,
+    field: keyof ApplicationContactForm,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      contacts: current.contacts.map((contact, contactIndex) =>
+        contactIndex === index ? { ...contact, [field]: value } : contact,
+      ),
+    }));
+  }
+
+  function updateLink(
+    index: number,
+    field: keyof ApplicationLinkForm,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      links: current.links.map((link, linkIndex) =>
+        linkIndex === index ? { ...link, [field]: value } : link,
+      ),
+    }));
   }
 
   return (
@@ -565,7 +710,188 @@ export function ApplicationDialog({
           </fieldset>
           <fieldset className="tracker-form-section">
             <legend>
-              <span>03</span> Next step
+              <span>03</span> People and links
+            </legend>
+            <div className="tracker-repeater">
+              <div className="tracker-repeater-heading">
+                <div>
+                  <strong>Contacts</strong>
+                  <small>Recruiters, hiring managers, and referrals</small>
+                </div>
+                <button
+                  className="tracker-button tracker-button-quiet"
+                  disabled={form.contacts.length >= 10}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      contacts: [
+                        ...current.contacts,
+                        { email: "", name: "", phone: "", role: "" },
+                      ],
+                    }))
+                  }
+                  type="button"
+                >
+                  Add contact
+                </button>
+              </div>
+              {form.contacts.map((contact, index) => (
+                <div className="tracker-repeater-item" key={index}>
+                  <div className="tracker-form-grid">
+                    <div className="field">
+                      <label htmlFor={`application-contact-${index}-name`}>
+                        Contact {index + 1} name
+                      </label>
+                      <input
+                        autoComplete="name"
+                        id={`application-contact-${index}-name`}
+                        maxLength={160}
+                        required
+                        value={contact.name}
+                        onChange={(event) =>
+                          updateContact(index, "name", event.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`application-contact-${index}-role`}>
+                        Contact {index + 1} role
+                      </label>
+                      <input
+                        autoComplete="organization-title"
+                        id={`application-contact-${index}-role`}
+                        maxLength={160}
+                        value={contact.role}
+                        onChange={(event) =>
+                          updateContact(index, "role", event.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`application-contact-${index}-email`}>
+                        Contact {index + 1} email
+                      </label>
+                      <input
+                        autoComplete="email"
+                        id={`application-contact-${index}-email`}
+                        maxLength={254}
+                        type="email"
+                        value={contact.email}
+                        onChange={(event) =>
+                          updateContact(index, "email", event.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`application-contact-${index}-phone`}>
+                        Contact {index + 1} phone
+                      </label>
+                      <input
+                        autoComplete="tel"
+                        id={`application-contact-${index}-phone`}
+                        maxLength={50}
+                        type="tel"
+                        value={contact.phone}
+                        onChange={(event) =>
+                          updateContact(index, "phone", event.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  <button
+                    aria-label={`Remove contact ${index + 1}`}
+                    className="tracker-repeater-remove"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        contacts: current.contacts.filter(
+                          (_, contactIndex) => contactIndex !== index,
+                        ),
+                      }))
+                    }
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="tracker-repeater">
+              <div className="tracker-repeater-heading">
+                <div>
+                  <strong>Additional links</strong>
+                  <small>Interview details, profiles, or hiring portals</small>
+                </div>
+                <button
+                  className="tracker-button tracker-button-quiet"
+                  disabled={form.links.length >= 10}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      links: [...current.links, { label: "", url: "" }],
+                    }))
+                  }
+                  type="button"
+                >
+                  Add additional link
+                </button>
+              </div>
+              {form.links.map((link, index) => (
+                <div className="tracker-repeater-item" key={index}>
+                  <div className="tracker-form-grid">
+                    <div className="field">
+                      <label htmlFor={`application-link-${index}-label`}>
+                        Additional link {index + 1} label
+                      </label>
+                      <input
+                        id={`application-link-${index}-label`}
+                        maxLength={80}
+                        required
+                        value={link.label}
+                        onChange={(event) =>
+                          updateLink(index, "label", event.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`application-link-${index}-url`}>
+                        Additional link {index + 1} URL
+                      </label>
+                      <input
+                        autoComplete="url"
+                        id={`application-link-${index}-url`}
+                        maxLength={2048}
+                        required
+                        type="url"
+                        value={link.url}
+                        onChange={(event) =>
+                          updateLink(index, "url", event.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  <button
+                    aria-label={`Remove additional link ${index + 1}`}
+                    className="tracker-repeater-remove"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        links: current.links.filter(
+                          (_, linkIndex) => linkIndex !== index,
+                        ),
+                      }))
+                    }
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="tracker-form-section">
+            <legend>
+              <span>04</span> Next step
             </legend>
             <div className="tracker-form-grid">
               <div className="field tracker-form-wide">

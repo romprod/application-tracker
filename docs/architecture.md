@@ -57,8 +57,9 @@ The first application-record slice is described in
 The schema separates:
 
 - workspaces, users, credentials, memberships, sessions, and external identities
-- applications, audited deletion state, and immutable creation or
-  stage-transition events, with reference values planned in later migrations
+- applications, ordered contacts and links, audited deletion state, and
+  immutable creation or stage-transition events, with reference values planned
+  in later migrations
 - file objects, document metadata, and application-document associations
 - administrative settings and security audit events
 

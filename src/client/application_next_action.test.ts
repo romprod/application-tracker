@@ -12,9 +12,11 @@ function application(
   return {
     appliedOn: null,
     companyName: `Company ${id}`,
+    contacts: [],
     createdAt: "2026-07-18T09:00:00.000Z",
     id,
     location: null,
+    links: [],
     nextAction,
     nextActionDue,
     notes: null,

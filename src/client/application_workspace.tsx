@@ -517,6 +517,13 @@ function ApplicationsPage({
           application.nextAction,
           application.notes,
           application.sourceUrl,
+          ...application.contacts.flatMap((contact) => [
+            contact.name,
+            contact.role,
+            contact.email,
+            contact.phone,
+          ]),
+          ...application.links.flatMap((link) => [link.label, link.url]),
         ].some((value) => value?.toLocaleLowerCase().includes(query));
       return (
         matchesSearch &&
@@ -552,7 +559,7 @@ function ApplicationsPage({
           </label>
           <input
             id="application-search"
-            placeholder="Search company, role, or notes…"
+            placeholder="Search company, role, contact, or notes…"
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}

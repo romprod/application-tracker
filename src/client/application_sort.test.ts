@@ -7,9 +7,11 @@ const applications: ApplicationRecord[] = [
   {
     appliedOn: null,
     companyName: "Zulu Works",
+    contacts: [],
     createdAt: "2026-07-16T09:00:00.000Z",
     id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     location: null,
+    links: [],
     nextAction: "Prepare questions",
     nextActionDue: null,
     notes: null,
@@ -21,9 +23,11 @@ const applications: ApplicationRecord[] = [
   {
     appliedOn: "2026-07-17",
     companyName: "Acme Studio",
+    contacts: [],
     createdAt: "2026-07-17T09:00:00.000Z",
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     location: "Remote",
+    links: [],
     nextAction: "Send the portfolio follow-up",
     nextActionDue: "2026-07-21",
     notes: null,

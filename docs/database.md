@@ -75,6 +75,12 @@ table. A deletion transaction marks one active workspace record and writes its
 actor and timestamp atomically. Active-record indexes exclude removed rows;
 immutable application events remain stored.
 
+The seventh migration adds normalized, ordered application contacts and labeled
+HTTP(S) links. Composite foreign keys enforce the parent application's
+workspace, storage constraints bound field sizes and relation counts, and
+workspace-first indexes cover drawer hydration. Relation replacement is part of
+the parent application's immediate write transaction.
+
 ## Backup status
 
 Online backup and verified restore tooling have not been implemented yet. Do

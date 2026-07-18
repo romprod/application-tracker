@@ -36,9 +36,23 @@ const authenticatedSession: AuthenticatedSession = {
 const applicationRecord: ApplicationRecord = {
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
+  contacts: [
+    {
+      email: "morgan@example.com",
+      name: "Morgan Recruiter",
+      phone: "+44 20 7946 0958",
+      role: "Recruiter",
+    },
+  ],
   createdAt: "2026-07-18T12:15:00.000Z",
   id: "44444444-4444-4444-8444-444444444444",
   location: "Remote",
+  links: [
+    {
+      label: "Hiring portal",
+      url: "https://careers.example.com/application",
+    },
+  ],
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
@@ -176,14 +190,22 @@ function createApplicationsClient(
       .mockResolvedValue(applicationEvents),
     updateApplication: vi
       .fn<ApplicationsClient["updateApplication"]>()
-      .mockImplementation((id, input) =>
-        Promise.resolve({
+      .mockImplementation((id, input) => {
+        const contacts = input.contacts?.map((contact) => ({
+          email: contact.email ?? null,
+          name: contact.name,
+          phone: contact.phone ?? null,
+          role: contact.role ?? null,
+        }));
+        return Promise.resolve({
           ...applicationRecord,
           ...input,
+          contacts: contacts ?? applicationRecord.contacts,
           id,
+          links: input.links ?? applicationRecord.links,
           updatedAt: "2026-07-18T13:15:00.000Z",
-        }),
-      ),
+        });
+      }),
   } satisfies ApplicationsClient;
 }
 
@@ -276,6 +298,17 @@ describe("application shell", () => {
     });
     fireEvent.click(companySort);
     expect(companySort.closest("th")).toHaveAttribute("aria-sort", "ascending");
+    const search = screen.getByRole("searchbox", {
+      name: "Search applications",
+    });
+    fireEvent.change(search, { target: { value: "Morgan Recruiter" } });
+    expect(
+      screen.getByRole("table", { name: "Applications" }),
+    ).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "Hiring portal" } });
+    expect(
+      screen.getByRole("table", { name: "Applications" }),
+    ).toBeInTheDocument();
   });
 
   it("adds an application and clears the intake form", async () => {
@@ -307,6 +340,8 @@ describe("application shell", () => {
     await waitFor(() =>
       expect(applicationsClient.createApplication).toHaveBeenCalledWith({
         companyName: "Example Studio",
+        contacts: [],
+        links: [],
         roleTitle: "Product Designer",
         status: "prospect",
       }),
@@ -345,6 +380,12 @@ describe("application shell", () => {
     expect(screen.getByLabelText("Next action")).toHaveValue(
       "Send the portfolio follow-up.",
     );
+    expect(screen.getByLabelText("Contact 1 name")).toHaveValue(
+      "Morgan Recruiter",
+    );
+    expect(screen.getByLabelText("Additional link 1 label")).toHaveValue(
+      "Hiring portal",
+    );
     fireEvent.change(screen.getByLabelText("Stage"), {
       target: { value: "interview" },
     });
@@ -356,6 +397,8 @@ describe("application shell", () => {
         {
           appliedOn: "2026-07-18",
           companyName: "Example Studio",
+          contacts: applicationRecord.contacts,
+          links: applicationRecord.links,
           location: "Remote",
           nextAction: "Send the portfolio follow-up.",
           nextActionDue: "2026-07-21",
@@ -372,6 +415,68 @@ describe("application shell", () => {
       }),
     ).not.toHaveLength(0);
     expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
+  });
+
+  it("adds contacts and related links to a new application", async () => {
+    const applicationsClient = createApplicationsClient([]);
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Log application" }));
+    fireEvent.change(screen.getByLabelText("Company"), {
+      target: { value: "Example Studio" },
+    });
+    fireEvent.change(screen.getByLabelText("Role title"), {
+      target: { value: "Product Designer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add contact" }));
+    fireEvent.change(screen.getByLabelText("Contact 1 name"), {
+      target: { value: "Morgan Recruiter" },
+    });
+    fireEvent.change(screen.getByLabelText("Contact 1 email"), {
+      target: { value: "morgan@example.com" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add additional link" }),
+    );
+    fireEvent.change(screen.getByLabelText("Additional link 1 label"), {
+      target: { value: "Hiring portal" },
+    });
+    fireEvent.change(screen.getByLabelText("Additional link 1 URL"), {
+      target: { value: "https://careers.example.com/application" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save application" }));
+
+    await waitFor(() =>
+      expect(applicationsClient.createApplication).toHaveBeenCalledWith({
+        companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+          },
+        ],
+        links: [
+          {
+            label: "Hiring portal",
+            url: "https://careers.example.com/application",
+          },
+        ],
+        roleTitle: "Product Designer",
+        status: "prospect",
+      }),
+    );
   });
 
   it("shows the current next action in the application drawer", async () => {
@@ -402,6 +507,19 @@ describe("application shell", () => {
       }),
     ).toBeInTheDocument();
     expect(within(drawer).getByText("Due in 3d")).toBeInTheDocument();
+    expect(within(drawer).getByText("Morgan Recruiter")).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("link", { name: "morgan@example.com" }),
+    ).toHaveAttribute("href", "mailto:morgan@example.com");
+    expect(
+      within(drawer).getByRole("link", { name: "+44 20 7946 0958" }),
+    ).toHaveAttribute("href", "tel:+44 20 7946 0958");
+    expect(within(drawer).getByText("Hiring portal")).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("link", {
+        name: /Hiring portal.*careers\.example\.com.*opens in a new tab/,
+      }),
+    ).toHaveAttribute("href", "https://careers.example.com/application");
   });
 
   it("confirms and removes an application from the workspace", async () => {

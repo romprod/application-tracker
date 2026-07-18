@@ -26,7 +26,7 @@ tests and user documentation.
 - [x] Application search, filtering, and sorting controls
 - [x] Creation and built-in status transition timeline events
 - [x] Current next action and optional due date
-- [ ] Contacts and additional links
+- [x] Contacts and additional links
 - [x] Dashboard metrics scoped to the active workspace
 - [ ] Configurable statuses, sources, role types, and document types
 

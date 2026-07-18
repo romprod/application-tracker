@@ -12,13 +12,17 @@ An application contains:
 - company and role title;
 - one built-in stage: `prospect`, `applied`, `interview`, `offer`, or `closed`;
 - optional location, HTTP(S) source link, applied date, notes, current next
-  action, and next-action due date; and
+  action, and next-action due date;
+- up to ten ordered contacts, each with a name and optional role, email, and
+  phone number;
+- up to ten ordered, labeled HTTP(S) links; and
 - created and updated timestamps.
 
 Company and role are required. The server trims text, rejects unknown fields,
 limits notes to 5,000 characters and next actions to 500 characters, validates
-ISO dates, and accepts only HTTP(S) source links. The browser validates returned
-next-action dates and links again before rendering them.
+ISO dates and contact email addresses, caps each relation list at ten entries,
+and accepts only HTTP(S) web links. The browser validates returned dates,
+contacts, and links again before rendering them.
 
 The built-in stages provide a small working workflow. A member can move a
 record directly between them. Configurable stages and transition rules belong
@@ -37,6 +41,12 @@ Selecting a row opens a detail drawer. The drawer presents the current record,
 next action, source link, notes, and stage history without navigating away from
 the table. Application intake and editing use a modal form. Saving updates the
 record's current fields and update time; optional fields can be cleared.
+
+Contacts and related links appear in numbered drawer sections that match the
+established application-file layout. Email addresses and phone numbers use
+their native contact links. Related web links open in a separate browser tab.
+The create and edit modal lets members add, remove, and revise each ordered
+entry without leaving the application record.
 
 The drawer also opens a separate removal confirmation. Cancel receives initial
 focus. A confirmed removal immediately removes the application from dashboard,
@@ -97,13 +107,19 @@ records its workspace, actor, and timestamp in one immediate transaction.
 Normal repository queries exclude removed rows. Existing application events
 remain unchanged and continue to reject updates and physical deletion.
 
-Foreign keys bind records, events, and deletion audits to a workspace and its
-members. Creation, editing, and removal transactions update related state
-atomically. Database triggers reject event updates and deletions. Repository
-queries bind every supplied value as an SQL parameter and use workspace-first
-indexes for ledger and timeline reads.
+Migration 7 adds strict `application_contacts` and `application_links` child
+tables. Each row is workspace-bound to its application and carries a bounded
+zero-based position. Creating or updating an application writes its ordered
+contacts and links in the same immediate transaction as the parent record and
+any stage event. A failed relation write rolls back the entire change.
+
+Foreign keys bind records, contacts, links, events, and deletion audits to a
+workspace and its members. Creation, editing, and removal transactions update
+related state atomically. Database triggers reject event updates and deletions.
+Repository queries bind every supplied value as an SQL parameter and use
+workspace-first indexes for ledger, relation, and timeline reads.
 
 ## Deferred behavior
 
-Configurable transition rules, contacts, additional links, and outcomes remain
-unchecked in the capability checklist.
+Configurable transition rules and outcomes remain unchecked in the capability
+checklist.
