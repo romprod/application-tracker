@@ -7,6 +7,11 @@ import {
   type AuthenticatedSession,
 } from "./auth_client";
 import {
+  browserMcpStatusClient,
+  type McpStatus,
+  type McpStatusClient,
+} from "./mcp_status_client";
+import {
   browserSetupClient,
   SetupClientError,
   type InitialSetupInput,
@@ -38,7 +43,7 @@ const buildSteps = [
   },
 ] as const;
 
-type ReadyPage = "overview" | "settings-users";
+type ReadyPage = "overview" | "settings-mcp" | "settings-users";
 
 type AppView =
   | { kind: "loading" }
@@ -56,12 +61,14 @@ type AppView =
 
 interface AppProps {
   authClient?: AuthClient;
+  mcpStatusClient?: McpStatusClient;
   setupClient?: SetupClient;
   usersClient?: UsersClient;
 }
 
 export function App({
   authClient = browserAuthClient,
+  mcpStatusClient = browserMcpStatusClient,
   setupClient = browserSetupClient,
   usersClient = browserUsersClient,
 }: AppProps) {
@@ -209,7 +216,13 @@ export function App({
           />
         )}
         {view.kind === "ready" && view.page === "settings-users" && (
-          <UsersSettingsView usersClient={usersClient} />
+          <UsersSettingsView navigate={navigate} usersClient={usersClient} />
+        )}
+        {view.kind === "ready" && view.page === "settings-mcp" && (
+          <McpSettingsView
+            mcpStatusClient={mcpStatusClient}
+            navigate={navigate}
+          />
         )}
       </div>
     </div>
@@ -358,10 +371,10 @@ function Sidebar({
               <button
                 type="button"
                 aria-current={
-                  activePage === "settings-users" ? "page" : undefined
+                  activePage.startsWith("settings-") ? "page" : undefined
                 }
                 className={
-                  activePage === "settings-users" ? "active-navigation" : ""
+                  activePage.startsWith("settings-") ? "active-navigation" : ""
                 }
                 onClick={() => onNavigate("settings-users")}
               >
@@ -723,7 +736,47 @@ function titleCase(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
-function UsersSettingsView({ usersClient }: { usersClient: UsersClient }) {
+function SettingsNavigation({
+  activePage,
+  navigate,
+}: {
+  activePage: "settings-mcp" | "settings-users";
+  navigate: (page: ReadyPage) => void;
+}) {
+  return (
+    <nav className="settings-navigation" aria-label="Settings navigation">
+      <span aria-disabled="true">
+        <small>01</small>
+        Lists
+        <em>planned</em>
+      </span>
+      <button
+        type="button"
+        aria-current={activePage === "settings-users" ? "page" : undefined}
+        onClick={() => navigate("settings-users")}
+      >
+        <small aria-hidden="true">02</small>
+        Users
+      </button>
+      <button
+        type="button"
+        aria-current={activePage === "settings-mcp" ? "page" : undefined}
+        onClick={() => navigate("settings-mcp")}
+      >
+        <small aria-hidden="true">03</small>
+        MCP
+      </button>
+    </nav>
+  );
+}
+
+function UsersSettingsView({
+  navigate,
+  usersClient,
+}: {
+  navigate: (page: ReadyPage) => void;
+  usersClient: UsersClient;
+}) {
   const [users, setUsers] = useState<ManagedUser[]>();
   const [loadError, setLoadError] = useState(false);
   const [form, setForm] = useState<CreateLocalUserInput>(emptyUserForm);
@@ -834,22 +887,7 @@ function UsersSettingsView({ usersClient }: { usersClient: UsersClient }) {
         </dl>
       </section>
 
-      <nav className="settings-navigation" aria-label="Settings navigation">
-        <span aria-disabled="true">
-          <small>01</small>
-          Lists
-          <em>planned</em>
-        </span>
-        <a href="#users-panel" aria-current="page">
-          <small>02</small>
-          Users
-        </a>
-        <span aria-disabled="true">
-          <small>03</small>
-          MCP
-          <em>next</em>
-        </span>
-      </nav>
+      <SettingsNavigation activePage="settings-users" navigate={navigate} />
 
       {notice && (
         <div className="settings-notice" role="status">
@@ -1014,6 +1052,184 @@ function UsersSettingsView({ usersClient }: { usersClient: UsersClient }) {
           </div>
         </form>
       </div>
+    </main>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds % 3600 === 0) return `${String(seconds / 3600)}h`;
+  if (seconds % 60 === 0) return `${String(seconds / 60)}m`;
+  return `${String(seconds)}s`;
+}
+
+function statusLabel(value: string): string {
+  return value.split("_").map(titleCase).join(" ");
+}
+
+function McpSettingsView({
+  mcpStatusClient,
+  navigate,
+}: {
+  mcpStatusClient: McpStatusClient;
+  navigate: (page: ReadyPage) => void;
+}) {
+  const [status, setStatus] = useState<McpStatus>();
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void mcpStatusClient
+      .getStatus()
+      .then((loadedStatus) => {
+        if (active) setStatus(loadedStatus);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mcpStatusClient]);
+
+  return (
+    <main id="main-content" tabIndex={-1} className="settings-main">
+      <section className="settings-hero mcp-hero" aria-labelledby="mcp-title">
+        <div>
+          <p className="eyebrow">Settings · Protocol boundary</p>
+          <h1 id="mcp-title">MCP, without blind spots.</h1>
+          <p className="lede">
+            Inspect the Model Context Protocol boundary without revealing
+            deployment addresses, identity claims, credentials, or internal
+            topology.
+          </p>
+        </div>
+        <dl className="settings-totals" aria-label="MCP summary">
+          <div>
+            <dt>Runtime</dt>
+            <dd className="status-word">
+              {status ? statusLabel(status.availability) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>Active</dt>
+            <dd>{status?.sessions.active ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Tools</dt>
+            <dd>{status?.capabilities.registeredTools ?? "—"}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <SettingsNavigation activePage="settings-mcp" navigate={navigate} />
+
+      {loadError && (
+        <div className="settings-error" role="alert">
+          MCP status could not be loaded. Reload the page to try again.
+        </div>
+      )}
+
+      {!status && !loadError && (
+        <p className="mcp-loading">Reading the protocol boundary…</p>
+      )}
+
+      {status && (
+        <div className="mcp-workspace">
+          <section className="mcp-ledger" aria-labelledby="transport-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Transport register</p>
+                <h2 id="transport-title">Closed until implemented</h2>
+              </div>
+              <span data-state={status.availability}>
+                {statusLabel(status.availability)}
+              </span>
+            </div>
+            <p className="mcp-boundary-note">
+              The status boundary is ready. No MCP transport or tool is active
+              in this build.
+            </p>
+            <dl className="transport-list">
+              <div>
+                <dt>
+                  <span>01</span>
+                  Local process
+                  <small>stdio</small>
+                </dt>
+                <dd data-state={status.transports.local.state}>
+                  {statusLabel(status.transports.local.state)}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <span>02</span>
+                  Remote clients
+                  <small>Streamable HTTP</small>
+                </dt>
+                <dd data-state={status.transports.remote.state}>
+                  {statusLabel(status.transports.remote.state)}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <aside className="mcp-policy" aria-labelledby="policy-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Future session policy</p>
+                <h2 id="policy-title">Configured, not enforced</h2>
+              </div>
+              <span>{status.sessions.globalLimit} session ceiling</span>
+            </div>
+            <p>
+              These values are ready for the session registry planned in the
+              next MCP implementation stage.
+            </p>
+            <dl className="policy-list">
+              <div>
+                <dt>Global limit</dt>
+                <dd>{status.sessions.globalLimit}</dd>
+              </div>
+              <div>
+                <dt>Per actor</dt>
+                <dd>{status.sessions.perActorLimit}</dd>
+              </div>
+              <div>
+                <dt>Idle expiry</dt>
+                <dd>{formatDuration(status.sessions.idleTimeoutSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Absolute expiry</dt>
+                <dd>
+                  {formatDuration(status.sessions.absoluteLifetimeSeconds)}
+                </dd>
+              </div>
+            </dl>
+            <ul className="capability-list" aria-label="MCP security controls">
+              <li data-ready={status.capabilities.oauthVerification}>
+                <span>OAuth verification</span>
+                <strong>
+                  {status.capabilities.oauthVerification ? "Ready" : "Pending"}
+                </strong>
+              </li>
+              <li data-ready={status.capabilities.auditEvents}>
+                <span>Audit events</span>
+                <strong>
+                  {status.capabilities.auditEvents ? "Ready" : "Pending"}
+                </strong>
+              </li>
+              <li data-ready={status.sessions.enforcement === "active"}>
+                <span>Session enforcement</span>
+                <strong>
+                  {status.sessions.enforcement === "active"
+                    ? "Active"
+                    : "Pending"}
+                </strong>
+              </li>
+            </ul>
+          </aside>
+        </div>
+      )}
     </main>
   );
 }

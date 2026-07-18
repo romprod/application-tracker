@@ -13,7 +13,7 @@ stdio and authenticated HTTPS.
 - A fresh installation contains no sample or personal data.
 - Installation never creates a known default password.
 - Local accounts work without an external identity provider.
-- Optional OpenID Connect integrates with providers such as a self-hosted identity provider.
+- Optional OpenID Connect integrates with standards-compliant providers.
 - All application data belongs to an explicit workspace.
 - Administrative settings require an administrator role.
 - MCP clients receive the same validation and authorization as the website.
@@ -47,8 +47,9 @@ The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
 identity schema, closed administrator setup, local browser login and logout,
 revocable sessions, administrator-managed local users, a Settings shell,
-automated tests, and CI. It does not yet persist job applications. Lists and
-MCP Settings sections are visible placeholders for their upcoming milestones.
+an administrator-only sanitized MCP status page, automated tests, and CI. It
+does not yet persist job applications or run an MCP server. The MCP page marks
+all transports and enforcement controls inactive until those features ship.
 
 ## Run the foundation
 

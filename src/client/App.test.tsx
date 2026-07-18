@@ -9,6 +9,7 @@ import type {
   AuthenticatedSession,
 } from "./auth_client";
 import type { SetupClient } from "./setup_client";
+import type { McpStatus, McpStatusClient } from "./mcp_status_client";
 import type { ManagedUser, UsersClient } from "./users_client";
 
 const authenticatedSession: AuthenticatedSession = {
@@ -41,6 +42,28 @@ const member: ManagedUser = {
   role: "member",
   status: "active",
   username: "sam",
+};
+
+const mcpStatus: McpStatus = {
+  availability: "planned",
+  capabilities: {
+    auditEvents: false,
+    oauthVerification: false,
+    registeredTools: 0,
+  },
+  sessions: {
+    absoluteLifetimeSeconds: 14_400,
+    active: 0,
+    enforcement: "inactive",
+    globalLimit: 6,
+    idleTimeoutSeconds: 900,
+    initializing: 0,
+    perActorLimit: 2,
+  },
+  transports: {
+    local: { state: "unavailable", transport: "stdio" },
+    remote: { state: "disabled", transport: "streamable_http" },
+  },
 };
 
 function createSetupClient(
@@ -80,6 +103,14 @@ function createUsersClient(users: ManagedUser[] = [administrator, member]) {
           : Promise.reject(new Error("Missing test user"));
       }),
   } satisfies UsersClient;
+}
+
+function createMcpStatusClient() {
+  return {
+    getStatus: vi
+      .fn<McpStatusClient["getStatus"]>()
+      .mockResolvedValue(mcpStatus),
+  } satisfies McpStatusClient;
 }
 
 describe("application shell", () => {
@@ -245,6 +276,31 @@ describe("application shell", () => {
       screen.getByRole("navigation", { name: "Settings navigation" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Sam Member")).toBeInTheDocument();
+  });
+
+  it("opens the sanitized MCP status from Settings", async () => {
+    const mcpStatusClient = createMcpStatusClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "MCP, without blind spots." }),
+    ).toBeInTheDocument();
+    expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
+    expect(screen.getByText("Configured, not enforced")).toBeInTheDocument();
+    expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
+    expect(screen.queryByText(/example-idp/i)).not.toBeInTheDocument();
   });
 
   it("creates a local user from Settings without retaining the password", async () => {

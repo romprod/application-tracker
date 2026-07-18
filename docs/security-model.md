@@ -52,6 +52,11 @@
 - Request size, concurrency, and rate limits
 - Sanitized status that omits tokens, subjects, hostnames, and internal errors
 
+The administrator-only MCP status endpoint implements this disclosure boundary
+before either MCP transport exists. It reports protocol readiness, counts, and
+policy values. It never reports addresses, identity claims, secret material,
+database paths, or internal errors. See [`mcp-status.md`](mcp-status.md).
+
 ### Documents
 
 - Input and decoded-output size limits

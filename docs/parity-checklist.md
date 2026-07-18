@@ -39,7 +39,7 @@ tests and user documentation.
 - [ ] Remote HTTPS server with strict OAuth verification
 - [ ] Tool schemas, authorization, transactions, and audit events
 - [ ] Global and per-actor session limits, expiry, and cleanup
-- [ ] Administrator-only sanitized MCP status
+- [x] Administrator-only sanitized MCP status
 
 ## Release
 

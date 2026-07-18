@@ -49,6 +49,8 @@ Local password verification and session lifecycle are described in
 [`authentication.md`](authentication.md).
 Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
+The sanitized MCP status boundary and future session policy are described in
+[`mcp-status.md`](mcp-status.md).
 
 The initial schema will separate:
 
