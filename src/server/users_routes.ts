@@ -20,6 +20,17 @@ import {
 } from "../domain/users.js";
 import { requestSessionToken } from "./auth_routes.js";
 
+function hasSameHostOrigin(request: Request): boolean {
+  const host = request.get("Host");
+  const origin = request.get("Origin");
+  if (!host || !origin) return false;
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 function authenticatedActor(
   request: Request,
   response: Response,
@@ -64,6 +75,21 @@ export function createUsersRouter(
 
   router.use((_request, response, next) => {
     response.set("Cache-Control", "no-store");
+    next();
+  });
+  router.use((request, response, next) => {
+    if (
+      request.method === "GET" ||
+      request.method === "HEAD" ||
+      request.method === "OPTIONS"
+    ) {
+      next();
+      return;
+    }
+    if (!hasSameHostOrigin(request)) {
+      response.status(403).json({ error: { code: "csrf_rejected" } });
+      return;
+    }
     next();
   });
 

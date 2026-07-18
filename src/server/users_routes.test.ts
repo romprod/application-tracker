@@ -99,7 +99,38 @@ async function login(
   return sessionCookie(response);
 }
 
+function sameOrigin(test: request.Test): request.Test {
+  return test
+    .set("Host", "tracker.example.test")
+    .set("Origin", "https://tracker.example.test");
+}
+
 describe("user administration routes", () => {
+  it("rejects user mutations without a matching browser origin", async () => {
+    const { app } = await createUsersApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const input = {
+      displayName: "Sam Member",
+      password: "member password phrase",
+      role: "member",
+      username: "sam",
+    };
+
+    await request(app)
+      .post("/api/settings/users")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .send(input)
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await request(app)
+      .post("/api/settings/users")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .set("Origin", "https://other.example.test")
+      .send(input)
+      .expect(403, { error: { code: "csrf_rejected" } });
+  });
+
   it("requires an authenticated administrator", async () => {
     const { app } = await createUsersApp();
     await request(app)
@@ -111,8 +142,7 @@ describe("user administration routes", () => {
       "alex",
       "correct horse battery staple",
     );
-    const created = await request(app)
-      .post("/api/settings/users")
+    const created = await sameOrigin(request(app).post("/api/settings/users"))
       .set("Cookie", adminCookie)
       .send({
         displayName: "Sam Member",
@@ -141,8 +171,7 @@ describe("user administration routes", () => {
     const { app, database } = await createUsersApp();
     const cookie = await login(app, "alex", "correct horse battery staple");
 
-    await request(app)
-      .post("/api/settings/users")
+    await sameOrigin(request(app).post("/api/settings/users"))
       .set("Cookie", cookie)
       .send({
         displayName: "Sam Member",
@@ -189,8 +218,7 @@ describe("user administration routes", () => {
     const { app, setup } = await createUsersApp();
     const cookie = await login(app, "alex", "correct horse battery staple");
 
-    await request(app)
-      .post("/api/settings/users")
+    await sameOrigin(request(app).post("/api/settings/users"))
       .set("Cookie", cookie)
       .send({
         displayName: "Short Password",
@@ -199,8 +227,7 @@ describe("user administration routes", () => {
         username: "short-password",
       })
       .expect(400, { error: { code: "validation_error" } });
-    await request(app)
-      .post("/api/settings/users")
+    await sameOrigin(request(app).post("/api/settings/users"))
       .set("Cookie", cookie)
       .send({
         displayName: "Duplicate Alex",
@@ -209,8 +236,11 @@ describe("user administration routes", () => {
         username: "ALEX",
       })
       .expect(409, { error: { code: "username_unavailable" } });
-    await request(app)
-      .patch(`/api/settings/users/${setup.administrator.id}/status`)
+    await sameOrigin(
+      request(app).patch(
+        `/api/settings/users/${setup.administrator.id}/status`,
+      ),
+    )
       .set("Cookie", cookie)
       .send({ status: "disabled" })
       .expect(409, { error: { code: "cannot_disable_self" } });
@@ -223,8 +253,7 @@ describe("user administration routes", () => {
       "alex",
       "correct horse battery staple",
     );
-    const created = await request(app)
-      .post("/api/settings/users")
+    const created = await sameOrigin(request(app).post("/api/settings/users"))
       .set("Cookie", adminCookie)
       .send({
         displayName: "Sam Member",
@@ -234,8 +263,11 @@ describe("user administration routes", () => {
       });
     const memberCookie = await login(app, "sam", "member password phrase");
 
-    await request(app)
-      .patch(`/api/settings/users/${createdUserId(created)}/status`)
+    await sameOrigin(
+      request(app).patch(
+        `/api/settings/users/${createdUserId(created)}/status`,
+      ),
+    )
       .set("Cookie", adminCookie)
       .send({ status: "disabled" })
       .expect(200);

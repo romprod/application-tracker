@@ -46,8 +46,9 @@ Development standards are defined in
 The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
 identity schema, closed administrator setup, local browser login and logout,
-revocable sessions, automated tests, and CI. It does not yet persist job
-applications or manage additional users through Settings.
+revocable sessions, administrator-managed local users, a Settings shell,
+automated tests, and CI. It does not yet persist job applications. Lists and
+MCP Settings sections are visible placeholders for their upcoming milestones.
 
 ## Run the foundation
 

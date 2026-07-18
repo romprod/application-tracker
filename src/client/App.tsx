@@ -12,6 +12,13 @@ import {
   type InitialSetupInput,
   type SetupClient,
 } from "./setup_client";
+import {
+  browserUsersClient,
+  UsersClientError,
+  type CreateLocalUserInput,
+  type ManagedUser,
+  type UsersClient,
+} from "./users_client";
 
 const buildSteps = [
   {
@@ -31,7 +38,7 @@ const buildSteps = [
   },
 ] as const;
 
-const navigationItems = ["Overview", "Applications", "Documents", "Settings"];
+type ReadyPage = "overview" | "settings-users";
 
 type AppView =
   | { kind: "loading" }
@@ -42,6 +49,7 @@ type AppView =
       kind: "ready";
       logoutError?: string;
       notice?: string;
+      page: ReadyPage;
       session: AuthenticatedSession;
       signingOut: boolean;
     };
@@ -49,11 +57,13 @@ type AppView =
 interface AppProps {
   authClient?: AuthClient;
   setupClient?: SetupClient;
+  usersClient?: UsersClient;
 }
 
 export function App({
   authClient = browserAuthClient,
   setupClient = browserSetupClient,
+  usersClient = browserUsersClient,
 }: AppProps) {
   const [view, setView] = useState<AppView>({ kind: "loading" });
 
@@ -75,7 +85,12 @@ export function App({
         if (!active) return;
         setView(
           session.authenticated
-            ? { kind: "ready", session, signingOut: false }
+            ? {
+                kind: "ready",
+                page: "overview",
+                session,
+                signingOut: false,
+              }
             : { kind: "login" },
         );
       } catch {
@@ -91,7 +106,13 @@ export function App({
   function signOut() {
     if (view.kind !== "ready" || view.signingOut) return;
     const currentSession = view.session;
-    setView({ kind: "ready", session: currentSession, signingOut: true });
+    const currentPage = view.page;
+    setView({
+      kind: "ready",
+      page: currentPage,
+      session: currentSession,
+      signingOut: true,
+    });
     void authClient
       .logout()
       .then(() =>
@@ -101,10 +122,21 @@ export function App({
         setView({
           kind: "ready",
           logoutError: "Sign out could not be completed. Please try again.",
+          page: currentPage,
           session: currentSession,
           signingOut: false,
         }),
       );
+  }
+
+  function navigate(page: ReadyPage) {
+    if (view.kind !== "ready") return;
+    setView({
+      kind: "ready",
+      page,
+      session: view.session,
+      signingOut: view.signingOut,
+    });
   }
 
   const isSetup = view.kind === "setup";
@@ -132,7 +164,14 @@ export function App({
       <div
         className={`workspace-frame${isSetup || isLogin ? " identity-frame" : ""}`}
       >
-        <Sidebar mode={isSetup ? "setup" : isLogin ? "login" : "workspace"} />
+        <Sidebar
+          activePage={view.kind === "ready" ? view.page : "overview"}
+          canManageUsers={
+            view.kind === "ready" && view.session.user.role === "admin"
+          }
+          mode={isSetup ? "setup" : isLogin ? "login" : "workspace"}
+          onNavigate={navigate}
+        />
         {view.kind === "loading" && <LoadingView />}
         {view.kind === "error" && <StatusErrorView />}
         {view.kind === "setup" && !view.tokenConfigured && <MissingTokenView />}
@@ -154,6 +193,7 @@ export function App({
               setView({
                 kind: "ready",
                 notice: `Welcome, ${authenticated.user.displayName}.`,
+                page: "overview",
                 session: authenticated,
                 signingOut: false,
               })
@@ -161,12 +201,15 @@ export function App({
             {...(view.notice ? { notice: view.notice } : {})}
           />
         )}
-        {view.kind === "ready" && (
+        {view.kind === "ready" && view.page === "overview" && (
           <Overview
             session={view.session}
             {...(view.logoutError ? { error: view.logoutError } : {})}
             {...(view.notice ? { notice: view.notice } : {})}
           />
+        )}
+        {view.kind === "ready" && view.page === "settings-users" && (
+          <UsersSettingsView usersClient={usersClient} />
         )}
       </div>
     </div>
@@ -220,7 +263,17 @@ function Masthead({
   );
 }
 
-function Sidebar({ mode }: { mode: "login" | "setup" | "workspace" }) {
+function Sidebar({
+  activePage,
+  canManageUsers,
+  mode,
+  onNavigate,
+}: {
+  activePage: ReadyPage;
+  canManageUsers: boolean;
+  mode: "login" | "setup" | "workspace";
+  onNavigate: (page: ReadyPage) => void;
+}) {
   if (mode !== "workspace") {
     return (
       <aside className="sidebar setup-sidebar">
@@ -275,22 +328,54 @@ function Sidebar({ mode }: { mode: "login" | "setup" | "workspace" }) {
       <p className="sidebar-label">Workspace</p>
       <nav aria-label="Primary navigation">
         <ul>
-          {navigationItems.map((item, index) => (
-            <li key={item}>
-              {index === 0 ? (
-                <a href="#main-content" aria-current="page">
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  {item}
-                </a>
-              ) : (
-                <span className="future-navigation" aria-disabled="true">
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  {item}
-                  <small>soon</small>
-                </span>
-              )}
-            </li>
-          ))}
+          <li>
+            <button
+              type="button"
+              aria-current={activePage === "overview" ? "page" : undefined}
+              className={activePage === "overview" ? "active-navigation" : ""}
+              onClick={() => onNavigate("overview")}
+            >
+              <span aria-hidden="true">01</span>
+              Overview
+            </button>
+          </li>
+          <li>
+            <span className="future-navigation" aria-disabled="true">
+              <span>02</span>
+              Applications
+              <small>soon</small>
+            </span>
+          </li>
+          <li>
+            <span className="future-navigation" aria-disabled="true">
+              <span>03</span>
+              Documents
+              <small>soon</small>
+            </span>
+          </li>
+          <li>
+            {canManageUsers ? (
+              <button
+                type="button"
+                aria-current={
+                  activePage === "settings-users" ? "page" : undefined
+                }
+                className={
+                  activePage === "settings-users" ? "active-navigation" : ""
+                }
+                onClick={() => onNavigate("settings-users")}
+              >
+                <span aria-hidden="true">04</span>
+                Settings
+              </button>
+            ) : (
+              <span className="future-navigation" aria-disabled="true">
+                <span>04</span>
+                Settings
+                <small>admin</small>
+              </span>
+            )}
+          </li>
         </ul>
       </nav>
       <p className="privacy-note">
@@ -623,6 +708,312 @@ function SetupView({
           </button>
         </div>
       </form>
+    </main>
+  );
+}
+
+const emptyUserForm: CreateLocalUserInput = {
+  displayName: "",
+  password: "",
+  role: "member",
+  username: "",
+};
+
+function titleCase(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function UsersSettingsView({ usersClient }: { usersClient: UsersClient }) {
+  const [users, setUsers] = useState<ManagedUser[]>();
+  const [loadError, setLoadError] = useState(false);
+  const [form, setForm] = useState<CreateLocalUserInput>(emptyUserForm);
+  const [formError, setFormError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingUserId, setPendingUserId] = useState<string>();
+  const [statusError, setStatusError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    void usersClient
+      .listUsers()
+      .then((loadedUsers) => {
+        if (active) setUsers(loadedUsers);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [usersClient]);
+
+  function updateForm(field: keyof CreateLocalUserInput, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function createUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormError(undefined);
+    setNotice(undefined);
+    void usersClient
+      .createUser(form)
+      .then((created) => {
+        setUsers((current) => (current ? [...current, created] : [created]));
+        setForm(emptyUserForm);
+        setNotice(`${created.displayName} is ready to sign in.`);
+        setSubmitting(false);
+      })
+      .catch((caught: unknown) => {
+        const message =
+          caught instanceof UsersClientError &&
+          caught.code === "username_unavailable"
+            ? "That username is already in use."
+            : "The account could not be created. Please try again.";
+        setForm((current) => ({ ...current, password: "" }));
+        setFormError(message);
+        setSubmitting(false);
+      });
+  }
+
+  function changeStatus(user: ManagedUser) {
+    if (pendingUserId) return;
+    const nextStatus = user.status === "active" ? "disabled" : "active";
+    setPendingUserId(user.id);
+    setStatusError(undefined);
+    setNotice(undefined);
+    void usersClient
+      .setStatus(user.id, nextStatus)
+      .then((updated) => {
+        setUsers((current) =>
+          current?.map((candidate) =>
+            candidate.id === updated.id ? updated : candidate,
+          ),
+        );
+        setNotice(
+          nextStatus === "disabled"
+            ? `${updated.displayName} can no longer sign in.`
+            : `${updated.displayName} can sign in again.`,
+        );
+        setPendingUserId(undefined);
+      })
+      .catch(() => {
+        setStatusError("The account status could not be changed.");
+        setPendingUserId(undefined);
+      });
+  }
+
+  const activeCount = users?.filter((user) => user.status === "active").length;
+  const adminCount = users?.filter((user) => user.role === "admin").length;
+
+  return (
+    <main id="main-content" tabIndex={-1} className="settings-main">
+      <section className="settings-hero" aria-labelledby="settings-title">
+        <div>
+          <p className="eyebrow">Settings · Local identity</p>
+          <h1 id="settings-title">Users and access.</h1>
+          <p className="lede">
+            Decide who can enter this workspace, what they can administer, and
+            when their access should stop.
+          </p>
+        </div>
+        <dl className="settings-totals" aria-label="Account summary">
+          <div>
+            <dt>Accounts</dt>
+            <dd>{users?.length ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Active</dt>
+            <dd>{activeCount ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Admins</dt>
+            <dd>{adminCount ?? "—"}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <nav className="settings-navigation" aria-label="Settings navigation">
+        <span aria-disabled="true">
+          <small>01</small>
+          Lists
+          <em>planned</em>
+        </span>
+        <a href="#users-panel" aria-current="page">
+          <small>02</small>
+          Users
+        </a>
+        <span aria-disabled="true">
+          <small>03</small>
+          MCP
+          <em>next</em>
+        </span>
+      </nav>
+
+      {notice && (
+        <div className="settings-notice" role="status">
+          {notice}
+        </div>
+      )}
+      {statusError && (
+        <div className="settings-error" role="alert">
+          {statusError}
+        </div>
+      )}
+
+      <div className="users-workspace" id="users-panel">
+        <section className="users-roster" aria-labelledby="roster-title">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Workspace directory</p>
+              <h2 id="roster-title">Local accounts</h2>
+            </div>
+            <span>{users?.length ?? 0} total</span>
+          </div>
+
+          {!users && !loadError && (
+            <p className="panel-state">Loading accounts…</p>
+          )}
+          {loadError && (
+            <p className="form-error" role="alert">
+              Accounts could not be loaded. Reload the page to try again.
+            </p>
+          )}
+          {users && (
+            <ul className="user-list">
+              {users.map((user, index) => (
+                <li key={user.id}>
+                  <span className="user-index">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div className="user-identity">
+                    <div>
+                      <strong>{user.displayName}</strong>
+                      {user.isCurrentUser && <span>Current session</span>}
+                    </div>
+                    <p>@{user.username}</p>
+                    <small>
+                      {user.localAccount
+                        ? "Local password"
+                        : "External identity"}
+                    </small>
+                  </div>
+                  <div className="user-badges">
+                    <span data-role={user.role}>{titleCase(user.role)}</span>
+                    <span data-status={user.status}>
+                      {titleCase(user.status)}
+                    </span>
+                  </div>
+                  <div className="user-action">
+                    {user.isCurrentUser ? (
+                      <span>Protected</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={pendingUserId !== undefined}
+                        onClick={() => changeStatus(user)}
+                        aria-label={`${user.status === "active" ? "Disable" : "Enable"} ${user.displayName}`}
+                      >
+                        {pendingUserId === user.id
+                          ? "Saving…"
+                          : user.status === "active"
+                            ? "Disable"
+                            : "Enable"}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <form
+          className="create-user-form"
+          aria-labelledby="create-user-title"
+          onSubmit={createUser}
+        >
+          <div className="panel-heading create-heading">
+            <div>
+              <p className="eyebrow">New workspace identity</p>
+              <h2 id="create-user-title">Add a local account</h2>
+            </div>
+            <span className="index-number">+</span>
+          </div>
+          <div className="field">
+            <label htmlFor="user-display-name">Display name</label>
+            <input
+              autoComplete="off"
+              id="user-display-name"
+              maxLength={120}
+              required
+              value={form.displayName}
+              onChange={(event) =>
+                updateForm("displayName", event.target.value)
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="user-username">Username</label>
+            <input
+              autoCapitalize="none"
+              autoComplete="off"
+              id="user-username"
+              maxLength={64}
+              minLength={3}
+              pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*"
+              required
+              spellCheck={false}
+              value={form.username}
+              onChange={(event) => updateForm("username", event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="user-password">Password</label>
+            <input
+              aria-describedby="user-password-help"
+              autoComplete="new-password"
+              id="user-password"
+              maxLength={128}
+              minLength={12}
+              required
+              type="password"
+              value={form.password}
+              onChange={(event) => updateForm("password", event.target.value)}
+            />
+            <small id="user-password-help">12 to 128 characters.</small>
+          </div>
+          <div className="field">
+            <label htmlFor="user-role">Workspace role</label>
+            <select
+              id="user-role"
+              value={form.role}
+              onChange={(event) => updateForm("role", event.target.value)}
+            >
+              <option value="member">Member</option>
+              <option value="admin">Administrator</option>
+            </select>
+            <small>
+              Administrators can manage users and security settings.
+            </small>
+          </div>
+          {formError && (
+            <p className="form-error" role="alert">
+              {formError}
+            </p>
+          )}
+          <div className="create-user-actions">
+            <p>
+              No welcome email is sent. Share credentials through a safe
+              channel.
+            </p>
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Creating…" : "Create user"}
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }

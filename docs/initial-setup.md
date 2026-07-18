@@ -50,6 +50,5 @@ administrator.
 Local login is available immediately after setup. Completing setup clears the
 form from memory and sends the operator to the login screen.
 
-The Settings user-management screen remains a separate upcoming feature. The
-first administrator is currently the only account that can be created through
-the browser.
+After signing in, the first administrator can create additional local admin or
+member accounts under **Settings → Users**.

@@ -42,3 +42,21 @@ The browser uses these administrator-only routes:
 
 An absent or expired session receives `authentication_required`; an active
 member session receives `forbidden`. Responses are marked `no-store`.
+
+State-changing requests also require a browser `Origin` whose host matches the
+request host. Missing or cross-host origins receive `csrf_rejected` before the
+mutation is processed. A production reverse proxy must preserve the public
+`Host` header. The development proxy explicitly does the same so this check is
+exercised during local use.
+
+## Browser interface
+
+Administrators open **Settings → Users** to see account, active, and admin
+counts; inspect every workspace account; create a local user; or enable and
+disable another account. The current account is visibly marked and protected
+from disablement. Password fields are cleared after every account-creation
+response.
+
+The Settings submenu also reserves stable positions for Lists and MCP. Those
+labels are intentionally non-interactive until their underlying capabilities
+are implemented.

@@ -16,7 +16,7 @@ tests and user documentation.
 - [x] Local login, logout, session rotation, expiry, and revocation
 - [x] Administrator and member workspace roles
 - [ ] Optional OpenID Connect login and identity linking
-- [ ] Settings navigation with Lists, Users, and MCP sections
+- [x] Settings navigation with Lists, Users, and MCP sections
 
 ## Application tracking
 

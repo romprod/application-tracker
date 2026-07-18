@@ -9,6 +9,7 @@ import type {
   AuthenticatedSession,
 } from "./auth_client";
 import type { SetupClient } from "./setup_client";
+import type { ManagedUser, UsersClient } from "./users_client";
 
 const authenticatedSession: AuthenticatedSession = {
   authenticated: true,
@@ -18,6 +19,28 @@ const authenticatedSession: AuthenticatedSession = {
     username: "alex",
   },
   workspace: { name: "Applications" },
+};
+
+const administrator: ManagedUser = {
+  createdAt: "2026-01-01T00:00:00.000Z",
+  displayName: "Alex Example",
+  id: "11111111-1111-4111-8111-111111111111",
+  isCurrentUser: true,
+  localAccount: true,
+  role: "admin",
+  status: "active",
+  username: "alex",
+};
+
+const member: ManagedUser = {
+  createdAt: "2026-01-02T00:00:00.000Z",
+  displayName: "Sam Member",
+  id: "22222222-2222-4222-8222-222222222222",
+  isCurrentUser: false,
+  localAccount: true,
+  role: "member",
+  status: "active",
+  username: "sam",
 };
 
 function createSetupClient(
@@ -42,6 +65,21 @@ function createAuthClient(session: AuthSession) {
     login: vi.fn<AuthClient["login"]>().mockResolvedValue(authenticatedSession),
     logout: vi.fn<AuthClient["logout"]>().mockResolvedValue(),
   } satisfies AuthClient;
+}
+
+function createUsersClient(users: ManagedUser[] = [administrator, member]) {
+  return {
+    createUser: vi.fn<UsersClient["createUser"]>().mockResolvedValue(member),
+    listUsers: vi.fn<UsersClient["listUsers"]>().mockResolvedValue(users),
+    setStatus: vi
+      .fn<UsersClient["setStatus"]>()
+      .mockImplementation((userId, status) => {
+        const user = users.find((candidate) => candidate.id === userId);
+        return user
+          ? Promise.resolve({ ...user, status })
+          : Promise.reject(new Error("Missing test user"));
+      }),
+  } satisfies UsersClient;
 }
 
 describe("application shell", () => {
@@ -182,6 +220,104 @@ describe("application shell", () => {
         name: "Sign in to your workspace.",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the Users submenu from Settings for an administrator", async () => {
+    const usersClient = createUsersClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+        usersClient={usersClient}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Users and access." }),
+    ).toBeInTheDocument();
+    expect(usersClient.listUsers).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("navigation", { name: "Settings navigation" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Sam Member")).toBeInTheDocument();
+  });
+
+  it("creates a local user from Settings without retaining the password", async () => {
+    const createdUser = {
+      ...member,
+      displayName: "Riley Admin",
+      id: "33333333-3333-4333-8333-333333333333",
+      role: "admin" as const,
+      username: "riley",
+    };
+    const usersClient = createUsersClient([administrator]);
+    usersClient.createUser.mockResolvedValue(createdUser);
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+        usersClient={usersClient}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Add a local account" });
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Riley Admin" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "riley" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "riley password phrase" },
+    });
+    fireEvent.change(screen.getByLabelText("Workspace role"), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create user" }));
+
+    await waitFor(() =>
+      expect(usersClient.createUser).toHaveBeenCalledWith({
+        displayName: "Riley Admin",
+        password: "riley password phrase",
+        role: "admin",
+        username: "riley",
+      }),
+    );
+    expect(await screen.findByText("Riley Admin")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+  });
+
+  it("disables another user and reflects the returned status", async () => {
+    const usersClient = createUsersClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+        usersClient={usersClient}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Disable Sam Member" }),
+    );
+
+    await waitFor(() =>
+      expect(usersClient.setStatus).toHaveBeenCalledWith(member.id, "disabled"),
+    );
+    expect(await screen.findByText("Disabled")).toBeInTheDocument();
   });
 
   it("explains how to configure a missing setup token", async () => {
