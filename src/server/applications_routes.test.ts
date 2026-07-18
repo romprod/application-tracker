@@ -109,6 +109,20 @@ function createdApplication(
 const applicationInput = {
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
+  contacts: [
+    {
+      email: "morgan@example.com",
+      name: "Morgan Recruiter",
+      phone: "+44 20 7946 0958",
+      role: "Recruiter",
+    },
+  ],
+  links: [
+    {
+      label: "Hiring portal",
+      url: "https://careers.example.com/application",
+    },
+  ],
   location: "Remote",
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
@@ -181,6 +195,8 @@ describe("application ledger routes", () => {
     const application = createdApplication(created);
     expect(application).toMatchObject({
       companyName: "Example Studio",
+      contacts: applicationInput.contacts,
+      links: applicationInput.links,
       roleTitle: "Product Designer",
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
@@ -203,6 +219,20 @@ describe("application ledger routes", () => {
     const { app } = await createApplicationsApp();
     const cookie = await login(app, "alex", "correct horse battery staple");
 
+    await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send({
+        ...applicationInput,
+        links: [{ label: "Unsafe", url: "javascript:alert(1)" }],
+      })
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send({
+        ...applicationInput,
+        contacts: [{ email: "not-an-email", name: "Morgan Recruiter" }],
+      })
+      .expect(400, { error: { code: "validation_error" } });
     await sameOrigin(request(app).post("/api/applications"))
       .set("Cookie", cookie)
       .send({
@@ -246,6 +276,8 @@ describe("application ledger routes", () => {
     )
       .set("Cookie", cookie)
       .send({
+        contacts: [],
+        links: [],
         location: "",
         nextAction: "Prepare interview questions.",
         nextActionDue: "2026-07-20",
@@ -255,6 +287,8 @@ describe("application ledger routes", () => {
       .expect(200);
     expect(createdApplication(updated)).toMatchObject({
       companyName: "Example Studio",
+      contacts: [],
+      links: [],
       location: null,
       nextAction: "Prepare interview questions.",
       nextActionDue: "2026-07-20",

@@ -12,6 +12,20 @@ describe("createApplicationSchema", () => {
       createApplicationSchema.parse({
         appliedOn: "2026-07-18",
         companyName: "  Example Studio  ",
+        contacts: [
+          {
+            email: "  recruiter@example.com  ",
+            name: "  Morgan Recruiter  ",
+            phone: "  +44 20 7946 0958  ",
+            role: "  Recruiter  ",
+          },
+        ],
+        links: [
+          {
+            label: "  Hiring portal  ",
+            url: "  https://careers.example.com/application  ",
+          },
+        ],
         location: "  Remote  ",
         nextAction: "  Send the portfolio follow-up.  ",
         nextActionDue: "2026-07-21",
@@ -23,6 +37,20 @@ describe("createApplicationSchema", () => {
     ).toEqual({
       appliedOn: "2026-07-18",
       companyName: "Example Studio",
+      contacts: [
+        {
+          email: "recruiter@example.com",
+          name: "Morgan Recruiter",
+          phone: "+44 20 7946 0958",
+          role: "Recruiter",
+        },
+      ],
+      links: [
+        {
+          label: "Hiring portal",
+          url: "https://careers.example.com/application",
+        },
+      ],
       location: "Remote",
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
@@ -69,6 +97,30 @@ describe("createApplicationSchema", () => {
     expect(() =>
       createApplicationSchema.parse({
         companyName: "Example Studio",
+        links: [{ label: "Portal", url: "javascript:alert(1)" }],
+        roleTitle: "Product Designer",
+      }),
+    ).toThrow();
+    expect(() =>
+      createApplicationSchema.parse({
+        companyName: "Example Studio",
+        contacts: [{ email: "not-an-email", name: "Morgan Recruiter" }],
+        roleTitle: "Product Designer",
+      }),
+    ).toThrow();
+    expect(() =>
+      createApplicationSchema.parse({
+        companyName: "Example Studio",
+        links: Array.from({ length: 11 }, (_, index) => ({
+          label: `Link ${index + 1}`,
+          url: `https://example.com/${index + 1}`,
+        })),
+        roleTitle: "Product Designer",
+      }),
+    ).toThrow();
+    expect(() =>
+      createApplicationSchema.parse({
+        companyName: "Example Studio",
         privateField: "not allowed",
         roleTitle: "Product Designer",
       }),
@@ -82,6 +134,8 @@ describe("updateApplicationSchema", () => {
       updateApplicationSchema.parse({
         appliedOn: null,
         companyName: "  Example Labs  ",
+        contacts: [],
+        links: [],
         location: "   ",
         nextAction: "  ",
         nextActionDue: "",
@@ -91,6 +145,8 @@ describe("updateApplicationSchema", () => {
     ).toEqual({
       appliedOn: null,
       companyName: "Example Labs",
+      contacts: [],
+      links: [],
       location: null,
       nextAction: null,
       nextActionDue: null,

@@ -22,9 +22,11 @@ function repository() {
     (input) => ({
       appliedOn: input.appliedOn,
       companyName: input.companyName,
+      contacts: input.contacts ?? [],
       createdAt: input.createdAt,
       id: "application-1",
       location: input.location,
+      links: input.links ?? [],
       nextAction: input.nextAction,
       nextActionDue: input.nextActionDue,
       notes: input.notes,
@@ -44,9 +46,11 @@ function repository() {
     (input) => ({
       appliedOn: null,
       companyName: input.companyName ?? "Example Studio",
+      contacts: input.contacts ?? [],
       createdAt: "2026-07-18T12:00:00.000Z",
       id: input.applicationId,
       location: null,
+      links: input.links ?? [],
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: null,
@@ -83,6 +87,18 @@ describe("ApplicationLedgerService", () => {
     expect(
       service.createApplication(actor, {
         companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+          },
+        ],
+        links: [
+          {
+            label: "Hiring portal",
+            url: "https://careers.example.com/application",
+          },
+        ],
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
         roleTitle: "Product Designer",
@@ -90,14 +106,42 @@ describe("ApplicationLedgerService", () => {
       }),
     ).toMatchObject({
       companyName: "Example Studio",
+      contacts: [
+        {
+          email: "morgan@example.com",
+          name: "Morgan Recruiter",
+          phone: null,
+          role: null,
+        },
+      ],
       location: null,
+      links: [
+        {
+          label: "Hiring portal",
+          url: "https://careers.example.com/application",
+        },
+      ],
       status: "prospect",
     });
     expect(store.createApplication).toHaveBeenCalledWith({
       appliedOn: null,
       companyName: "Example Studio",
+      contacts: [
+        {
+          email: "morgan@example.com",
+          name: "Morgan Recruiter",
+          phone: null,
+          role: null,
+        },
+      ],
       createdAt: "2026-07-18T12:00:00.000Z",
       createdByUserId: "user-1",
+      links: [
+        {
+          label: "Hiring portal",
+          url: "https://careers.example.com/application",
+        },
+      ],
       location: null,
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",

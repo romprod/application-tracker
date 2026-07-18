@@ -8,6 +8,7 @@ import { applicationLedgerMigration } from "./migrations/003_application_ledger.
 import { applicationHistoryMigration } from "./migrations/004_application_history.js";
 import { applicationNextActionsMigration } from "./migrations/005_application_next_actions.js";
 import { applicationDeletionsMigration } from "./migrations/006_application_deletions.js";
+import { applicationContactsLinksMigration } from "./migrations/007_application_contacts_links.js";
 
 export interface Migration {
   name: string;
@@ -28,6 +29,7 @@ export const applicationMigrations: readonly Migration[] = [
   applicationHistoryMigration,
   applicationNextActionsMigration,
   applicationDeletionsMigration,
+  applicationContactsLinksMigration,
 ];
 
 const createMigrationTable = `

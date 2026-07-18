@@ -30,12 +30,26 @@ describe("SqliteApplicationsRepository", () => {
       const created = repository.createApplication({
         appliedOn: "2026-07-18",
         companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+            phone: "+44 20 7946 0958",
+            role: "Recruiter",
+          },
+        ],
         createdAt,
         createdByUserId: setup.administrator.id,
         location: "Remote",
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
         notes: "Referred by a former colleague.",
+        links: [
+          {
+            label: "Hiring portal",
+            url: "https://careers.example.com/application",
+          },
+        ],
         roleTitle: "Product Designer",
         sourceUrl: "https://jobs.example.com/product-designer",
         status: "applied",
@@ -45,6 +59,20 @@ describe("SqliteApplicationsRepository", () => {
       expect(created).toMatchObject({
         appliedOn: "2026-07-18",
         companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+            phone: "+44 20 7946 0958",
+            role: "Recruiter",
+          },
+        ],
+        links: [
+          {
+            label: "Hiring portal",
+            url: "https://careers.example.com/application",
+          },
+        ],
         location: "Remote",
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
@@ -204,6 +232,20 @@ describe("SqliteApplicationsRepository", () => {
         actorUserId: setup.administrator.id,
         applicationId: created.id,
         companyName: "Example Labs",
+        contacts: [
+          {
+            email: null,
+            name: "Taylor Hiring Manager",
+            phone: null,
+            role: "Hiring manager",
+          },
+        ],
+        links: [
+          {
+            label: "Interview briefing",
+            url: "https://example.com/interview",
+          },
+        ],
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
@@ -214,6 +256,20 @@ describe("SqliteApplicationsRepository", () => {
 
       expect(transitioned).toMatchObject({
         companyName: "Example Labs",
+        contacts: [
+          {
+            email: null,
+            name: "Taylor Hiring Manager",
+            phone: null,
+            role: "Hiring manager",
+          },
+        ],
+        links: [
+          {
+            label: "Interview briefing",
+            url: "https://example.com/interview",
+          },
+        ],
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
@@ -252,8 +308,82 @@ describe("SqliteApplicationsRepository", () => {
         repository.listApplicationEvents(setup.workspace.id, created.id),
       ).toHaveLength(2);
       expect(repository.listApplications(setup.workspace.id)[0]).toMatchObject({
+        contacts: [
+          {
+            email: null,
+            name: "Taylor Hiring Manager",
+            phone: null,
+            role: "Hiring manager",
+          },
+        ],
+        links: [
+          {
+            label: "Interview briefing",
+            url: "https://example.com/interview",
+          },
+        ],
         nextAction: null,
         nextActionDue: null,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back an invalid relation replacement atomically", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+            phone: null,
+            role: null,
+          },
+        ],
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        links: [],
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(() =>
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          companyName: "Should roll back",
+          contacts: [
+            {
+              email: "invalid-email",
+              name: "Invalid contact",
+              phone: null,
+              role: null,
+            },
+          ],
+          updatedAt: "2026-07-18T13:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow();
+      expect(repository.listApplications(setup.workspace.id)[0]).toMatchObject({
+        companyName: "Example Studio",
+        contacts: [
+          {
+            email: "morgan@example.com",
+            name: "Morgan Recruiter",
+          },
+        ],
+        updatedAt: createdAt,
       });
     } finally {
       database.close();

@@ -10,6 +10,8 @@ export const applicationStatusSchema = z.enum([
 
 export const applicationIdSchema = z.uuid();
 
+const maximumApplicationRelations = 10;
+
 function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
@@ -32,9 +34,35 @@ function nullableText(maximumLength: number) {
   );
 }
 
+const applicationContactSchema = z.strictObject({
+  email: z.preprocess(
+    blankToUndefined,
+    z.string().trim().email().max(254).optional(),
+  ),
+  name: z.string().trim().min(1).max(160),
+  phone: optionalText(50),
+  role: optionalText(160),
+});
+
+const applicationLinkSchema = z.strictObject({
+  label: z.string().trim().min(1).max(80),
+  url: z
+    .url({ protocol: /^https?$/ })
+    .trim()
+    .max(2048),
+});
+
 export const createApplicationSchema = z.strictObject({
   appliedOn: z.preprocess(blankToUndefined, z.iso.date().optional()),
   companyName: z.string().trim().min(1).max(160),
+  contacts: z
+    .array(applicationContactSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
+  links: z
+    .array(applicationLinkSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
   location: optionalText(160),
   nextAction: optionalText(500),
   nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
@@ -55,6 +83,14 @@ export const updateApplicationSchema = z
   .strictObject({
     appliedOn: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
     companyName: z.string().trim().min(1).max(160).optional(),
+    contacts: z
+      .array(applicationContactSchema)
+      .max(maximumApplicationRelations)
+      .optional(),
+    links: z
+      .array(applicationLinkSchema)
+      .max(maximumApplicationRelations)
+      .optional(),
     location: nullableText(160).optional(),
     nextAction: nullableText(500).optional(),
     nextActionDue: z
@@ -79,5 +115,7 @@ export const updateApplicationSchema = z
   });
 
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
+export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;

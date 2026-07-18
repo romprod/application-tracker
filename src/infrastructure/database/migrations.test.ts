@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7]);
       expect(
         database
           .prepare(
@@ -202,6 +202,33 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toContain("deleted_at IS NULL");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name IN (
+               'application_contacts',
+               'application_links'
+             ) ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual(["application_contacts", "application_links"]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'index' AND name IN (
+               'application_contacts_by_application',
+               'application_links_by_application'
+             ) ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "application_contacts_by_application",
+        "application_links_by_application",
+      ]);
     } finally {
       database.close();
     }

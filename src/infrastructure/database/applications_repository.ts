@@ -3,13 +3,20 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 
 import type {
+  ApplicationContact,
   ApplicationEvent,
+  ApplicationLink,
   ApplicationRecord,
   ApplicationsRepository,
   CreateApplicationRecord,
   DeleteApplicationRecord,
   UpdateApplicationRecord,
 } from "../../application/applications.js";
+
+type StoredApplicationRecord = Omit<ApplicationRecord, "contacts" | "links">;
+
+type StoredContact = ApplicationContact & { applicationId: string };
+type StoredLink = ApplicationLink & { applicationId: string };
 
 function publicApplicationSelect(): string {
   return `SELECT
@@ -30,6 +37,96 @@ function publicApplicationSelect(): string {
 
 export class SqliteApplicationsRepository implements ApplicationsRepository {
   public constructor(private readonly database: Database.Database) {}
+
+  private hydrateApplications(
+    workspaceId: string,
+    stored: StoredApplicationRecord[],
+  ): ApplicationRecord[] {
+    if (stored.length === 0) return [];
+    const applications = stored.map((application) => ({
+      ...application,
+      contacts: [] as ApplicationContact[],
+      links: [] as ApplicationLink[],
+    }));
+    const byId = new Map(
+      applications.map((application) => [application.id, application]),
+    );
+    const placeholders = stored.map(() => "?").join(", ");
+    const applicationIds = stored.map(({ id }) => id);
+    const contacts = this.database
+      .prepare(
+        `SELECT application_id AS applicationId, name, role, email, phone
+         FROM application_contacts
+         WHERE workspace_id = ? AND application_id IN (${placeholders})
+         ORDER BY application_id, position`,
+      )
+      .all(workspaceId, ...applicationIds) as StoredContact[];
+    const links = this.database
+      .prepare(
+        `SELECT application_id AS applicationId, label, url
+         FROM application_links
+         WHERE workspace_id = ? AND application_id IN (${placeholders})
+         ORDER BY application_id, position`,
+      )
+      .all(workspaceId, ...applicationIds) as StoredLink[];
+    for (const { applicationId, ...contact } of contacts) {
+      byId.get(applicationId)?.contacts.push(contact);
+    }
+    for (const { applicationId, ...link } of links) {
+      byId.get(applicationId)?.links.push(link);
+    }
+    return applications;
+  }
+
+  private replaceContacts(
+    workspaceId: string,
+    applicationId: string,
+    contacts: ApplicationContact[],
+  ): void {
+    this.database
+      .prepare(
+        `DELETE FROM application_contacts
+         WHERE workspace_id = ? AND application_id = ?`,
+      )
+      .run(workspaceId, applicationId);
+    const insert = this.database.prepare(
+      `INSERT INTO application_contacts
+         (workspace_id, application_id, position, name, role, email, phone)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    contacts.forEach((contact, position) => {
+      insert.run(
+        workspaceId,
+        applicationId,
+        position,
+        contact.name,
+        contact.role,
+        contact.email,
+        contact.phone,
+      );
+    });
+  }
+
+  private replaceLinks(
+    workspaceId: string,
+    applicationId: string,
+    links: ApplicationLink[],
+  ): void {
+    this.database
+      .prepare(
+        `DELETE FROM application_links
+         WHERE workspace_id = ? AND application_id = ?`,
+      )
+      .run(workspaceId, applicationId);
+    const insert = this.database.prepare(
+      `INSERT INTO application_links
+         (workspace_id, application_id, position, label, url)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    links.forEach((link, position) => {
+      insert.run(workspaceId, applicationId, position, link.label, link.url);
+    });
+  }
 
   public createApplication(input: CreateApplicationRecord): ApplicationRecord {
     const id = randomUUID();
@@ -74,15 +171,19 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.status,
           input.createdAt,
         );
+      this.replaceContacts(input.workspaceId, id, input.contacts ?? []);
+      this.replaceLinks(input.workspaceId, id, input.links ?? []);
     });
     create.immediate();
 
     return {
       appliedOn: input.appliedOn,
       companyName: input.companyName,
+      contacts: input.contacts ?? [],
       createdAt: input.createdAt,
       id,
       location: input.location,
+      links: input.links ?? [],
       nextAction: input.nextAction,
       nextActionDue: input.nextActionDue,
       notes: input.notes,
@@ -94,13 +195,14 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
   }
 
   public listApplications(workspaceId: string): ApplicationRecord[] {
-    return this.database
+    const stored = this.database
       .prepare(
         `${publicApplicationSelect()}
          WHERE workspace_id = ? AND deleted_at IS NULL
          ORDER BY updated_at DESC, id DESC`,
       )
-      .all(workspaceId) as ApplicationRecord[];
+      .all(workspaceId) as StoredApplicationRecord[];
+    return this.hydrateApplications(workspaceId, stored);
   }
 
   public deleteApplication(input: DeleteApplicationRecord): boolean {
@@ -171,23 +273,27 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     input: UpdateApplicationRecord,
   ): ApplicationRecord | undefined {
     const update = this.database.transaction(() => {
-      const current = this.database
+      const stored = this.database
         .prepare(
           `${publicApplicationSelect()}
            WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
         )
         .get(input.workspaceId, input.applicationId) as
-        ApplicationRecord | undefined;
+        StoredApplicationRecord | undefined;
+      if (!stored) return undefined;
+      const [current] = this.hydrateApplications(input.workspaceId, [stored]);
       if (!current) return undefined;
 
       const updated: ApplicationRecord = {
         appliedOn:
           input.appliedOn === undefined ? current.appliedOn : input.appliedOn,
         companyName: input.companyName ?? current.companyName,
+        contacts: input.contacts ?? current.contacts,
         createdAt: current.createdAt,
         id: current.id,
         location:
           input.location === undefined ? current.location : input.location,
+        links: input.links ?? current.links,
         nextAction:
           input.nextAction === undefined
             ? current.nextAction
@@ -226,6 +332,17 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.workspaceId,
           input.applicationId,
         );
+
+      if (input.contacts !== undefined) {
+        this.replaceContacts(
+          input.workspaceId,
+          input.applicationId,
+          input.contacts,
+        );
+      }
+      if (input.links !== undefined) {
+        this.replaceLinks(input.workspaceId, input.applicationId, input.links);
+      }
 
       if (updated.status !== current.status) {
         this.database

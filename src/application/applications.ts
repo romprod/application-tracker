@@ -1,16 +1,32 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type {
   ApplicationStatus,
+  ApplicationContactInput,
+  ApplicationLinkInput,
   CreateApplicationInput,
   UpdateApplicationInput,
 } from "../domain/applications.js";
 
+export interface ApplicationContact {
+  email: string | null;
+  name: string;
+  phone: string | null;
+  role: string | null;
+}
+
+export interface ApplicationLink {
+  label: string;
+  url: string;
+}
+
 export interface ApplicationRecord {
   appliedOn: string | null;
   companyName: string;
+  contacts: ApplicationContact[];
   createdAt: string;
   id: string;
   location: string | null;
+  links: ApplicationLink[];
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
@@ -23,9 +39,11 @@ export interface ApplicationRecord {
 export interface CreateApplicationRecord {
   appliedOn: string | null;
   companyName: string;
+  contacts?: ApplicationContact[];
   createdAt: string;
   createdByUserId: string;
   location: string | null;
+  links?: ApplicationLink[];
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
@@ -53,12 +71,30 @@ export interface ApplicationEvent {
   type: ApplicationEventType;
 }
 
-export type UpdateApplicationRecord = UpdateApplicationInput & {
+export type UpdateApplicationRecord = Omit<
+  UpdateApplicationInput,
+  "contacts" | "links"
+> & {
   actorUserId: string;
   applicationId: string;
+  contacts?: ApplicationContact[];
+  links?: ApplicationLink[];
   updatedAt: string;
   workspaceId: string;
 };
+
+function contactRecord(contact: ApplicationContactInput): ApplicationContact {
+  return {
+    email: contact.email ?? null,
+    name: contact.name,
+    phone: contact.phone ?? null,
+    role: contact.role ?? null,
+  };
+}
+
+function linkRecord(link: ApplicationLinkInput): ApplicationLink {
+  return { label: link.label, url: link.url };
+}
 
 export interface ApplicationsRepository {
   createApplication(input: CreateApplicationRecord): ApplicationRecord;
@@ -93,9 +129,11 @@ export class ApplicationLedgerService {
     return this.repository.createApplication({
       appliedOn: input.appliedOn ?? null,
       companyName: input.companyName,
+      contacts: (input.contacts ?? []).map(contactRecord),
       createdAt: this.clock().toISOString(),
       createdByUserId: actor.userId,
       location: input.location ?? null,
+      links: (input.links ?? []).map(linkRecord),
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: input.notes ?? null,
@@ -140,10 +178,13 @@ export class ApplicationLedgerService {
     applicationId: string,
     input: UpdateApplicationInput,
   ): ApplicationRecord {
+    const { contacts, links, ...fields } = input;
     const application = this.repository.updateApplication({
-      ...input,
+      ...fields,
       actorUserId: actor.userId,
       applicationId,
+      ...(contacts ? { contacts: contacts.map(contactRecord) } : {}),
+      ...(links ? { links: links.map(linkRecord) } : {}),
       updatedAt: this.clock().toISOString(),
       workspaceId: actor.workspaceId,
     });

@@ -1,12 +1,33 @@
 export type ApplicationStatus =
   "prospect" | "applied" | "interview" | "offer" | "closed";
 
+export interface ApplicationContact {
+  email: string | null;
+  name: string;
+  phone: string | null;
+  role: string | null;
+}
+
+export interface ApplicationContactInput {
+  email?: string;
+  name: string;
+  phone?: string;
+  role?: string;
+}
+
+export interface ApplicationLink {
+  label: string;
+  url: string;
+}
+
 export interface ApplicationRecord {
   appliedOn: string | null;
   companyName: string;
+  contacts: ApplicationContact[];
   createdAt: string;
   id: string;
   location: string | null;
+  links: ApplicationLink[];
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
@@ -19,7 +40,9 @@ export interface ApplicationRecord {
 export interface CreateApplicationInput {
   appliedOn?: string;
   companyName: string;
+  contacts?: ApplicationContactInput[];
   location?: string;
+  links?: ApplicationLink[];
   nextAction?: string;
   nextActionDue?: string;
   notes?: string;
@@ -31,7 +54,9 @@ export interface CreateApplicationInput {
 export interface UpdateApplicationInput {
   appliedOn?: string | null;
   companyName?: string;
+  contacts?: ApplicationContactInput[];
   location?: string | null;
+  links?: ApplicationLink[];
   nextAction?: string | null;
   nextActionDue?: string | null;
   notes?: string | null;
@@ -107,14 +132,59 @@ function isApplicationStatus(value: unknown): value is ApplicationStatus {
   );
 }
 
+function parseContact(value: unknown): ApplicationContact {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    value.name.trim().length === 0 ||
+    value.name.length > 160 ||
+    !isNullableString(value.role) ||
+    (value.role !== null &&
+      (value.role.trim().length === 0 || value.role.length > 160)) ||
+    !isNullableString(value.email) ||
+    (value.email !== null && value.email.length > 254) ||
+    !isNullableString(value.phone) ||
+    (value.phone !== null &&
+      (value.phone.trim().length === 0 || value.phone.length > 50)) ||
+    (value.email !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email))
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    email: value.email,
+    name: value.name,
+    phone: value.phone,
+    role: value.role,
+  };
+}
+
+function parseLink(value: unknown): ApplicationLink {
+  if (
+    !isRecord(value) ||
+    typeof value.label !== "string" ||
+    value.label.trim().length === 0 ||
+    value.label.length > 80 ||
+    !isNullableHttpUrl(value.url) ||
+    value.url === null ||
+    value.url.length > 2048
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return { label: value.label, url: value.url };
+}
+
 function parseApplication(value: unknown): ApplicationRecord {
   if (
     !isRecord(value) ||
     !isNullableString(value.appliedOn) ||
     typeof value.companyName !== "string" ||
+    !Array.isArray(value.contacts) ||
+    value.contacts.length > 10 ||
     typeof value.createdAt !== "string" ||
     typeof value.id !== "string" ||
     !isNullableString(value.location) ||
+    !Array.isArray(value.links) ||
+    value.links.length > 10 ||
     !isNullableString(value.nextAction) ||
     !isNullableIsoDate(value.nextActionDue) ||
     !isNullableString(value.notes) ||
@@ -128,9 +198,11 @@ function parseApplication(value: unknown): ApplicationRecord {
   return {
     appliedOn: value.appliedOn,
     companyName: value.companyName,
+    contacts: value.contacts.map(parseContact),
     createdAt: value.createdAt,
     id: value.id,
     location: value.location,
+    links: value.links.map(parseLink),
     nextAction: value.nextAction,
     nextActionDue: value.nextActionDue,
     notes: value.notes,

@@ -8,9 +8,23 @@ import {
 const application = {
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
+  contacts: [
+    {
+      email: "morgan@example.com",
+      name: "Morgan Recruiter",
+      phone: "+44 20 7946 0958",
+      role: "Recruiter",
+    },
+  ],
   createdAt: "2026-07-18T12:15:00.000Z",
   id: "11111111-1111-4111-8111-111111111111",
   location: "Remote",
+  links: [
+    {
+      label: "Hiring portal",
+      url: "https://careers.example.com/application",
+    },
+  ],
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
@@ -189,6 +203,48 @@ describe("browserApplicationsClient", () => {
       ),
     );
 
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+  });
+
+  it("rejects malformed contacts and unsafe additional links", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [
+              {
+                ...application,
+                contacts: [{ ...application.contacts[0], email: "invalid" }],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [
+              {
+                ...application,
+                links: [{ label: "Unsafe", url: "javascript:alert(1)" }],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
     await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
       new ApplicationsClientError("invalid_response"),
     );
