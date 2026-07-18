@@ -5,6 +5,7 @@ import { parseRuntimeConfig } from "./config.js";
 describe("parseRuntimeConfig", () => {
   it("uses self-hosted network defaults", () => {
     expect(parseRuntimeConfig({})).toEqual({
+      backupDirectory: "./backups",
       databasePath: "./data/application-tracker.sqlite",
       host: "0.0.0.0",
       mcp: {
@@ -24,6 +25,12 @@ describe("parseRuntimeConfig", () => {
         refreshIntervalMs: 60_000,
       },
     });
+  });
+
+  it("rejects a blank backup directory", () => {
+    expect(() => parseRuntimeConfig({ BACKUP_DIRECTORY: " " })).toThrow(
+      "Invalid runtime configuration: BACKUP_DIRECTORY",
+    );
   });
 
   it("rejects a port outside the TCP range", () => {

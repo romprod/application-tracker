@@ -53,8 +53,10 @@ searchable and sortable application table, modal intake and editing, a detail
 drawer, ordered recruiter and hiring contacts, labeled related links, current
 next actions with optional due dates, and an immutable timeline for creation
 and stage changes. Application removal is workspace-scoped and audited without
-erasing that timeline. The app does not yet support documents or outcomes. It
-also does not run an MCP server. Automated tests and CI cover each completed
+erasing that timeline. Workspace administrators can configure statuses,
+sources, role types, and document types. Operator commands provide online
+SQLite backup, verification, and non-overwriting restore. The app does not yet
+support documents or an MCP server. Automated tests and CI cover each completed
 boundary.
 
 ## Run the foundation
@@ -83,6 +85,10 @@ NODE_ENV=production npm start
 ```
 
 Run every local quality gate with `npm run check`.
+
+Database operators should follow the tested
+[`backup and restore runbook`](docs/backup-restore.md); copying a live WAL
+database file is not a valid backup procedure.
 
 ## License
 

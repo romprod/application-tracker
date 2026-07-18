@@ -24,7 +24,13 @@ Useful commands:
 | `npm test`                      | Run the test suite once                           |
 | `npm run test:watch`            | Run tests while editing                           |
 | `npm run build`                 | Compile the client and server                     |
+| `npm run db:backup`             | Create and verify an online SQLite backup         |
+| `npm run db:verify`             | Verify a standalone SQLite backup                 |
+| `npm run db:restore`            | Restore a backup into a new database path         |
 | `NODE_ENV=production npm start` | Serve a completed production build                |
+
+The database commands and live replacement procedure are documented in
+[`backup-restore.md`](backup-restore.md).
 
 ## Commit discipline
 

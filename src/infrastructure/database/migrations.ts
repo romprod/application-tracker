@@ -24,6 +24,13 @@ interface AppliedMigration {
   version: number;
 }
 
+export interface MigrationHistory {
+  appliedVersions: number[];
+  applicationSchemaVersion: number;
+  requiresMigration: boolean;
+  schemaVersion: number;
+}
+
 export const applicationMigrations: readonly Migration[] = [
   workspaceIdentityMigration,
   installationStateMigration,
@@ -72,20 +79,24 @@ function validateMigrationPlan(migrations: readonly Migration[]): void {
   });
 }
 
-export function migrateDatabase(
+export function verifyMigrationHistory(
   database: Database.Database,
   migrations: readonly Migration[] = applicationMigrations,
-): void {
+): MigrationHistory {
   validateMigrationPlan(migrations);
-  database.exec(createMigrationTable);
-
   const appliedMigrations = database
     .prepare(
       "SELECT version, name, checksum FROM schema_migrations ORDER BY version",
     )
     .all() as AppliedMigration[];
 
-  for (const applied of appliedMigrations) {
+  for (const [index, applied] of appliedMigrations.entries()) {
+    const expectedVersion = index + 1;
+    if (applied.version !== expectedVersion) {
+      throw new Error(
+        `Database migration history is missing version ${String(expectedVersion)}`,
+      );
+    }
     const migration = migrations.find(
       (candidate) => candidate.version === applied.version,
     );
@@ -104,6 +115,24 @@ export function migrateDatabase(
     }
   }
 
+  const applicationSchemaVersion = migrations.length;
+  const schemaVersion = appliedMigrations.at(-1)?.version ?? 0;
+  return {
+    appliedVersions: appliedMigrations.map(({ version }) => version),
+    applicationSchemaVersion,
+    requiresMigration: schemaVersion < applicationSchemaVersion,
+    schemaVersion,
+  };
+}
+
+export function migrateDatabase(
+  database: Database.Database,
+  migrations: readonly Migration[] = applicationMigrations,
+): void {
+  validateMigrationPlan(migrations);
+  database.exec(createMigrationTable);
+  const history = verifyMigrationHistory(database, migrations);
+
   const insertMigration = database.prepare(
     `INSERT INTO schema_migrations (version, name, checksum, applied_at)
      VALUES (?, ?, ?, ?)`,
@@ -119,9 +148,7 @@ export function migrateDatabase(
       );
     },
   );
-  const appliedVersions = new Set(
-    appliedMigrations.map((migration) => migration.version),
-  );
+  const appliedVersions = new Set(history.appliedVersions);
 
   for (const migration of migrations) {
     if (!appliedVersions.has(migration.version)) {

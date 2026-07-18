@@ -44,6 +44,8 @@ and migrate representative prior schemas forward.
 
 The implementation and migration policy are described in
 [`database.md`](database.md).
+Online backup and restore procedures are described in
+[`backup-restore.md`](backup-restore.md).
 
 Local password verification and session lifecycle are described in
 [`authentication.md`](authentication.md).

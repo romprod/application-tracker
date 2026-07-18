@@ -99,9 +99,11 @@ the original fixed-stage constraint so immutable history can retain any
 workspace status label. The open-action index no longer relies on a hard-coded
 status name; the service uses each status's closed-outcome flag.
 
-## Backup status
+## Backup and restore
 
-Online backup and verified restore tooling have not been implemented yet. Do
-not treat filesystem copies of a live WAL database as the project backup
-procedure. The release checklist remains incomplete until backup and restore
-are implemented and rehearsed.
+The operator commands create online backups through SQLite's backup API and
+verify integrity, foreign keys, migration checksums, and SHA-256 digests. They
+set backup and restore outputs to owner-only permissions. Restore writes only
+to an absent destination and verifies the result before reporting success. See
+[`backup-restore.md`](backup-restore.md) for commands, rehearsal, live
+replacement, retention, and encryption boundaries.

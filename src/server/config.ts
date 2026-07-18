@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const runtimeEnvironmentSchema = z.object({
+  BACKUP_DIRECTORY: z.string().trim().min(1).default("./backups"),
   DATABASE_PATH: z
     .string()
     .trim()
@@ -56,6 +57,7 @@ const runtimeEnvironmentSchema = z.object({
 });
 
 export interface RuntimeConfig {
+  backupDirectory: string;
   databasePath: string;
   host: string;
   mcp: {
@@ -116,6 +118,7 @@ export function parseRuntimeConfig(
   }
 
   return {
+    backupDirectory: result.data.BACKUP_DIRECTORY,
     databasePath: result.data.DATABASE_PATH,
     host: result.data.HOST,
     mcp: {
