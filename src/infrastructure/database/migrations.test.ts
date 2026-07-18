@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect(
         database
           .prepare(
@@ -229,6 +229,24 @@ describe("migrateDatabase", () => {
         "application_contacts_by_application",
         "application_links_by_application",
       ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name = 'reference_values'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("reference_values");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'trigger' AND name = 'workspaces_seed_reference_values'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("workspaces_seed_reference_values");
     } finally {
       database.close();
     }

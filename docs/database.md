@@ -81,6 +81,13 @@ workspace, storage constraints bound field sizes and relation counts, and
 workspace-first indexes cover drawer hydration. Relation replacement is part of
 the parent application's immediate write transaction.
 
+The eighth migration adds workspace-scoped statuses, sources, role types, and
+document types. A workspace-insert trigger seeds generic defaults for new
+installations, while the migration backfills any existing workspace. Database
+constraints enforce category values, case-insensitive label uniqueness, active
+and closed-outcome flags, and deterministic ordering. See
+[`reference-lists.md`](reference-lists.md).
+
 ## Backup status
 
 Online backup and verified restore tooling have not been implemented yet. Do

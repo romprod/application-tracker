@@ -22,6 +22,10 @@ import type {
 import type { SetupClient } from "./setup_client";
 import type { McpStatus, McpStatusClient } from "./mcp_status_client";
 import type { ManagedUser, UsersClient } from "./users_client";
+import type {
+  ReferenceValue,
+  ReferenceValuesClient,
+} from "./reference_values_client";
 
 const authenticatedSession: AuthenticatedSession = {
   authenticated: true,
@@ -103,6 +107,49 @@ const member: ManagedUser = {
   username: "sam",
 };
 
+const referenceValues: ReferenceValue[] = [
+  {
+    category: "status",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "77777777-7777-4777-8777-777777777777",
+    isActive: true,
+    isTerminal: false,
+    label: "Prospect",
+    sortOrder: 10,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    category: "source",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "88888888-8888-4888-8888-888888888888",
+    isActive: true,
+    isTerminal: false,
+    label: "Referral",
+    sortOrder: 10,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    category: "role_type",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "99999999-9999-4999-8999-999999999999",
+    isActive: true,
+    isTerminal: false,
+    label: "Full-time",
+    sortOrder: 10,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    category: "document_type",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    isActive: true,
+    isTerminal: false,
+    label: "CV",
+    sortOrder: 10,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
 const mcpStatus: McpStatus = {
   availability: "planned",
   capabilities: {
@@ -170,6 +217,37 @@ function createMcpStatusClient() {
       .fn<McpStatusClient["getStatus"]>()
       .mockResolvedValue(mcpStatus),
   } satisfies McpStatusClient;
+}
+
+function createReferenceValuesClient(values = referenceValues) {
+  return {
+    createValue: vi
+      .fn<ReferenceValuesClient["createValue"]>()
+      .mockImplementation((input) =>
+        Promise.resolve({
+          ...input,
+          createdAt: "2026-07-18T12:00:00.000Z",
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          isActive: true,
+          sortOrder: 20,
+          updatedAt: "2026-07-18T12:00:00.000Z",
+        }),
+      ),
+    deleteValue: vi
+      .fn<ReferenceValuesClient["deleteValue"]>()
+      .mockResolvedValue(),
+    listValues: vi
+      .fn<ReferenceValuesClient["listValues"]>()
+      .mockResolvedValue(values),
+    updateValue: vi
+      .fn<ReferenceValuesClient["updateValue"]>()
+      .mockImplementation((id, input) => {
+        const value = values.find((candidate) => candidate.id === id);
+        return value
+          ? Promise.resolve({ ...value, ...input })
+          : Promise.reject(new Error("Missing test reference value"));
+      }),
+  } satisfies ReferenceValuesClient;
 }
 
 function createApplicationsClient(
@@ -740,6 +818,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
 
     expect(
       await screen.findByRole("heading", { name: "Users and access." }),
@@ -775,6 +854,70 @@ describe("application shell", () => {
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
   });
 
+  it("lets administrators maintain workspace lists", async () => {
+    const referenceValuesClient = createReferenceValuesClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        referenceValuesClient={referenceValuesClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(
+      await screen.findByRole("heading", {
+        name: "Lists that fit your search.",
+      }),
+    ).toBeInTheDocument();
+    expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
+    expect(screen.getByText("Referral")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("New source"), {
+      target: { value: "Community board" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add source" }));
+    await waitFor(() =>
+      expect(referenceValuesClient.createValue).toHaveBeenCalledWith({
+        category: "source",
+        isTerminal: false,
+        label: "Community board",
+      }),
+    );
+    expect(await screen.findByText("Community board")).toBeInTheDocument();
+  });
+
+  it("lets members view lists without administration controls", async () => {
+    const referenceValuesClient = createReferenceValuesClient();
+    const memberSession: AuthenticatedSession = {
+      ...authenticatedSession,
+      user: { ...authenticatedSession.user, role: "member" },
+    };
+    render(
+      <App
+        authClient={createAuthClient(memberSession)}
+        referenceValuesClient={referenceValuesClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("Prospect")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Only workspace administrators can change/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Users" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("New source")).not.toBeInTheDocument();
+  });
+
   it("creates a local user from Settings without retaining the password", async () => {
     const createdUser = {
       ...member,
@@ -797,6 +940,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
     await screen.findByRole("heading", { name: "Add a local account" });
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Riley Admin" },
@@ -838,6 +982,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Disable Sam Member" }),
     );

@@ -53,13 +53,14 @@ The sanitized MCP status boundary and future session policy are described in
 [`mcp-status.md`](mcp-status.md).
 The first application-record slice is described in
 [`application-ledger.md`](application-ledger.md).
+Workspace-owned statuses, sources, role types, and document types are described
+in [`reference-lists.md`](reference-lists.md).
 
 The schema separates:
 
 - workspaces, users, credentials, memberships, sessions, and external identities
-- applications, ordered contacts and links, audited deletion state, and
-  immutable creation or stage-transition events, with reference values planned
-  in later migrations
+- applications, ordered contacts and links, audited deletion state, immutable
+  creation or stage-transition events, and workspace reference values
 - file objects, document metadata, and application-document associations
 - administrative settings and security audit events
 

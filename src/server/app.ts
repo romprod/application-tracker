@@ -7,17 +7,20 @@ import type { ApplicationLedgerService } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
 import type { UserAdministrationService } from "../application/users.js";
+import type { ReferenceValuesService } from "../application/reference_values.js";
 import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
 import { createApplicationsRouter } from "./applications_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
 import { createMcpStatusRouter } from "./mcp_status_routes.js";
 import { createUsersRouter } from "./users_routes.js";
+import { createReferenceValuesRouter } from "./reference_values_routes.js";
 
 export interface AppOptions {
   applicationsService?: ApplicationLedgerService;
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
   mcpStatusService?: McpStatusService;
+  referenceValuesService?: ReferenceValuesService;
   setupService?: SetupService;
   staticRoot?: string;
   usersService?: UserAdministrationService;
@@ -73,6 +76,16 @@ export function createApp(options: AppOptions = {}): Express {
     app.use(
       "/api/settings/users",
       createUsersRouter(options.authService, options.usersService),
+    );
+  }
+
+  if (options.authService && options.referenceValuesService) {
+    app.use(
+      "/api/settings/lists",
+      createReferenceValuesRouter(
+        options.authService,
+        options.referenceValuesService,
+      ),
     );
   }
 

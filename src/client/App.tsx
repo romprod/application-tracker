@@ -29,9 +29,20 @@ import {
   type ManagedUser,
   type UsersClient,
 } from "./users_client";
+import {
+  browserReferenceValuesClient,
+  ReferenceValuesClientError,
+  type ReferenceCategory,
+  type ReferenceValue,
+  type ReferenceValuesClient,
+} from "./reference_values_client";
 
 type ReadyPage =
-  "applications" | "overview" | "settings-mcp" | "settings-users";
+  | "applications"
+  | "overview"
+  | "settings-lists"
+  | "settings-mcp"
+  | "settings-users";
 
 type AppView =
   | { kind: "loading" }
@@ -51,6 +62,7 @@ interface AppProps {
   applicationsClient?: ApplicationsClient;
   authClient?: AuthClient;
   mcpStatusClient?: McpStatusClient;
+  referenceValuesClient?: ReferenceValuesClient;
   setupClient?: SetupClient;
   usersClient?: UsersClient;
 }
@@ -59,6 +71,7 @@ export function App({
   applicationsClient = browserApplicationsClient,
   authClient = browserAuthClient,
   mcpStatusClient = browserMcpStatusClient,
+  referenceValuesClient = browserReferenceValuesClient,
   setupClient = browserSetupClient,
   usersClient = browserUsersClient,
 }: AppProps) {
@@ -169,9 +182,6 @@ export function App({
       >
         <Sidebar
           activePage={view.kind === "ready" ? view.page : "overview"}
-          canManageUsers={
-            view.kind === "ready" && view.session.user.role === "admin"
-          }
           mode={isSetup ? "setup" : isLogin ? "login" : "workspace"}
           onNavigate={navigate}
           onLogout={view.kind === "ready" ? signOut : undefined}
@@ -220,6 +230,13 @@ export function App({
           )}
         {view.kind === "ready" && view.page === "settings-users" && (
           <UsersSettingsView navigate={navigate} usersClient={usersClient} />
+        )}
+        {view.kind === "ready" && view.page === "settings-lists" && (
+          <ListsSettingsView
+            canManage={view.session.user.role === "admin"}
+            navigate={navigate}
+            referenceValuesClient={referenceValuesClient}
+          />
         )}
         {view.kind === "ready" && view.page === "settings-mcp" && (
           <McpSettingsView
@@ -281,7 +298,6 @@ function Masthead({
 
 function Sidebar({
   activePage,
-  canManageUsers,
   mode,
   onNavigate,
   onLogout,
@@ -289,7 +305,6 @@ function Sidebar({
   signingOut,
 }: {
   activePage: ReadyPage;
-  canManageUsers: boolean;
   mode: "login" | "setup" | "workspace";
   onNavigate: (page: ReadyPage) => void;
   onLogout: (() => void) | undefined;
@@ -388,27 +403,19 @@ function Sidebar({
             </span>
           </li>
           <li>
-            {canManageUsers ? (
-              <button
-                type="button"
-                aria-current={
-                  activePage.startsWith("settings-") ? "page" : undefined
-                }
-                className={
-                  activePage.startsWith("settings-") ? "active-navigation" : ""
-                }
-                onClick={() => onNavigate("settings-users")}
-              >
-                <span aria-hidden="true">04</span>
-                Settings
-              </button>
-            ) : (
-              <span className="future-navigation" aria-disabled="true">
-                <span>04</span>
-                Settings
-                <small>admin</small>
-              </span>
-            )}
+            <button
+              type="button"
+              aria-current={
+                activePage.startsWith("settings-") ? "page" : undefined
+              }
+              className={
+                activePage.startsWith("settings-") ? "active-navigation" : ""
+              }
+              onClick={() => onNavigate("settings-lists")}
+            >
+              <span aria-hidden="true">04</span>
+              Settings
+            </button>
           </li>
         </ul>
       </nav>
@@ -770,35 +777,471 @@ function titleCase(value: string): string {
 
 function SettingsNavigation({
   activePage,
+  canManage,
   navigate,
 }: {
-  activePage: "settings-mcp" | "settings-users";
+  activePage: "settings-lists" | "settings-mcp" | "settings-users";
+  canManage: boolean;
   navigate: (page: ReadyPage) => void;
 }) {
   return (
     <nav className="settings-navigation" aria-label="Settings navigation">
-      <span aria-disabled="true">
-        <small>01</small>
+      <button
+        type="button"
+        aria-current={activePage === "settings-lists" ? "page" : undefined}
+        onClick={() => navigate("settings-lists")}
+      >
+        <small aria-hidden="true">01</small>
         Lists
-        <em>planned</em>
-      </span>
-      <button
-        type="button"
-        aria-current={activePage === "settings-users" ? "page" : undefined}
-        onClick={() => navigate("settings-users")}
-      >
-        <small aria-hidden="true">02</small>
-        Users
       </button>
-      <button
-        type="button"
-        aria-current={activePage === "settings-mcp" ? "page" : undefined}
-        onClick={() => navigate("settings-mcp")}
-      >
-        <small aria-hidden="true">03</small>
-        MCP
-      </button>
+      {canManage ? (
+        <>
+          <button
+            type="button"
+            aria-current={activePage === "settings-users" ? "page" : undefined}
+            onClick={() => navigate("settings-users")}
+          >
+            <small aria-hidden="true">02</small>
+            Users
+          </button>
+          <button
+            type="button"
+            aria-current={activePage === "settings-mcp" ? "page" : undefined}
+            onClick={() => navigate("settings-mcp")}
+          >
+            <small aria-hidden="true">03</small>
+            MCP
+          </button>
+        </>
+      ) : (
+        <>
+          <span aria-disabled="true">
+            <small>02</small>
+            Users
+            <em>admin</em>
+          </span>
+          <span aria-disabled="true">
+            <small>03</small>
+            MCP
+            <em>admin</em>
+          </span>
+        </>
+      )}
     </nav>
+  );
+}
+
+const referenceGroups: ReadonlyArray<{
+  category: ReferenceCategory;
+  description: string;
+  plural: string;
+  singular: string;
+}> = [
+  {
+    category: "status",
+    description: "Stages and completed outcomes for each application.",
+    plural: "Statuses",
+    singular: "status",
+  },
+  {
+    category: "source",
+    description: "Where opportunities and introductions came from.",
+    plural: "Sources",
+    singular: "source",
+  },
+  {
+    category: "role_type",
+    description: "Employment arrangements used to classify roles.",
+    plural: "Role types",
+    singular: "role type",
+  },
+  {
+    category: "document_type",
+    description: "Labels for files that will join the document library.",
+    plural: "Document types",
+    singular: "document type",
+  },
+];
+
+function listsError(error: unknown): string {
+  if (error instanceof ReferenceValuesClientError) {
+    if (error.code === "reference_value_conflict") {
+      return "That label is already present in this list.";
+    }
+    if (error.code === "reference_value_required") {
+      return "Keep at least one active value in each list and one closed status.";
+    }
+  }
+  return "The list could not be changed. Please try again.";
+}
+
+function ListsSettingsView({
+  canManage,
+  navigate,
+  referenceValuesClient,
+}: {
+  canManage: boolean;
+  navigate: (page: ReadyPage) => void;
+  referenceValuesClient: ReferenceValuesClient;
+}) {
+  const [values, setValues] = useState<ReferenceValue[]>();
+  const [loadError, setLoadError] = useState(false);
+  const [drafts, setDrafts] = useState<Record<ReferenceCategory, string>>({
+    document_type: "",
+    role_type: "",
+    source: "",
+    status: "",
+  });
+  const [newStatusTerminal, setNewStatusTerminal] = useState(false);
+  const [editingId, setEditingId] = useState<string>();
+  const [editLabel, setEditLabel] = useState("");
+  const [pendingId, setPendingId] = useState<string>();
+  const [confirmingId, setConfirmingId] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    void referenceValuesClient
+      .listValues()
+      .then((loaded) => {
+        if (active) setValues(loaded);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [referenceValuesClient]);
+
+  function replaceValue(updated: ReferenceValue) {
+    setValues((current) =>
+      current?.map((value) => (value.id === updated.id ? updated : value)),
+    );
+  }
+
+  function createValue(
+    event: FormEvent<HTMLFormElement>,
+    category: ReferenceCategory,
+  ) {
+    event.preventDefault();
+    const label = drafts[category].trim();
+    if (!label || pendingId) return;
+    setError(undefined);
+    setNotice(undefined);
+    setPendingId(`new-${category}`);
+    void referenceValuesClient
+      .createValue({
+        category,
+        isTerminal: category === "status" && newStatusTerminal,
+        label,
+      })
+      .then((created) => {
+        setValues((current) => [...(current ?? []), created]);
+        setDrafts((current) => ({ ...current, [category]: "" }));
+        if (category === "status") setNewStatusTerminal(false);
+        setNotice(
+          `${created.label} was added to ${referenceGroups.find((group) => group.category === category)?.plural.toLowerCase() ?? "the list"}.`,
+        );
+      })
+      .catch((caught: unknown) => setError(listsError(caught)))
+      .finally(() => setPendingId(undefined));
+  }
+
+  function updateValue(
+    value: ReferenceValue,
+    input: { isActive?: boolean; isTerminal?: boolean; label?: string },
+    success: string,
+  ) {
+    if (pendingId) return;
+    setError(undefined);
+    setNotice(undefined);
+    setPendingId(value.id);
+    void referenceValuesClient
+      .updateValue(value.id, input)
+      .then((updated) => {
+        replaceValue(updated);
+        setEditingId(undefined);
+        setNotice(success);
+      })
+      .catch((caught: unknown) => setError(listsError(caught)))
+      .finally(() => setPendingId(undefined));
+  }
+
+  function deleteValue(value: ReferenceValue) {
+    if (pendingId) return;
+    setError(undefined);
+    setNotice(undefined);
+    setPendingId(value.id);
+    void referenceValuesClient
+      .deleteValue(value.id)
+      .then(() => {
+        setValues((current) => current?.filter(({ id }) => id !== value.id));
+        setConfirmingId(undefined);
+        setNotice(`${value.label} was removed.`);
+      })
+      .catch((caught: unknown) => setError(listsError(caught)))
+      .finally(() => setPendingId(undefined));
+  }
+
+  const activeCount = values?.filter(({ isActive }) => isActive).length ?? 0;
+  const terminalCount =
+    values?.filter(
+      ({ category, isActive, isTerminal }) =>
+        category === "status" && isActive && isTerminal,
+    ).length ?? 0;
+
+  return (
+    <main id="main-content" tabIndex={-1} className="settings-main">
+      <section className="settings-hero" aria-labelledby="lists-title">
+        <div>
+          <p className="eyebrow">Settings · Workspace vocabulary</p>
+          <h1 id="lists-title">Lists that fit your search.</h1>
+          <p className="lede">
+            Keep the language around applications consistent without losing the
+            flexibility of your own workflow.
+          </p>
+        </div>
+        <dl className="settings-totals" aria-label="List summary">
+          <div>
+            <dt>Values</dt>
+            <dd>{values?.length ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Active</dt>
+            <dd>{values ? activeCount : "—"}</dd>
+          </div>
+          <div>
+            <dt>Closed</dt>
+            <dd>{values ? terminalCount : "—"}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <SettingsNavigation
+        activePage="settings-lists"
+        canManage={canManage}
+        navigate={navigate}
+      />
+
+      {!canManage && (
+        <p className="settings-notice">
+          Only workspace administrators can change these values.
+        </p>
+      )}
+      {notice && (
+        <p className="settings-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className="settings-error" role="alert">
+          {error}
+        </p>
+      )}
+      {loadError && (
+        <p className="settings-error" role="alert">
+          Lists could not be loaded. Reload the page to try again.
+        </p>
+      )}
+      {!values && !loadError && <p className="mcp-loading">Reading lists…</p>}
+
+      {values && (
+        <div className="lists-workspace">
+          {referenceGroups.map((group, groupIndex) => {
+            const groupValues = values
+              .filter(({ category }) => category === group.category)
+              .sort((left, right) => left.sortOrder - right.sortOrder);
+            return (
+              <section
+                className="reference-group"
+                aria-labelledby={`reference-${group.category}`}
+                key={group.category}
+              >
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">
+                      {String(groupIndex + 1).padStart(2, "0")} · Reference list
+                    </p>
+                    <h2 id={`reference-${group.category}`}>{group.plural}</h2>
+                  </div>
+                  <span>{groupValues.length} total</span>
+                </div>
+                <p className="reference-description">{group.description}</p>
+                <ul className="reference-list">
+                  {groupValues.map((value) => (
+                    <li data-inactive={!value.isActive} key={value.id}>
+                      {editingId === value.id ? (
+                        <form
+                          className="reference-edit-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const label = editLabel.trim();
+                            if (label) {
+                              updateValue(
+                                value,
+                                { label },
+                                `${label} was saved.`,
+                              );
+                            }
+                          }}
+                        >
+                          <label htmlFor={`edit-${value.id}`}>
+                            Edit {group.singular} {value.label}
+                          </label>
+                          <input
+                            autoFocus
+                            id={`edit-${value.id}`}
+                            maxLength={80}
+                            required
+                            value={editLabel}
+                            onChange={(event) =>
+                              setEditLabel(event.target.value)
+                            }
+                          />
+                          <button
+                            type="submit"
+                            disabled={pendingId !== undefined}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(undefined)}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="reference-value-copy">
+                            <strong>{value.label}</strong>
+                            <span>
+                              {value.isActive ? "Active" : "Inactive"}
+                              {value.isTerminal ? " · Closed outcome" : ""}
+                            </span>
+                          </div>
+                          {canManage && confirmingId !== value.id && (
+                            <div className="reference-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(value.id);
+                                  setEditLabel(value.label);
+                                }}
+                                aria-label={`Edit ${value.label}`}
+                              >
+                                Edit
+                              </button>
+                              {group.category === "status" && (
+                                <button
+                                  type="button"
+                                  disabled={pendingId !== undefined}
+                                  onClick={() =>
+                                    updateValue(
+                                      value,
+                                      { isTerminal: !value.isTerminal },
+                                      `${value.label} outcome behavior was updated.`,
+                                    )
+                                  }
+                                  aria-label={`${value.isTerminal ? "Mark" : "Treat"} ${value.label} ${value.isTerminal ? "as open" : "as closed"}`}
+                                >
+                                  {value.isTerminal ? "Open" : "Closed"}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={pendingId !== undefined}
+                                onClick={() =>
+                                  updateValue(
+                                    value,
+                                    { isActive: !value.isActive },
+                                    `${value.label} is now ${value.isActive ? "inactive" : "active"}.`,
+                                  )
+                                }
+                                aria-label={`${value.isActive ? "Disable" : "Enable"} ${value.label}`}
+                              >
+                                {value.isActive ? "Disable" : "Enable"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingId(value.id)}
+                                aria-label={`Remove ${value.label}`}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                          {canManage && confirmingId === value.id && (
+                            <div className="reference-confirmation">
+                              <span>Remove this value?</span>
+                              <button
+                                type="button"
+                                disabled={pendingId !== undefined}
+                                onClick={() => deleteValue(value)}
+                                aria-label={`Confirm remove ${value.label}`}
+                              >
+                                Remove
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingId(undefined)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {canManage && (
+                  <form
+                    className="reference-add-form"
+                    onSubmit={(event) => createValue(event, group.category)}
+                  >
+                    <label htmlFor={`new-${group.category}`}>
+                      New {group.singular}
+                    </label>
+                    <div>
+                      <input
+                        id={`new-${group.category}`}
+                        maxLength={80}
+                        required
+                        value={drafts[group.category]}
+                        onChange={(event) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [group.category]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button type="submit" disabled={pendingId !== undefined}>
+                        Add {group.singular}
+                      </button>
+                    </div>
+                    {group.category === "status" && (
+                      <label className="reference-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={newStatusTerminal}
+                          onChange={(event) =>
+                            setNewStatusTerminal(event.target.checked)
+                          }
+                        />
+                        Treat as a closed outcome
+                      </label>
+                    )}
+                  </form>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </main>
   );
 }
 
@@ -919,7 +1362,11 @@ function UsersSettingsView({
         </dl>
       </section>
 
-      <SettingsNavigation activePage="settings-users" navigate={navigate} />
+      <SettingsNavigation
+        activePage="settings-users"
+        canManage
+        navigate={navigate}
+      />
 
       {notice && (
         <div className="settings-notice" role="status">
@@ -1153,7 +1600,11 @@ function McpSettingsView({
         </dl>
       </section>
 
-      <SettingsNavigation activePage="settings-mcp" navigate={navigate} />
+      <SettingsNavigation
+        activePage="settings-mcp"
+        canManage
+        navigate={navigate}
+      />
 
       {loadError && (
         <div className="settings-error" role="alert">

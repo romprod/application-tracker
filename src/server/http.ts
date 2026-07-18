@@ -7,6 +7,7 @@ import { ApplicationLedgerService } from "../application/applications.js";
 import { SetupService } from "../application/setup.js";
 import { McpStatusService } from "../application/mcp_status.js";
 import { UserAdministrationService } from "../application/users.js";
+import { ReferenceValuesService } from "../application/reference_values.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
@@ -15,6 +16,7 @@ import { SqliteApplicationsRepository } from "../infrastructure/database/applica
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
+import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 
@@ -52,6 +54,9 @@ const usersService = new UserAdministrationService(
   new SqliteUsersRepository(database),
   passwordHasher,
 );
+const referenceValuesService = new ReferenceValuesService(
+  new SqliteReferenceValuesRepository(database),
+);
 const mcpStatusService = new McpStatusService(config.mcp.session);
 const staticRoot =
   config.nodeEnv === "production"
@@ -65,6 +70,7 @@ const app = createApp({
   },
   authService,
   mcpStatusService,
+  referenceValuesService,
   setupService,
   usersService,
   ...(staticRoot ? { staticRoot } : {}),
