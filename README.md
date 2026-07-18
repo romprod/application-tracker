@@ -48,11 +48,12 @@ health endpoint, a responsive application shell, a migration-backed workspace
 identity schema, closed administrator setup, local browser login and logout,
 revocable sessions, administrator-managed local users, a Settings shell,
 an administrator-only sanitized MCP status page, and a workspace-scoped
-application intake and ledger. It supports application creation and listing but
-also supports field editing and an immutable timeline for creation and stage
-changes. It does not yet support deletion, search, follow-up actions, contacts,
-or outcomes. It also does not run an MCP server. Automated tests and CI cover
-each completed boundary.
+application workspace. The responsive interface includes a metrics dashboard,
+searchable and sortable application table, modal intake and editing, a detail
+drawer, and an immutable timeline for creation and stage changes. It does not
+yet support deletion, follow-up actions, contacts, documents, or outcomes. It
+also does not run an MCP server. Automated tests and CI cover each completed
+boundary.
 
 ## Run the foundation
 

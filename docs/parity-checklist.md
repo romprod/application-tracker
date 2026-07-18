@@ -22,10 +22,11 @@ tests and user documentation.
 
 - [x] Workspace-scoped application creation and chronological listing
 - [x] Application field updates
-- [ ] Application deletion, search, and sorting controls
+- [ ] Application deletion
+- [x] Application search, filtering, and sorting controls
 - [x] Creation and built-in status transition timeline events
 - [ ] Contacts, additional links, and next actions
-- [ ] Dashboard metrics scoped to the active workspace
+- [x] Dashboard metrics scoped to the active workspace
 - [ ] Configurable statuses, sources, role types, and document types
 
 ## Documents
@@ -46,7 +47,7 @@ tests and user documentation.
 
 ## Release
 
-- [ ] Responsive and keyboard-accessible interface
+- [x] Responsive and keyboard-accessible interface
 - [ ] Complete local and container deployment documentation
 - [ ] Database migration and rollback rehearsal
 - [ ] Dependency, security, and public-content audits

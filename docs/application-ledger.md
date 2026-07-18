@@ -22,10 +22,23 @@ The built-in stages provide a small working workflow. A member can move a
 record directly between them. Configurable stages and transition rules belong
 to the Lists milestone; the current ledger does not claim that capability.
 
-## Editing and stage history
+## Workspace interface
 
-The Edit control opens the selected record in the ledger form. Saving updates
-the record's current fields and update time. Optional fields can be cleared.
+The dashboard derives total, open, stage, and closed counts from the active
+workspace's application records. The Applications page provides text search,
+stage and location filters, and accessible sorting for every displayed data
+column. Its compact table pattern is reused for recent dashboard records.
+
+Selecting a row opens a detail drawer. The drawer presents the current record,
+source link, notes, and stage history without navigating away from the table.
+Application intake and editing use a modal form. Saving updates the record's
+current fields and update time; optional fields can be cleared.
+
+The table, drawer, and modal are keyboard operable. Sort buttons expose
+`aria-sort`, rows open with Enter or Space, Escape closes overlays, and focus is
+contained and restored while a dialog is open.
+
+## Stage history
 
 Each application has an immutable timeline with two event types:
 
@@ -71,5 +84,5 @@ indexes for ledger and timeline reads.
 
 ## Deferred behavior
 
-Deletion, search, sorting controls, configurable transition rules, contacts,
-follow-up actions, and outcomes remain unchecked in the capability checklist.
+Deletion, configurable transition rules, contacts, follow-up actions, and
+outcomes remain unchecked in the capability checklist.

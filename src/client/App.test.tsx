@@ -218,7 +218,7 @@ describe("application shell", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Your search, kept in order.",
+        name: "Your search, at a glance.",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Alex Example")).toBeInTheDocument();
@@ -245,11 +245,19 @@ describe("application shell", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Application ledger." }),
+      await screen.findByRole("heading", { name: "Applications" }),
     ).toBeInTheDocument();
     expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("table", { name: "Applications" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Example Studio")).toBeInTheDocument();
     expect(screen.getByText("Product Designer")).toBeInTheDocument();
+    const companySort = screen.getByRole("button", {
+      name: /Company \/ role, not sorted/,
+    });
+    fireEvent.click(companySort);
+    expect(companySort.closest("th")).toHaveAttribute("aria-sort", "ascending");
   });
 
   it("adds an application and clears the intake form", async () => {
@@ -268,14 +276,15 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    await screen.findByRole("heading", { name: "Add an application" });
+    fireEvent.click(screen.getByRole("button", { name: "Log application" }));
+    await screen.findByRole("heading", { name: "Log an application" });
     fireEvent.change(screen.getByLabelText("Company"), {
       target: { value: "Example Studio" },
     });
     fireEvent.change(screen.getByLabelText("Role title"), {
       target: { value: "Product Designer" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add application" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save application" }));
 
     await waitFor(() =>
       expect(applicationsClient.createApplication).toHaveBeenCalledWith({
@@ -285,8 +294,9 @@ describe("application shell", () => {
       }),
     );
     expect(await screen.findByText("Example Studio")).toBeInTheDocument();
-    expect(screen.getByLabelText("Company")).toHaveValue("");
-    expect(screen.getByLabelText("Role title")).toHaveValue("");
+    expect(
+      screen.queryByRole("dialog", { name: "Log an application" }),
+    ).not.toBeInTheDocument();
   });
 
   it("edits an application and records a stage change", async () => {
@@ -306,8 +316,10 @@ describe("application shell", () => {
       await screen.findByRole("button", { name: "Applications" }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: "Edit Example Studio" }),
+      await screen.findByRole("button", { name: "Open Example Studio" }),
     );
+    await screen.findByRole("dialog", { name: "Product Designer" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit application" }));
     expect(
       screen.getByRole("heading", { name: "Edit application" }),
     ).toBeInTheDocument();
@@ -332,8 +344,10 @@ describe("application shell", () => {
       ),
     );
     expect(
-      await screen.findByText("Interview", { selector: "span[data-stage]" }),
-    ).toBeInTheDocument();
+      await screen.findAllByText("Interview", {
+        selector: "span[data-status]",
+      }),
+    ).not.toHaveLength(0);
     expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
   });
 
@@ -354,9 +368,7 @@ describe("application shell", () => {
       await screen.findByRole("button", { name: "Applications" }),
     );
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Show history for Example Studio",
-      }),
+      await screen.findByRole("button", { name: "Open Example Studio" }),
     );
 
     await waitFor(() =>
@@ -366,7 +378,18 @@ describe("application shell", () => {
     );
     expect(await screen.findByText("Applied → Interview")).toBeInTheDocument();
     expect(screen.getByText("Application created")).toBeInTheDocument();
-    expect(screen.getAllByText("Alex Example")).toHaveLength(3);
+    expect(screen.getAllByText("Alex Example").length).toBeGreaterThanOrEqual(
+      2,
+    );
+    fireEvent.keyDown(
+      screen.getByRole("dialog", { name: "Product Designer" }),
+      {
+        key: "Escape",
+      },
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Product Designer" }),
+    ).not.toBeInTheDocument();
   });
 
   it("signs in with local credentials", async () => {
@@ -398,7 +421,7 @@ describe("application shell", () => {
     });
     expect(
       await screen.findByRole("heading", {
-        name: "Your search, kept in order.",
+        name: "Your search, at a glance.",
       }),
     ).toBeInTheDocument();
     expect(

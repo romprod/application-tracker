@@ -8,14 +8,9 @@ import {
 } from "./auth_client";
 import {
   browserApplicationsClient,
-  ApplicationsClientError,
-  type ApplicationEvent,
-  type ApplicationRecord,
   type ApplicationsClient,
-  type ApplicationStatus,
-  type CreateApplicationInput,
-  type UpdateApplicationInput,
 } from "./applications_client";
+import { ApplicationWorkspace } from "./application_workspace";
 import {
   browserMcpStatusClient,
   type McpStatus,
@@ -34,24 +29,6 @@ import {
   type ManagedUser,
   type UsersClient,
 } from "./users_client";
-
-const buildSteps = [
-  {
-    label: "Foundation",
-    status: "Ready",
-    summary: "Typed runtime, accessible shell, and automated quality gates.",
-  },
-  {
-    label: "Identity",
-    status: "Ready",
-    summary: "Closed administrator setup and revocable local sessions.",
-  },
-  {
-    label: "Application ledger",
-    status: "Active",
-    summary: "Workspace-scoped application intake and review.",
-  },
-] as const;
 
 type ReadyPage =
   "applications" | "overview" | "settings-mcp" | "settings-users";
@@ -174,13 +151,19 @@ export function App({
   const session = view.kind === "ready" ? view.session : undefined;
 
   return (
-    <div className="app-shell">
-      <Masthead
-        onLogout={view.kind === "ready" ? signOut : undefined}
-        session={session}
-        signingOut={view.kind === "ready" && view.signingOut}
-        statusLabel={statusLabel}
-      />
+    <div
+      className={`app-shell${
+        view.kind === "ready" ? " workspace-app-shell" : ""
+      }`}
+    >
+      {view.kind !== "ready" && (
+        <Masthead
+          onLogout={undefined}
+          session={session}
+          signingOut={false}
+          statusLabel={statusLabel}
+        />
+      )}
       <div
         className={`workspace-frame${isSetup || isLogin ? " identity-frame" : ""}`}
       >
@@ -191,6 +174,9 @@ export function App({
           }
           mode={isSetup ? "setup" : isLogin ? "login" : "workspace"}
           onNavigate={navigate}
+          onLogout={view.kind === "ready" ? signOut : undefined}
+          session={session}
+          signingOut={view.kind === "ready" && view.signingOut}
         />
         {view.kind === "loading" && <LoadingView />}
         {view.kind === "error" && <StatusErrorView />}
@@ -221,16 +207,17 @@ export function App({
             {...(view.notice ? { notice: view.notice } : {})}
           />
         )}
-        {view.kind === "ready" && view.page === "overview" && (
-          <Overview
-            session={view.session}
-            {...(view.logoutError ? { error: view.logoutError } : {})}
-            {...(view.notice ? { notice: view.notice } : {})}
-          />
-        )}
-        {view.kind === "ready" && view.page === "applications" && (
-          <ApplicationsView applicationsClient={applicationsClient} />
-        )}
+        {view.kind === "ready" &&
+          (view.page === "overview" || view.page === "applications") && (
+            <ApplicationWorkspace
+              applicationsClient={applicationsClient}
+              page={view.page}
+              session={view.session}
+              navigate={navigate}
+              {...(view.logoutError ? { error: view.logoutError } : {})}
+              {...(view.notice ? { notice: view.notice } : {})}
+            />
+          )}
         {view.kind === "ready" && view.page === "settings-users" && (
           <UsersSettingsView navigate={navigate} usersClient={usersClient} />
         )}
@@ -297,11 +284,17 @@ function Sidebar({
   canManageUsers,
   mode,
   onNavigate,
+  onLogout,
+  session,
+  signingOut,
 }: {
   activePage: ReadyPage;
   canManageUsers: boolean;
   mode: "login" | "setup" | "workspace";
   onNavigate: (page: ReadyPage) => void;
+  onLogout: (() => void) | undefined;
+  session: AuthenticatedSession | undefined;
+  signingOut: boolean;
 }) {
   if (mode !== "workspace") {
     return (
@@ -353,8 +346,14 @@ function Sidebar({
   }
 
   return (
-    <aside className="sidebar">
-      <p className="sidebar-label">Workspace</p>
+    <aside className="sidebar workspace-sidebar">
+      <div className="workspace-brand" aria-label="Application Tracker">
+        <span aria-hidden="true">AT</span>
+        <div>
+          <strong>Application Tracker</strong>
+          <small>{session?.workspace.name ?? "Workspace"}</small>
+        </div>
+      </div>
       <nav aria-label="Primary navigation">
         <ul>
           <li>
@@ -365,7 +364,7 @@ function Sidebar({
               onClick={() => onNavigate("overview")}
             >
               <span aria-hidden="true">01</span>
-              Overview
+              Dashboard
             </button>
           </li>
           <li>
@@ -413,10 +412,21 @@ function Sidebar({
           </li>
         </ul>
       </nav>
-      <p className="privacy-note">
-        <span aria-hidden="true">●</span>
-        Local by default
-      </p>
+      <div className="workspace-account">
+        <span className="live-dot" aria-hidden="true" />
+        <div>
+          <strong>{session?.user.displayName}</strong>
+          <small>{session?.user.role} · local account</small>
+        </div>
+      </div>
+      <button
+        className="workspace-sign-out"
+        type="button"
+        disabled={signingOut}
+        onClick={onLogout}
+      >
+        {signingOut ? "Signing out…" : "Sign out"}
+      </button>
     </aside>
   );
 }
@@ -743,535 +753,6 @@ function SetupView({
           </button>
         </div>
       </form>
-    </main>
-  );
-}
-
-interface ApplicationFormState {
-  appliedOn: string;
-  companyName: string;
-  location: string;
-  notes: string;
-  roleTitle: string;
-  sourceUrl: string;
-  status: ApplicationStatus;
-}
-
-const emptyApplicationForm: ApplicationFormState = {
-  appliedOn: "",
-  companyName: "",
-  location: "",
-  notes: "",
-  roleTitle: "",
-  sourceUrl: "",
-  status: "prospect",
-};
-
-type ApplicationTextField = Exclude<keyof ApplicationFormState, "status">;
-
-function applicationInput(form: ApplicationFormState): CreateApplicationInput {
-  const appliedOn = form.appliedOn.trim();
-  const location = form.location.trim();
-  const notes = form.notes.trim();
-  const sourceUrl = form.sourceUrl.trim();
-  return {
-    companyName: form.companyName.trim(),
-    roleTitle: form.roleTitle.trim(),
-    status: form.status,
-    ...(appliedOn ? { appliedOn } : {}),
-    ...(location ? { location } : {}),
-    ...(notes ? { notes } : {}),
-    ...(sourceUrl ? { sourceUrl } : {}),
-  };
-}
-
-function applicationUpdateInput(
-  form: ApplicationFormState,
-): UpdateApplicationInput {
-  return {
-    appliedOn: form.appliedOn.trim() || null,
-    companyName: form.companyName.trim(),
-    location: form.location.trim() || null,
-    notes: form.notes.trim() || null,
-    roleTitle: form.roleTitle.trim(),
-    sourceUrl: form.sourceUrl.trim() || null,
-    status: form.status,
-  };
-}
-
-function applicationForm(application: ApplicationRecord): ApplicationFormState {
-  return {
-    appliedOn: application.appliedOn ?? "",
-    companyName: application.companyName,
-    location: application.location ?? "",
-    notes: application.notes ?? "",
-    roleTitle: application.roleTitle,
-    sourceUrl: application.sourceUrl ?? "",
-    status: application.status,
-  };
-}
-
-function eventHeading(event: ApplicationEvent): string {
-  return event.type === "application_created"
-    ? "Application created"
-    : `${titleCase(event.fromStatus ?? "")} → ${titleCase(event.toStatus)}`;
-}
-
-function eventDetail(event: ApplicationEvent): string {
-  return event.type === "application_created"
-    ? `Filed in ${titleCase(event.toStatus)}`
-    : "Stage changed";
-}
-
-function ApplicationsView({
-  applicationsClient,
-}: {
-  applicationsClient: ApplicationsClient;
-}) {
-  const [applications, setApplications] = useState<ApplicationRecord[]>();
-  const [loadError, setLoadError] = useState(false);
-  const [form, setForm] = useState<ApplicationFormState>(emptyApplicationForm);
-  const [formError, setFormError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
-  const [submitting, setSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState<string>();
-  const [openHistoryId, setOpenHistoryId] = useState<string>();
-  const [historyLoadingId, setHistoryLoadingId] = useState<string>();
-  const [historyErrorId, setHistoryErrorId] = useState<string>();
-  const [eventsByApplication, setEventsByApplication] = useState<
-    Record<string, ApplicationEvent[]>
-  >({});
-
-  useEffect(() => {
-    let active = true;
-    void applicationsClient
-      .listApplications()
-      .then((loaded) => {
-        if (active) setApplications(loaded);
-      })
-      .catch(() => {
-        if (active) setLoadError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [applicationsClient]);
-
-  function updateText(field: ApplicationTextField, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function loadHistory(applicationId: string) {
-    setHistoryLoadingId(applicationId);
-    setHistoryErrorId(undefined);
-    void applicationsClient
-      .listApplicationEvents(applicationId)
-      .then((events) => {
-        setEventsByApplication((current) => ({
-          ...current,
-          [applicationId]: events,
-        }));
-        setHistoryLoadingId(undefined);
-      })
-      .catch(() => {
-        setHistoryErrorId(applicationId);
-        setHistoryLoadingId(undefined);
-      });
-  }
-
-  function toggleHistory(applicationId: string) {
-    if (openHistoryId === applicationId) {
-      setOpenHistoryId(undefined);
-      return;
-    }
-    setOpenHistoryId(applicationId);
-    if (!(applicationId in eventsByApplication)) loadHistory(applicationId);
-  }
-
-  function beginEdit(application: ApplicationRecord) {
-    setEditingId(application.id);
-    setForm(applicationForm(application));
-    setFormError(undefined);
-    setNotice(undefined);
-  }
-
-  function cancelEdit() {
-    setEditingId(undefined);
-    setForm(emptyApplicationForm);
-    setFormError(undefined);
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setFormError(undefined);
-    setNotice(undefined);
-    const operation = editingId
-      ? applicationsClient.updateApplication(
-          editingId,
-          applicationUpdateInput(form),
-        )
-      : applicationsClient.createApplication(applicationInput(form));
-    void operation
-      .then((saved) => {
-        setApplications((current) =>
-          editingId
-            ? [saved, ...(current ?? []).filter(({ id }) => id !== saved.id)]
-            : [saved, ...(current ?? [])],
-        );
-        setForm(emptyApplicationForm);
-        setNotice(
-          editingId
-            ? `${saved.companyName} was updated.`
-            : `${saved.companyName} was added to the ledger.`,
-        );
-        if (editingId && editingId in eventsByApplication) {
-          loadHistory(editingId);
-        }
-        setEditingId(undefined);
-        setSubmitting(false);
-      })
-      .catch((caught: unknown) => {
-        const action = editingId ? "updated" : "added";
-        setFormError(
-          caught instanceof ApplicationsClientError &&
-            caught.code === "validation_error"
-            ? "Review the application details and try again."
-            : `The application could not be ${action}. Please try again.`,
-        );
-        setSubmitting(false);
-      });
-  }
-
-  const openCount = applications?.filter(
-    (application) => application.status !== "closed",
-  ).length;
-  const interviewCount = applications?.filter(
-    (application) => application.status === "interview",
-  ).length;
-
-  return (
-    <main id="main-content" tabIndex={-1} className="applications-main">
-      <section
-        className="application-hero"
-        aria-labelledby="applications-title"
-      >
-        <div>
-          <p className="eyebrow">Workspace · Application records</p>
-          <h1 id="applications-title">Application ledger.</h1>
-          <p className="lede">
-            Keep every opportunity current. Creation and stage changes form a
-            permanent timeline; actions and outcomes follow in later chapters.
-          </p>
-        </div>
-        <dl className="application-totals" aria-label="Application summary">
-          <div>
-            <dt>Records</dt>
-            <dd>{applications?.length ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Open</dt>
-            <dd>{openCount ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Interviews</dt>
-            <dd>{interviewCount ?? "—"}</dd>
-          </div>
-        </dl>
-      </section>
-
-      {notice && (
-        <div className="ledger-notice" role="status">
-          {notice}
-        </div>
-      )}
-
-      <div className="application-workspace">
-        <section
-          className="application-register"
-          aria-labelledby="register-title"
-        >
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Opportunity register</p>
-              <h2 id="register-title">Current records</h2>
-            </div>
-            <span>{applications?.length ?? 0} filed</span>
-          </div>
-
-          {!applications && !loadError && (
-            <p className="panel-state">Opening the ledger…</p>
-          )}
-          {loadError && (
-            <p className="form-error" role="alert">
-              Applications could not be loaded. Reload the page to try again.
-            </p>
-          )}
-          {applications?.length === 0 && (
-            <div className="empty-ledger">
-              <span aria-hidden="true">00</span>
-              <div>
-                <h3>The ledger is empty.</h3>
-                <p>Add the first opportunity with the intake form.</p>
-              </div>
-            </div>
-          )}
-          {applications && applications.length > 0 && (
-            <ol className="application-list">
-              {applications.map((application, index) => (
-                <li key={application.id}>
-                  <span className="application-index" aria-hidden="true">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <article>
-                    <header>
-                      <div>
-                        <h3>{application.companyName}</h3>
-                        <p>{application.roleTitle}</p>
-                      </div>
-                      <span data-stage={application.status}>
-                        {titleCase(application.status)}
-                      </span>
-                    </header>
-                    <dl className="application-details">
-                      <div>
-                        <dt>Location</dt>
-                        <dd>{application.location ?? "Not recorded"}</dd>
-                      </div>
-                      <div>
-                        <dt>Applied</dt>
-                        <dd>{application.appliedOn ?? "Not recorded"}</dd>
-                      </div>
-                      <div>
-                        <dt>Listing</dt>
-                        <dd>
-                          {application.sourceUrl ? (
-                            <a
-                              href={application.sourceUrl}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              Open source
-                            </a>
-                          ) : (
-                            "Not recorded"
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                    {application.notes && (
-                      <p className="application-notes">{application.notes}</p>
-                    )}
-                    <div className="application-record-actions">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${application.companyName}`}
-                        aria-pressed={editingId === application.id}
-                        onClick={() => beginEdit(application)}
-                      >
-                        <span aria-hidden="true">✎</span>
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`${
-                          openHistoryId === application.id ? "Hide" : "Show"
-                        } history for ${application.companyName}`}
-                        aria-controls={`application-history-${application.id}`}
-                        aria-expanded={openHistoryId === application.id}
-                        onClick={() => toggleHistory(application.id)}
-                      >
-                        <span aria-hidden="true">↳</span>
-                        History
-                      </button>
-                    </div>
-                    {openHistoryId === application.id && (
-                      <section
-                        className="application-history"
-                        id={`application-history-${application.id}`}
-                        aria-label={`History for ${application.companyName}`}
-                      >
-                        <div className="application-history-heading">
-                          <p>Stage history</p>
-                          <span>Newest first</span>
-                        </div>
-                        {historyLoadingId === application.id && (
-                          <p className="history-state">Opening history…</p>
-                        )}
-                        {historyErrorId === application.id && (
-                          <p className="history-error" role="alert">
-                            History could not be loaded. Try again.
-                          </p>
-                        )}
-                        {eventsByApplication[application.id] && (
-                          <ol className="application-timeline">
-                            {eventsByApplication[application.id]?.map(
-                              (event) => (
-                                <li key={event.id}>
-                                  <div>
-                                    <strong>{eventHeading(event)}</strong>
-                                    <span>{eventDetail(event)}</span>
-                                  </div>
-                                  <p>
-                                    <span>{event.actorDisplayName}</span>
-                                    <time dateTime={event.occurredAt}>
-                                      {new Date(
-                                        event.occurredAt,
-                                      ).toLocaleString()}
-                                    </time>
-                                  </p>
-                                </li>
-                              ),
-                            )}
-                          </ol>
-                        )}
-                      </section>
-                    )}
-                  </article>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <form
-          className="application-intake"
-          aria-labelledby="application-intake-title"
-          onSubmit={submit}
-        >
-          <div className="panel-heading intake-heading">
-            <div>
-              <p className="eyebrow">
-                {editingId ? "Revise opportunity" : "New opportunity"}
-              </p>
-              <h2 id="application-intake-title">
-                {editingId ? "Edit application" : "Add an application"}
-              </h2>
-            </div>
-            <span className="index-number">{editingId ? "↻" : "+"}</span>
-          </div>
-          <div className="field">
-            <label htmlFor="application-company">Company</label>
-            <input
-              autoComplete="organization"
-              id="application-company"
-              maxLength={160}
-              required
-              value={form.companyName}
-              onChange={(event) =>
-                updateText("companyName", event.target.value)
-              }
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="application-role">Role title</label>
-            <input
-              autoComplete="off"
-              id="application-role"
-              maxLength={160}
-              required
-              value={form.roleTitle}
-              onChange={(event) => updateText("roleTitle", event.target.value)}
-            />
-          </div>
-          <div className="intake-pair">
-            <div className="field">
-              <label htmlFor="application-status">Stage</label>
-              <select
-                id="application-status"
-                value={form.status}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    status: event.target.value as ApplicationStatus,
-                  }))
-                }
-              >
-                <option value="prospect">Prospect</option>
-                <option value="applied">Applied</option>
-                <option value="interview">Interview</option>
-                <option value="offer">Offer</option>
-                <option value="closed">Closed</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="application-date">Applied date</label>
-              <input
-                id="application-date"
-                type="date"
-                value={form.appliedOn}
-                onChange={(event) =>
-                  updateText("appliedOn", event.target.value)
-                }
-              />
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="application-location">Location</label>
-            <input
-              autoComplete="off"
-              id="application-location"
-              maxLength={160}
-              value={form.location}
-              onChange={(event) => updateText("location", event.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="application-source">Source link</label>
-            <input
-              autoComplete="url"
-              id="application-source"
-              maxLength={2048}
-              type="url"
-              value={form.sourceUrl}
-              onChange={(event) => updateText("sourceUrl", event.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="application-notes">Notes</label>
-            <textarea
-              id="application-notes"
-              maxLength={5000}
-              rows={4}
-              value={form.notes}
-              onChange={(event) => updateText("notes", event.target.value)}
-            />
-          </div>
-          {formError && (
-            <p className="form-error" role="alert">
-              {formError}
-            </p>
-          )}
-          <div className="application-intake-actions">
-            <p>
-              {editingId
-                ? "A new stage adds a timeline entry. Other edits update the record only."
-                : "Creation and later stage changes appear in history."}
-            </p>
-            <div className="application-intake-buttons">
-              {editingId && (
-                <button
-                  className="secondary-action"
-                  type="button"
-                  disabled={submitting}
-                  onClick={cancelEdit}
-                >
-                  Cancel edit
-                </button>
-              )}
-              <button type="submit" disabled={submitting}>
-                {submitting
-                  ? editingId
-                    ? "Saving…"
-                    : "Adding…"
-                  : editingId
-                    ? "Save changes"
-                    : "Add application"}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
     </main>
   );
 }
@@ -1781,86 +1262,6 @@ function McpSettingsView({
           </aside>
         </div>
       )}
-    </main>
-  );
-}
-
-function Overview({
-  error,
-  notice,
-  session,
-}: {
-  error?: string;
-  notice?: string;
-  session: AuthenticatedSession;
-}) {
-  return (
-    <main id="main-content" tabIndex={-1}>
-      {notice && (
-        <div className="success-notice" role="status">
-          {notice}
-        </div>
-      )}
-      {error && (
-        <div className="error-notice" role="alert">
-          {error}
-        </div>
-      )}
-      <section className="hero" aria-labelledby="page-title">
-        <div className="hero-copy">
-          <p className="eyebrow">
-            {session.workspace.name} · Application ledger · Build 007
-          </p>
-          <h1 id="page-title">Your search, kept in order.</h1>
-          <p className="lede">
-            A calm, self-hosted record for every application, conversation,
-            document, decision, and next move.
-          </p>
-        </div>
-        <div className="index-card" aria-label="Foundation summary">
-          <span className="index-number">03</span>
-          <div>
-            <p>Current chapter</p>
-            <strong>Application ledger</strong>
-            <span>Workspace-scoped intake and records are ready.</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="build-sequence" aria-labelledby="sequence-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Reconstruction sequence</p>
-            <h2 id="sequence-title">Built in inspectable layers</h2>
-          </div>
-          <p>
-            Each stage remains buildable, tested, and free from private
-            deployment details.
-          </p>
-        </div>
-
-        <ol className="sequence-list">
-          {buildSteps.map((step, index) => (
-            <li key={step.label} data-state={step.status.toLowerCase()}>
-              <span className="sequence-number">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <div className="sequence-copy">
-                <div>
-                  <h3>{step.label}</h3>
-                  <span className="step-status">{step.status}</span>
-                </div>
-                <p>{step.summary}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <footer className="page-footer">
-        <p>Designed for one private workspace. Ready to grow deliberately.</p>
-        <span>Application Tracker / Ledger</span>
-      </footer>
     </main>
   );
 }
