@@ -12,7 +12,7 @@ tests and user documentation.
 
 ## Identity and administration
 
-- [ ] Closed first-run setup with one-time administrator creation
+- [x] Closed first-run setup with one-time administrator creation
 - [ ] Local login, logout, session rotation, expiry, and revocation
 - [ ] Administrator and member workspace roles
 - [ ] Optional OpenID Connect login and identity linking

@@ -23,9 +23,8 @@ the token to another person.
 
 ## Create the administrator
 
-The browser setup screen is not implemented yet. During this reconstruction
-stage, a trusted API client may send JSON to `POST /api/setup` with these
-fields:
+Open Application Tracker in a browser after restarting with the token. The
+first-run screen collects these fields:
 
 | Field           | Requirement                                             |
 | --------------- | ------------------------------------------------------- |
@@ -39,11 +38,15 @@ The operation hashes the password with a uniquely salted scrypt hash and
 creates the workspace, local credential, administrator membership, and setup
 completion marker in one database transaction.
 
+The browser keeps the password and token only in the live form state. It does
+not place them in a URL, browser storage, or application log, and it removes
+the form from memory after setup succeeds.
+
 After a successful response, remove `SETUP_TOKEN` from the environment and
 restart the service. The database completion marker permanently closes setup,
 so retaining or later restoring the same token cannot create another
 administrator.
 
 Local login and the Settings user-management screen are separate upcoming
-features. Until login is implemented, creating the administrator does not make
-the application ready for production use.
+features. Until login is implemented, completing setup does not make the
+application ready for production use.

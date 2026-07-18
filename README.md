@@ -59,9 +59,9 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. The development server forwards API requests to
-the backend on port 3333. Creating the first administrator currently uses the
-documented [`closed setup API`](docs/initial-setup.md); its browser screen is
-the next identity milestone.
+the backend on port 3333. A new database opens the documented
+[`closed first-run setup`](docs/initial-setup.md) before exposing the application
+shell.
 
 To exercise the production build locally:
 
