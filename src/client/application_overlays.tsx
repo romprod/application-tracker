@@ -161,6 +161,7 @@ export function ApplicationDrawer({
   eventsError,
   eventsLoading,
   onClose,
+  onDelete,
   onEdit,
 }: {
   application: ApplicationRecord;
@@ -168,6 +169,7 @@ export function ApplicationDrawer({
   eventsError: boolean;
   eventsLoading: boolean;
   onClose: () => void;
+  onDelete: () => void;
   onEdit: () => void;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
@@ -198,6 +200,13 @@ export function ApplicationDrawer({
               onClick={onEdit}
             >
               Edit application
+            </button>
+            <button
+              className="tracker-button tracker-button-danger"
+              type="button"
+              onClick={onDelete}
+            >
+              Delete application
             </button>
             <button
               className="tracker-drawer-close"
@@ -302,6 +311,85 @@ export function ApplicationDrawer({
           </section>
         </div>
       </aside>
+    </div>
+  );
+}
+
+export function DeleteApplicationDialog({
+  application,
+  deleting,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  application: ApplicationRecord;
+  deleting: boolean;
+  error: string | undefined;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, ".tracker-delete-cancel");
+  const title = `Remove ${application.companyName}?`;
+
+  return (
+    <div
+      className="tracker-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        aria-busy={deleting}
+        aria-describedby="application-delete-description"
+        aria-labelledby="application-delete-title"
+        aria-modal="true"
+        className="tracker-modal tracker-confirm-modal"
+        onKeyDown={(event) => handleDialogKeyDown(event, onClose)}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header className="tracker-modal-header">
+          <div>
+            <span className="eyebrow">Remove record</span>
+            <h2 id="application-delete-title">{title}</h2>
+          </div>
+        </header>
+        <div className="tracker-confirm-content">
+          <span aria-hidden="true">×</span>
+          <p id="application-delete-description">
+            This removes {application.roleTitle} from the workspace. Its audit
+            history remains stored.
+          </p>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <footer className="tracker-modal-footer">
+          <p>You cannot restore the record from the application.</p>
+          <div>
+            <button
+              className="tracker-button tracker-button-quiet tracker-delete-cancel"
+              disabled={deleting}
+              onClick={onClose}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="tracker-button tracker-button-danger-solid"
+              disabled={deleting}
+              onClick={onConfirm}
+              type="button"
+            >
+              {deleting ? "Removing…" : "Remove application"}
+            </button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }

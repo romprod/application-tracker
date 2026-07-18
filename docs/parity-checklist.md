@@ -22,7 +22,7 @@ tests and user documentation.
 
 - [x] Workspace-scoped application creation and chronological listing
 - [x] Application field updates
-- [ ] Application deletion
+- [x] Audited application deletion
 - [x] Application search, filtering, and sorting controls
 - [x] Creation and built-in status transition timeline events
 - [x] Current next action and optional due date

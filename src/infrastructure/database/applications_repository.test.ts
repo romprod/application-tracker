@@ -124,7 +124,7 @@ describe("SqliteApplicationsRepository", () => {
     }
   });
 
-  it("uses the workspace and update index for the ledger query", () => {
+  it("uses the active workspace and update index for the ledger query", () => {
     const { database, setup } = createRepository();
 
     try {
@@ -132,12 +132,12 @@ describe("SqliteApplicationsRepository", () => {
         .prepare(
           `EXPLAIN QUERY PLAN
            SELECT id FROM applications
-           WHERE workspace_id = ?
+           WHERE workspace_id = ? AND deleted_at IS NULL
            ORDER BY updated_at DESC, id DESC`,
         )
         .all(setup.workspace.id) as { detail: string }[];
       expect(plan.map((row) => row.detail).join(" ")).toContain(
-        "applications_by_workspace_updated",
+        "applications_active_by_workspace_updated",
       );
     } finally {
       database.close();
@@ -289,11 +289,134 @@ describe("SqliteApplicationsRepository", () => {
         }),
       ).toBeUndefined();
       expect(
+        repository.deleteApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          deletedAt: "2026-07-18T13:00:00.000Z",
+          workspaceId: "workspace-00002",
+        }),
+      ).toBe(false);
+      expect(
         repository.listApplicationEvents("workspace-00002", created.id),
       ).toBeUndefined();
       expect(repository.listApplications(setup.workspace.id)[0]).toMatchObject({
         companyName: "Example Studio",
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("soft deletes an application while preserving history and audit data", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(
+        repository.deleteApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          deletedAt: "2026-07-18T15:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toBe(true);
+      expect(repository.listApplications(setup.workspace.id)).toEqual([]);
+      expect(
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          companyName: "Hidden update",
+          updatedAt: "2026-07-18T16:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toBeUndefined();
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toBeUndefined();
+      expect(
+        database
+          .prepare(
+            `SELECT actor_user_id AS actorUserId, deleted_at AS deletedAt,
+                    workspace_id AS workspaceId
+             FROM application_deletions WHERE application_id = ?`,
+          )
+          .get(created.id),
+      ).toEqual({
+        actorUserId: setup.administrator.id,
+        deletedAt: "2026-07-18T15:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT count(*) FROM application_events WHERE application_id = ?",
+          )
+          .pluck()
+          .get(created.id),
+      ).toBe(1);
+      expect(
+        repository.deleteApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          deletedAt: "2026-07-18T17:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toBe(false);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back deletion when its audit actor is invalid", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(() =>
+        repository.deleteApplication({
+          actorUserId: "missing-user",
+          applicationId: created.id,
+          deletedAt: "2026-07-18T15:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow();
+      expect(repository.listApplications(setup.workspace.id)).toEqual([
+        created,
+      ]);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_deletions")
+          .pluck()
+          .get(),
+      ).toBe(0);
     } finally {
       database.close();
     }

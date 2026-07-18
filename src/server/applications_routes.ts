@@ -133,5 +133,30 @@ export function createApplicationsRouter(
     }
   });
 
+  router.delete("/:applicationId", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      applicationsService.deleteApplication(actor, parsedId.data);
+      response.status(204).end();
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
   return router;
 }

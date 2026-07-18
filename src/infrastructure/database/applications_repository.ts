@@ -7,6 +7,7 @@ import type {
   ApplicationRecord,
   ApplicationsRepository,
   CreateApplicationRecord,
+  DeleteApplicationRecord,
   UpdateApplicationRecord,
 } from "../../application/applications.js";
 
@@ -96,10 +97,44 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     return this.database
       .prepare(
         `${publicApplicationSelect()}
-         WHERE workspace_id = ?
+         WHERE workspace_id = ? AND deleted_at IS NULL
          ORDER BY updated_at DESC, id DESC`,
       )
       .all(workspaceId) as ApplicationRecord[];
+  }
+
+  public deleteApplication(input: DeleteApplicationRecord): boolean {
+    const remove = this.database.transaction(() => {
+      const result = this.database
+        .prepare(
+          `UPDATE applications
+           SET deleted_at = ?, updated_at = ?
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
+        )
+        .run(
+          input.deletedAt,
+          input.deletedAt,
+          input.workspaceId,
+          input.applicationId,
+        );
+      if (result.changes === 0) return false;
+
+      this.database
+        .prepare(
+          `INSERT INTO application_deletions
+             (application_id, workspace_id, actor_user_id, deleted_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          input.applicationId,
+          input.workspaceId,
+          input.actorUserId,
+          input.deletedAt,
+        );
+      return true;
+    });
+
+    return remove.immediate();
   }
 
   public listApplicationEvents(
@@ -109,7 +144,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     const applicationExists = this.database
       .prepare(
         `SELECT 1 FROM applications
-         WHERE workspace_id = ? AND id = ?`,
+         WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
       )
       .pluck()
       .get(workspaceId, applicationId);
@@ -139,7 +174,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       const current = this.database
         .prepare(
           `${publicApplicationSelect()}
-           WHERE workspace_id = ? AND id = ?`,
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
         )
         .get(input.workspaceId, input.applicationId) as
         ApplicationRecord | undefined;
@@ -175,7 +210,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
            SET company_name = ?, role_title = ?, status = ?, location = ?,
                source_url = ?, applied_on = ?, next_action = ?,
                next_action_due = ?, notes = ?, updated_at = ?
-           WHERE workspace_id = ? AND id = ?`,
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
         )
         .run(
           updated.companyName,

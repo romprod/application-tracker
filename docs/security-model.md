@@ -41,6 +41,8 @@
 - MCP actor context cannot be selected through tool arguments
 - Audit events record actor, action, target type, result, and timestamp without
   recording secrets or document content
+- Application removal records its workspace, actor, and timestamp without
+  deleting immutable stage history
 
 ### Remote MCP
 

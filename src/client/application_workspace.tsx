@@ -10,6 +10,7 @@ import {
 import {
   ApplicationDialog,
   ApplicationDrawer,
+  DeleteApplicationDialog,
   applicationInput,
   applicationUpdateInput,
   type ApplicationFormState,
@@ -45,6 +46,9 @@ export function ApplicationWorkspace({
     useState<ApplicationRecord>();
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [deletionTarget, setDeletionTarget] = useState<ApplicationRecord>();
+  const [deleteError, setDeleteError] = useState<string>();
+  const [deleting, setDeleting] = useState(false);
   const [selectedApplication, setSelectedApplication] =
     useState<ApplicationRecord>();
   const [events, setEvents] = useState<ApplicationEvent[]>();
@@ -115,6 +119,40 @@ export function ApplicationWorkspace({
     setFormMode(undefined);
     setEditingApplication(undefined);
     setFormError(undefined);
+  }
+
+  function beginDelete(application: ApplicationRecord) {
+    closeApplication();
+    setDeletionTarget(application);
+    setDeleteError(undefined);
+    setNotice(undefined);
+  }
+
+  function closeDelete() {
+    if (deleting) return;
+    setDeletionTarget(undefined);
+    setDeleteError(undefined);
+  }
+
+  function removeApplication() {
+    if (!deletionTarget) return;
+    const removing = deletionTarget;
+    setDeleting(true);
+    setDeleteError(undefined);
+    void applicationsClient
+      .deleteApplication(removing.id)
+      .then(() => {
+        setApplications((current) =>
+          current?.filter(({ id }) => id !== removing.id),
+        );
+        setDeletionTarget(undefined);
+        setNotice(`${removing.companyName} was removed.`);
+        setDeleting(false);
+      })
+      .catch(() => {
+        setDeleteError("The application could not be removed. Try again.");
+        setDeleting(false);
+      });
   }
 
   function saveApplication(form: ApplicationFormState) {
@@ -197,6 +235,7 @@ export function ApplicationWorkspace({
           eventsError={eventsError}
           eventsLoading={eventsLoading}
           onClose={closeApplication}
+          onDelete={() => beginDelete(selectedApplication)}
           onEdit={() => {
             const application = selectedApplication;
             closeApplication();
@@ -213,6 +252,15 @@ export function ApplicationWorkspace({
           onClose={closeForm}
           onSave={saveApplication}
           submitting={submitting}
+        />
+      )}
+      {deletionTarget && (
+        <DeleteApplicationDialog
+          application={deletionTarget}
+          deleting={deleting}
+          error={deleteError}
+          onClose={closeDelete}
+          onConfirm={removeApplication}
         />
       )}
     </main>

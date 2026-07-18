@@ -15,6 +15,9 @@ const actor: AuthenticatedActor = {
 };
 
 function repository() {
+  const deleteApplication = vi.fn<ApplicationsRepository["deleteApplication"]>(
+    () => true,
+  );
   const createApplication = vi.fn<ApplicationsRepository["createApplication"]>(
     (input) => ({
       appliedOn: input.appliedOn,
@@ -55,10 +58,12 @@ function repository() {
   );
   return {
     createApplication,
+    deleteApplication,
     listApplicationEvents,
     listApplications,
     repository: {
       createApplication,
+      deleteApplication,
       listApplicationEvents,
       listApplications,
       updateApplication,
@@ -144,5 +149,32 @@ describe("ApplicationLedgerService", () => {
       "workspace-1",
       "application-1",
     );
+  });
+
+  it("deletes through the actor's workspace and identity", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-18T15:00:00.000Z"),
+    );
+
+    service.deleteApplication(actor, "application-1");
+
+    expect(store.deleteApplication).toHaveBeenCalledWith({
+      actorUserId: "user-1",
+      applicationId: "application-1",
+      deletedAt: "2026-07-18T15:00:00.000Z",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("hides whether a deletion target is missing or outside the workspace", () => {
+    const store = repository();
+    store.deleteApplication.mockReturnValue(false);
+    const service = new ApplicationLedgerService(store.repository);
+
+    expect(() =>
+      service.deleteApplication(actor, "missing-application"),
+    ).toThrow("Application not found");
   });
 });

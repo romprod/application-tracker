@@ -70,6 +70,11 @@ The fifth migration adds optional current-next-action text and due-date columns
 to `applications`. Existing rows receive `NULL` values. A partial
 workspace-and-due-date index includes only open records with a next action.
 
+The sixth migration adds application deletion state and a strict deletion audit
+table. A deletion transaction marks one active workspace record and writes its
+actor and timestamp atomically. Active-record indexes exclude removed rows;
+immutable application events remain stored.
+
 ## Backup status
 
 Online backup and verified restore tooling have not been implemented yet. Do

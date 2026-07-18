@@ -51,7 +51,8 @@ an administrator-only sanitized MCP status page, and a workspace-scoped
 application workspace. The responsive interface includes a metrics dashboard,
 searchable and sortable application table, modal intake and editing, a detail
 drawer, current next actions with optional due dates, and an immutable timeline
-for creation and stage changes. It does not yet support deletion, contacts,
+for creation and stage changes. Application removal is workspace-scoped and
+audited without erasing that timeline. The app does not yet support contacts,
 documents, or outcomes. It also does not run an MCP server. Automated tests and
 CI cover each completed boundary.
 

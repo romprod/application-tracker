@@ -35,6 +35,13 @@ export interface CreateApplicationRecord {
   workspaceId: string;
 }
 
+export interface DeleteApplicationRecord {
+  actorUserId: string;
+  applicationId: string;
+  deletedAt: string;
+  workspaceId: string;
+}
+
 export type ApplicationEventType = "application_created" | "status_changed";
 
 export interface ApplicationEvent {
@@ -55,6 +62,7 @@ export type UpdateApplicationRecord = UpdateApplicationInput & {
 
 export interface ApplicationsRepository {
   createApplication(input: CreateApplicationRecord): ApplicationRecord;
+  deleteApplication(input: DeleteApplicationRecord): boolean;
   listApplicationEvents(
     workspaceId: string,
     applicationId: string,
@@ -100,6 +108,19 @@ export class ApplicationLedgerService {
 
   public listApplications(actor: AuthenticatedActor): ApplicationRecord[] {
     return this.repository.listApplications(actor.workspaceId);
+  }
+
+  public deleteApplication(
+    actor: AuthenticatedActor,
+    applicationId: string,
+  ): void {
+    const deleted = this.repository.deleteApplication({
+      actorUserId: actor.userId,
+      applicationId,
+      deletedAt: this.clock().toISOString(),
+      workspaceId: actor.workspaceId,
+    });
+    if (!deleted) throw new ApplicationNotFoundError();
   }
 
   public listApplicationEvents(

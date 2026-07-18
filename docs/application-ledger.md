@@ -1,9 +1,9 @@
 # Application ledger
 
 The application ledger lets every authenticated workspace member create, list,
-and edit application records. It also records creation and real stage changes
-in a permanent timeline. These records provide the base for actions, outcomes,
-documents, and MCP tools.
+edit, and remove application records. It also records creation and real stage
+changes in a permanent timeline. These records provide the base for actions,
+outcomes, documents, and MCP tools.
 
 ## Current record
 
@@ -38,6 +38,12 @@ next action, source link, notes, and stage history without navigating away from
 the table. Application intake and editing use a modal form. Saving updates the
 record's current fields and update time; optional fields can be cleared.
 
+The drawer also opens a separate removal confirmation. Cancel receives initial
+focus. A confirmed removal immediately removes the application from dashboard,
+list, update, and timeline APIs. The application does not expose a restore
+control, but the database retains the record and immutable history for audit and
+operator-led recovery.
+
 The table, drawer, and modal are keyboard operable. Sort buttons expose
 `aria-sort`, rows open with Enter or Space, Escape closes overlays, and focus is
 contained and restored while a dialog is open.
@@ -61,13 +67,14 @@ members may use them:
 
 - `GET /api/applications` lists the active workspace's records;
 - `POST /api/applications` creates a record;
-- `PATCH /api/applications/:applicationId` edits a record; and
+- `PATCH /api/applications/:applicationId` edits a record;
+- `DELETE /api/applications/:applicationId` removes a record; and
 - `GET /api/applications/:applicationId/events` lists its timeline.
 
-The application service derives the workspace, creator, and editing actor from
-the authenticated session. Request bodies cannot select those values. A record
-outside the active workspace has the same not-found response as a missing
-record.
+The application service derives the workspace and acting user from the
+authenticated session. Request bodies cannot select those values. A record
+outside the active workspace has the same not-found response as a missing or
+already removed record.
 
 Browser mutations require an Origin that matches the request host. Responses
 use `Cache-Control: no-store` and omit workspace identifiers, creator
@@ -84,13 +91,19 @@ Migration 5 adds nullable `next_action` and `next_action_due` columns. Existing
 records retain their data with both fields unset. A workspace-first partial
 index covers open applications that have a next action.
 
-Foreign keys bind records and events to a workspace and its members. Creation
-and editing transactions update the application and insert any required event
+Migration 6 adds nullable deletion state and the strict
+`application_deletions` audit table. Removal marks the active application and
+records its workspace, actor, and timestamp in one immediate transaction.
+Normal repository queries exclude removed rows. Existing application events
+remain unchanged and continue to reject updates and physical deletion.
+
+Foreign keys bind records, events, and deletion audits to a workspace and its
+members. Creation, editing, and removal transactions update related state
 atomically. Database triggers reject event updates and deletions. Repository
 queries bind every supplied value as an SQL parameter and use workspace-first
 indexes for ledger and timeline reads.
 
 ## Deferred behavior
 
-Deletion, configurable transition rules, contacts, additional links, and
-outcomes remain unchecked in the capability checklist.
+Configurable transition rules, contacts, additional links, and outcomes remain
+unchecked in the capability checklist.

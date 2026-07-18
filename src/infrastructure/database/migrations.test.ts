@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5]);
+      ).toEqual([1, 2, 3, 4, 5, 6]);
       expect(
         database
           .prepare(
@@ -165,6 +165,7 @@ describe("migrateDatabase", () => {
       ]);
       expect(tableSql).toContain("next_action TEXT");
       expect(tableSql).toContain("next_action_due TEXT");
+      expect(tableSql).toContain("deleted_at TEXT");
       expect(
         database
           .prepare(
@@ -174,6 +175,33 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBe("applications_by_workspace_next_action_due");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name = 'application_deletions'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("application_deletions");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'index' AND name = 'applications_active_by_workspace_updated'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("applications_active_by_workspace_updated");
+      expect(
+        database
+          .prepare(
+            `SELECT sql FROM sqlite_master
+             WHERE type = 'index' AND name = 'applications_by_workspace_next_action_due'`,
+          )
+          .pluck()
+          .get(),
+      ).toContain("deleted_at IS NULL");
     } finally {
       database.close();
     }
@@ -322,13 +350,14 @@ describe("migrateDatabase", () => {
       expect(
         database
           .prepare(
-            `SELECT company_name AS companyName, next_action AS nextAction,
-                    next_action_due AS nextActionDue
+            `SELECT company_name AS companyName, deleted_at AS deletedAt,
+                    next_action AS nextAction, next_action_due AS nextActionDue
              FROM applications WHERE id = ?`,
           )
           .get(applicationId),
       ).toEqual({
         companyName: "Example Studio",
+        deletedAt: null,
         nextAction: null,
         nextActionDue: null,
       });

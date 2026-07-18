@@ -165,6 +165,9 @@ function createApplicationsClient(
     createApplication: vi
       .fn<ApplicationsClient["createApplication"]>()
       .mockResolvedValue(applicationRecord),
+    deleteApplication: vi
+      .fn<ApplicationsClient["deleteApplication"]>()
+      .mockResolvedValue(),
     listApplications: vi
       .fn<ApplicationsClient["listApplications"]>()
       .mockResolvedValue(applications),
@@ -399,6 +402,80 @@ describe("application shell", () => {
       }),
     ).toBeInTheDocument();
     expect(within(drawer).getByText("Due in 3d")).toBeInTheDocument();
+  });
+
+  it("confirms and removes an application from the workspace", async () => {
+    const applicationsClient = createApplicationsClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete application" }));
+
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Remove Example Studio?",
+    });
+    expect(confirmation).toHaveAccessibleDescription(
+      "This removes Product Designer from the workspace. Its audit history remains stored.",
+    );
+    expect(
+      within(confirmation).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+    fireEvent.click(
+      within(confirmation).getByRole("button", { name: "Remove application" }),
+    );
+
+    await waitFor(() =>
+      expect(applicationsClient.deleteApplication).toHaveBeenCalledWith(
+        applicationRecord.id,
+      ),
+    );
+    expect(
+      await screen.findByText("Example Studio was removed."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Example Studio")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Remove Example Studio?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("cancels application removal without changing the workspace", async () => {
+    const applicationsClient = createApplicationsClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete application" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(applicationsClient.deleteApplication).not.toHaveBeenCalled();
+    expect(screen.getByText("Example Studio")).toBeInTheDocument();
   });
 
   it("loads and displays an application's stage history", async () => {

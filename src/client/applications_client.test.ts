@@ -116,6 +116,25 @@ describe("browserApplicationsClient", () => {
     );
   });
 
+  it("deletes through the same-origin endpoint without expecting a body", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.deleteApplication(application.id),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${application.id}`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
   it("lists application history without caching the response", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ events }), {

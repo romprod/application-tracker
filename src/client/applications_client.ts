@@ -51,6 +51,7 @@ export interface ApplicationEvent {
 
 export interface ApplicationsClient {
   createApplication(input: CreateApplicationInput): Promise<ApplicationRecord>;
+  deleteApplication(applicationId: string): Promise<void>;
   listApplicationEvents(applicationId: string): Promise<ApplicationEvent[]>;
   listApplications(): Promise<ApplicationRecord[]>;
   updateApplication(
@@ -224,6 +225,18 @@ export const browserApplicationsClient: ApplicationsClient = {
     const body = await successfulBody(response);
     if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
     return parseApplication(body.application);
+  },
+
+  async deleteApplication(applicationId) {
+    const encodedId = encodeURIComponent(applicationId);
+    const response = await fetch(`/api/applications/${encodedId}`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      method: "DELETE",
+    });
+    if (response.ok) return;
+    const body = await readResponse(response);
+    throw new ApplicationsClientError(errorCode(body));
   },
 
   async listApplicationEvents(applicationId) {

@@ -140,6 +140,11 @@ describe("application ledger routes", () => {
       .send({ status: "interview" })
       .expect(403, { error: { code: "csrf_rejected" } });
     await request(app)
+      .delete("/api/applications/123e4567-e89b-12d3-a456-426614174000")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await request(app)
       .get("/api/applications/123e4567-e89b-12d3-a456-426614174000/events")
       .expect(401, { error: { code: "authentication_required" } });
     await request(app)
@@ -308,5 +313,52 @@ describe("application ledger routes", () => {
       .get(`/api/applications/${missingId}/events`)
       .set("Cookie", cookie)
       .expect(404, { error: { code: "application_not_found" } });
+  });
+
+  it("removes an application from normal APIs while retaining its audit trail", async () => {
+    const { app } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput)
+      .expect(201);
+    const application = createdApplication(created);
+    const applicationId = application.id;
+    if (typeof applicationId !== "string") {
+      throw new Error("Expected an application ID");
+    }
+
+    await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
+      .set("Cookie", cookie)
+      .expect(204);
+    await request(app)
+      .get("/api/applications")
+      .set("Cookie", cookie)
+      .expect(200, { applications: [] });
+    await request(app)
+      .get(`/api/applications/${applicationId}/events`)
+      .set("Cookie", cookie)
+      .expect(404, { error: { code: "application_not_found" } });
+    await sameOrigin(request(app).patch(`/api/applications/${applicationId}`))
+      .set("Cookie", cookie)
+      .send({ companyName: "Hidden update" })
+      .expect(404, { error: { code: "application_not_found" } });
+    await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
+      .set("Cookie", cookie)
+      .expect(404, { error: { code: "application_not_found" } });
+  });
+
+  it("validates deletion paths and requires authentication", async () => {
+    const { app } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+
+    await sameOrigin(request(app).delete("/api/applications/not-a-uuid"))
+      .set("Cookie", cookie)
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(
+      request(app).delete(
+        "/api/applications/123e4567-e89b-12d3-a456-426614174000",
+      ),
+    ).expect(401, { error: { code: "authentication_required" } });
   });
 });
