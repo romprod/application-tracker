@@ -1,5 +1,30 @@
 # Development standards
 
+## Local environment
+
+Use Node.js 22.12 or newer. The repository contains `.nvmrc` and
+`.node-version` files for compatible version managers.
+
+```sh
+cp .env.example .env
+npm ci
+npm run dev
+```
+
+The browser runs at `http://127.0.0.1:5173`; Vite forwards `/api` requests to
+the backend at `http://127.0.0.1:3333`. Both services bind to loopback by
+default.
+
+Useful commands:
+
+| Command                         | Purpose                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `npm run check`                 | Run formatting, lint, type, test, and build gates |
+| `npm test`                      | Run the test suite once                           |
+| `npm run test:watch`            | Run tests while editing                           |
+| `npm run build`                 | Compile the client and server                     |
+| `NODE_ENV=production npm start` | Serve a completed production build                |
+
 ## Commit discipline
 
 Each commit represents one coherent change and leaves the repository buildable.

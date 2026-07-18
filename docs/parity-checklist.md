@@ -5,8 +5,8 @@ tests and user documentation.
 
 ## Foundation
 
-- [ ] TypeScript toolchain, formatting, linting, tests, and CI
-- [ ] Typed runtime configuration with safe local defaults
+- [x] TypeScript toolchain, formatting, linting, tests, and CI
+- [x] Typed runtime configuration with safe local defaults
 - [ ] Versioned SQLite migrations, online backup, and verified restore
 - [ ] Structured error handling and redacted logging
 

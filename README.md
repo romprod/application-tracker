@@ -5,8 +5,8 @@ applications, documents, follow-up actions, and outcomes. It will provide a web
 interface and optional Model Context Protocol (MCP) integrations over local
 stdio and authenticated HTTPS.
 
-> This repository is being built in public-ready stages. It does not yet
-> contain a runnable release.
+> This repository is being built in public-ready stages. The foundation is
+> runnable, but it is not yet a feature-complete release.
 
 ## Product principles
 
@@ -42,6 +42,32 @@ be added in a small, testable commit.
 Development standards are defined in
 [`docs/development.md`](docs/development.md). Feature parity is tracked in
 [`docs/parity-checklist.md`](docs/parity-checklist.md).
+
+The current foundation includes a typed configuration boundary, a sanitized
+health endpoint, a responsive application shell, automated tests, and CI. It
+does not yet persist application data or authenticate users.
+
+## Run the foundation
+
+Application Tracker requires Node.js 22.12 or newer.
+
+```sh
+cp .env.example .env
+npm ci
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. The development server forwards API requests to
+the backend on port 3333.
+
+To exercise the production build locally:
+
+```sh
+npm run build
+NODE_ENV=production npm start
+```
+
+Run every local quality gate with `npm run check`.
 
 ## License
 

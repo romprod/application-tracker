@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist/server",
+    "rootDir": "src",
+    "sourceMap": true,
+    "target": "ES2023",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/application/**/*.ts",
+    "src/domain/**/*.ts",
+    "src/infrastructure/**/*.ts",
+    "src/server/**/*.ts"
+  ],
+  "exclude": ["src/**/*.test.ts"]
+}
