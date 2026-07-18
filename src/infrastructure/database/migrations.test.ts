@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2]);
+      ).toEqual([1, 2, 3]);
       expect(
         database
           .prepare(
@@ -103,6 +103,33 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBeNull();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates a constrained application ledger with its list index", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations);
+
+      const tableSql = database
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applications'",
+        )
+        .pluck()
+        .get();
+      expect(tableSql).toContain("STRICT");
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'applications_by_workspace_updated'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("applications_by_workspace_updated");
     } finally {
       database.close();
     }

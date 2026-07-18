@@ -3,15 +3,18 @@ import express, { type ErrorRequestHandler, type Express } from "express";
 import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
+import type { ApplicationLedgerService } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
 import type { UserAdministrationService } from "../application/users.js";
 import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
+import { createApplicationsRouter } from "./applications_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
 import { createMcpStatusRouter } from "./mcp_status_routes.js";
 import { createUsersRouter } from "./users_routes.js";
 
 export interface AppOptions {
+  applicationsService?: ApplicationLedgerService;
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
   mcpStatusService?: McpStatusService;
@@ -44,6 +47,16 @@ export function createApp(options: AppOptions = {}): Express {
       status: "ok",
     });
   });
+
+  if (options.authService && options.applicationsService) {
+    app.use(
+      "/api/applications",
+      createApplicationsRouter(
+        options.authService,
+        options.applicationsService,
+      ),
+    );
+  }
 
   if (options.setupService) {
     app.use("/api/setup", createSetupRouter(options.setupService));

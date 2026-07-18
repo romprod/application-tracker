@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 
 import { AuthService } from "../application/auth.js";
+import { ApplicationLedgerService } from "../application/applications.js";
 import { SetupService } from "../application/setup.js";
 import { McpStatusService } from "../application/mcp_status.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -10,6 +11,7 @@ import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js"
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
+import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
@@ -23,6 +25,9 @@ if (existsSync(environmentPath)) {
 
 const config = parseRuntimeConfig(process.env);
 const database = openApplicationDatabase(config.databasePath);
+const applicationsService = new ApplicationLedgerService(
+  new SqliteApplicationsRepository(database),
+);
 const passwordHasher = new ScryptPasswordHasher();
 const setupService = new SetupService(
   new SqliteSetupRepository(database),
@@ -53,6 +58,7 @@ const staticRoot =
     ? resolve(process.cwd(), "dist/client")
     : undefined;
 const app = createApp({
+  applicationsService,
   authCookie: {
     maxAgeSeconds: config.session.absoluteDurationMs / 1000,
     secure: config.session.cookieSecure,
