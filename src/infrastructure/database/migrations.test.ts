@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3]);
+      ).toEqual([1, 2, 3, 4]);
       expect(
         database
           .prepare(
@@ -130,6 +130,117 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBe("applications_by_workspace_updated");
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'application_events'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("application_events");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'index' AND name = 'application_events_by_application_time'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("application_events_by_application_time");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'trigger' AND name IN (
+               'application_events_reject_update',
+               'application_events_reject_delete'
+             )
+             ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "application_events_reject_delete",
+        "application_events_reject_update",
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("backfills a creation event for applications from version three", () => {
+    const database = new Database(":memory:");
+    const legacyApplicationId = "application-legacy";
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 3));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          "workspace-legacy",
+          "Legacy",
+          "legacy",
+          "2026-07-17T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?)`,
+        )
+        .run(
+          "user-legacy",
+          "legacy",
+          "Legacy User",
+          "2026-07-17T10:00:00.000Z",
+          "2026-07-17T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES (?, ?, 'admin', ?)`,
+        )
+        .run("workspace-legacy", "user-legacy", "2026-07-17T10:00:00.000Z");
+      database
+        .prepare(
+          `INSERT INTO applications
+             (id, workspace_id, company_name, role_title, status,
+              created_by_user_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          legacyApplicationId,
+          "workspace-legacy",
+          "Example Studio",
+          "Product Designer",
+          "interview",
+          "user-legacy",
+          "2026-07-17T11:00:00.000Z",
+          "2026-07-17T12:00:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT event_type AS type, from_status AS fromStatus,
+                    to_status AS toStatus, occurred_at AS occurredAt
+             FROM application_events
+             WHERE application_id = ?`,
+          )
+          .get(legacyApplicationId),
+      ).toEqual({
+        fromStatus: null,
+        occurredAt: "2026-07-17T11:00:00.000Z",
+        toStatus: "interview",
+        type: "application_created",
+      });
     } finally {
       database.close();
     }

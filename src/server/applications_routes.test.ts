@@ -132,6 +132,15 @@ describe("application ledger routes", () => {
       .send(applicationInput)
       .expect(403, { error: { code: "csrf_rejected" } });
     await request(app)
+      .patch("/api/applications/123e4567-e89b-12d3-a456-426614174000")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .send({ status: "interview" })
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await request(app)
+      .get("/api/applications/123e4567-e89b-12d3-a456-426614174000/events")
+      .expect(401, { error: { code: "authentication_required" } });
+    await request(app)
       .post("/api/applications")
       .set("Cookie", cookie)
       .set("Host", "tracker.example.test")
@@ -200,5 +209,88 @@ describe("application ledger routes", () => {
       .set("Cookie", cookie)
       .send({ ...applicationInput, notes: "x".repeat(5001) })
       .expect(400, { error: { code: "validation_error" } });
+  });
+
+  it("edits an application and returns its immutable stage history", async () => {
+    const { app } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput)
+      .expect(201);
+    const application = createdApplication(created);
+    const applicationId = application.id;
+    if (typeof applicationId !== "string") {
+      throw new Error("Expected an application ID");
+    }
+
+    const updated = await sameOrigin(
+      request(app).patch(`/api/applications/${applicationId}`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        location: "",
+        notes: "Interview arranged.",
+        status: "interview",
+      })
+      .expect(200);
+    expect(createdApplication(updated)).toMatchObject({
+      companyName: "Example Studio",
+      location: null,
+      notes: "Interview arranged.",
+      status: "interview",
+    });
+
+    const history = await request(app)
+      .get(`/api/applications/${applicationId}/events`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(history.headers["cache-control"]).toBe("no-store");
+    expect(history.body).toEqual({
+      events: [
+        expect.objectContaining({
+          actorDisplayName: "Alex Example",
+          fromStatus: "applied",
+          toStatus: "interview",
+          type: "status_changed",
+        }),
+        expect.objectContaining({
+          actorDisplayName: "Alex Example",
+          fromStatus: null,
+          toStatus: "applied",
+          type: "application_created",
+        }),
+      ],
+    });
+    expect(JSON.stringify(history.body)).not.toMatch(
+      /actorUserId|workspaceId|password|token/i,
+    );
+  });
+
+  it("validates update paths and hides missing applications", async () => {
+    const { app } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const missingId = "123e4567-e89b-12d3-a456-426614174000";
+
+    await sameOrigin(request(app).patch("/api/applications/not-a-uuid"))
+      .set("Cookie", cookie)
+      .send({ status: "interview" })
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).patch(`/api/applications/${missingId}`))
+      .set("Cookie", cookie)
+      .send({})
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).patch(`/api/applications/${missingId}`))
+      .set("Cookie", cookie)
+      .send({ sourceUrl: "javascript:alert(1)" })
+      .expect(400, { error: { code: "validation_error" } });
+    await sameOrigin(request(app).patch(`/api/applications/${missingId}`))
+      .set("Cookie", cookie)
+      .send({ status: "closed" })
+      .expect(404, { error: { code: "application_not_found" } });
+    await request(app)
+      .get(`/api/applications/${missingId}/events`)
+      .set("Cookie", cookie)
+      .expect(404, { error: { code: "application_not_found" } });
   });
 });

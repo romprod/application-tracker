@@ -2,6 +2,7 @@ import type { AuthenticatedActor } from "./auth.js";
 import type {
   ApplicationStatus,
   CreateApplicationInput,
+  UpdateApplicationInput,
 } from "../domain/applications.js";
 
 export interface ApplicationRecord {
@@ -30,9 +31,41 @@ export interface CreateApplicationRecord {
   workspaceId: string;
 }
 
+export type ApplicationEventType = "application_created" | "status_changed";
+
+export interface ApplicationEvent {
+  actorDisplayName: string;
+  fromStatus: ApplicationStatus | null;
+  id: string;
+  occurredAt: string;
+  toStatus: ApplicationStatus;
+  type: ApplicationEventType;
+}
+
+export type UpdateApplicationRecord = UpdateApplicationInput & {
+  actorUserId: string;
+  applicationId: string;
+  updatedAt: string;
+  workspaceId: string;
+};
+
 export interface ApplicationsRepository {
   createApplication(input: CreateApplicationRecord): ApplicationRecord;
+  listApplicationEvents(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationEvent[] | undefined;
   listApplications(workspaceId: string): ApplicationRecord[];
+  updateApplication(
+    input: UpdateApplicationRecord,
+  ): ApplicationRecord | undefined;
+}
+
+export class ApplicationNotFoundError extends Error {
+  public constructor() {
+    super("Application not found");
+    this.name = "ApplicationNotFoundError";
+  }
 }
 
 export class ApplicationLedgerService {
@@ -61,5 +94,33 @@ export class ApplicationLedgerService {
 
   public listApplications(actor: AuthenticatedActor): ApplicationRecord[] {
     return this.repository.listApplications(actor.workspaceId);
+  }
+
+  public listApplicationEvents(
+    actor: AuthenticatedActor,
+    applicationId: string,
+  ): ApplicationEvent[] {
+    const events = this.repository.listApplicationEvents(
+      actor.workspaceId,
+      applicationId,
+    );
+    if (!events) throw new ApplicationNotFoundError();
+    return events;
+  }
+
+  public updateApplication(
+    actor: AuthenticatedActor,
+    applicationId: string,
+    input: UpdateApplicationInput,
+  ): ApplicationRecord {
+    const application = this.repository.updateApplication({
+      ...input,
+      actorUserId: actor.userId,
+      applicationId,
+      updatedAt: this.clock().toISOString(),
+      workspaceId: actor.workspaceId,
+    });
+    if (!application) throw new ApplicationNotFoundError();
+    return application;
   }
 }

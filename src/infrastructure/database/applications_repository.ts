@@ -3,38 +3,74 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 
 import type {
+  ApplicationEvent,
   ApplicationRecord,
   ApplicationsRepository,
   CreateApplicationRecord,
+  UpdateApplicationRecord,
 } from "../../application/applications.js";
+
+function publicApplicationSelect(): string {
+  return `SELECT
+            id,
+            company_name AS companyName,
+            role_title AS roleTitle,
+            status,
+            location,
+            source_url AS sourceUrl,
+            applied_on AS appliedOn,
+            notes,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+          FROM applications`;
+}
 
 export class SqliteApplicationsRepository implements ApplicationsRepository {
   public constructor(private readonly database: Database.Database) {}
 
   public createApplication(input: CreateApplicationRecord): ApplicationRecord {
     const id = randomUUID();
-    this.database
-      .prepare(
-        `INSERT INTO applications
+    const eventId = randomUUID();
+    const create = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO applications
            (id, workspace_id, company_name, role_title, status, location,
             source_url, applied_on, notes, created_by_user_id, created_at,
             updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        input.workspaceId,
-        input.companyName,
-        input.roleTitle,
-        input.status,
-        input.location,
-        input.sourceUrl,
-        input.appliedOn,
-        input.notes,
-        input.createdByUserId,
-        input.createdAt,
-        input.createdAt,
-      );
+        )
+        .run(
+          id,
+          input.workspaceId,
+          input.companyName,
+          input.roleTitle,
+          input.status,
+          input.location,
+          input.sourceUrl,
+          input.appliedOn,
+          input.notes,
+          input.createdByUserId,
+          input.createdAt,
+          input.createdAt,
+        );
+      this.database
+        .prepare(
+          `INSERT INTO application_events
+             (id, workspace_id, application_id, actor_user_id, event_type,
+              from_status, to_status, occurred_at)
+           VALUES (?, ?, ?, ?, 'application_created', NULL, ?, ?)`,
+        )
+        .run(
+          eventId,
+          input.workspaceId,
+          id,
+          input.createdByUserId,
+          input.status,
+          input.createdAt,
+        );
+    });
+    create.immediate();
 
     return {
       appliedOn: input.appliedOn,
@@ -53,21 +89,114 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
   public listApplications(workspaceId: string): ApplicationRecord[] {
     return this.database
       .prepare(
-        `SELECT
-           id,
-           company_name AS companyName,
-           role_title AS roleTitle,
-           status,
-           location,
-           source_url AS sourceUrl,
-           applied_on AS appliedOn,
-           notes,
-           created_at AS createdAt,
-           updated_at AS updatedAt
-         FROM applications
+        `${publicApplicationSelect()}
          WHERE workspace_id = ?
          ORDER BY updated_at DESC, id DESC`,
       )
       .all(workspaceId) as ApplicationRecord[];
+  }
+
+  public listApplicationEvents(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationEvent[] | undefined {
+    const applicationExists = this.database
+      .prepare(
+        `SELECT 1 FROM applications
+         WHERE workspace_id = ? AND id = ?`,
+      )
+      .pluck()
+      .get(workspaceId, applicationId);
+    if (applicationExists === undefined) return undefined;
+
+    return this.database
+      .prepare(
+        `SELECT
+           events.id,
+           events.event_type AS type,
+           events.from_status AS fromStatus,
+           events.to_status AS toStatus,
+           events.occurred_at AS occurredAt,
+           actors.display_name AS actorDisplayName
+         FROM application_events AS events
+         JOIN users AS actors ON actors.id = events.actor_user_id
+         WHERE events.workspace_id = ? AND events.application_id = ?
+         ORDER BY events.occurred_at DESC, events.rowid DESC`,
+      )
+      .all(workspaceId, applicationId) as ApplicationEvent[];
+  }
+
+  public updateApplication(
+    input: UpdateApplicationRecord,
+  ): ApplicationRecord | undefined {
+    const update = this.database.transaction(() => {
+      const current = this.database
+        .prepare(
+          `${publicApplicationSelect()}
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .get(input.workspaceId, input.applicationId) as
+        ApplicationRecord | undefined;
+      if (!current) return undefined;
+
+      const updated: ApplicationRecord = {
+        appliedOn:
+          input.appliedOn === undefined ? current.appliedOn : input.appliedOn,
+        companyName: input.companyName ?? current.companyName,
+        createdAt: current.createdAt,
+        id: current.id,
+        location:
+          input.location === undefined ? current.location : input.location,
+        notes: input.notes === undefined ? current.notes : input.notes,
+        roleTitle: input.roleTitle ?? current.roleTitle,
+        sourceUrl:
+          input.sourceUrl === undefined ? current.sourceUrl : input.sourceUrl,
+        status: input.status ?? current.status,
+        updatedAt: input.updatedAt,
+      };
+
+      this.database
+        .prepare(
+          `UPDATE applications
+           SET company_name = ?, role_title = ?, status = ?, location = ?,
+               source_url = ?, applied_on = ?, notes = ?, updated_at = ?
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(
+          updated.companyName,
+          updated.roleTitle,
+          updated.status,
+          updated.location,
+          updated.sourceUrl,
+          updated.appliedOn,
+          updated.notes,
+          updated.updatedAt,
+          input.workspaceId,
+          input.applicationId,
+        );
+
+      if (updated.status !== current.status) {
+        this.database
+          .prepare(
+            `INSERT INTO application_events
+               (id, workspace_id, application_id, actor_user_id, event_type,
+                from_status, to_status, occurred_at)
+             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            input.workspaceId,
+            input.applicationId,
+            input.actorUserId,
+            current.status,
+            updated.status,
+            input.updatedAt,
+          );
+      }
+
+      return updated;
+    });
+
+    return update.immediate();
   }
 }

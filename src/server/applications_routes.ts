@@ -1,8 +1,15 @@
 import { Router, type Request } from "express";
 
-import type { ApplicationLedgerService } from "../application/applications.js";
+import {
+  ApplicationNotFoundError,
+  type ApplicationLedgerService,
+} from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
-import { createApplicationSchema } from "../domain/applications.js";
+import {
+  applicationIdSchema,
+  createApplicationSchema,
+  updateApplicationSchema,
+} from "../domain/applications.js";
 import { requestSessionToken } from "./auth_routes.js";
 
 function hasSameHostOrigin(request: Request): boolean {
@@ -67,6 +74,63 @@ export function createApplicationsRouter(
     response.status(201).json({
       application: applicationsService.createApplication(actor, parsed.data),
     });
+  });
+
+  router.get("/:applicationId/events", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        events: applicationsService.listApplicationEvents(actor, parsedId.data),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.patch("/:applicationId", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    const parsedInput = updateApplicationSchema.safeParse(request.body);
+    if (!parsedId.success || !parsedInput.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        application: applicationsService.updateApplication(
+          actor,
+          parsedId.data,
+          parsedInput.data,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
   });
 
   return router;

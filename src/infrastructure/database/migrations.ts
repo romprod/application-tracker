@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { workspaceIdentityMigration } from "./migrations/001_workspace_identity.js";
 import { installationStateMigration } from "./migrations/002_installation_state.js";
 import { applicationLedgerMigration } from "./migrations/003_application_ledger.js";
+import { applicationHistoryMigration } from "./migrations/004_application_history.js";
 
 export interface Migration {
   name: string;
@@ -22,6 +23,7 @@ export const applicationMigrations: readonly Migration[] = [
   workspaceIdentityMigration,
   installationStateMigration,
   applicationLedgerMigration,
+  applicationHistoryMigration,
 ];
 
 const createMigrationTable = `

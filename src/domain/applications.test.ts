@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createApplicationSchema } from "./applications.js";
+import {
+  applicationIdSchema,
+  createApplicationSchema,
+  updateApplicationSchema,
+} from "./applications.js";
 
 describe("createApplicationSchema", () => {
   it("normalizes a complete application record", () => {
@@ -63,5 +67,44 @@ describe("createApplicationSchema", () => {
         roleTitle: "Product Designer",
       }),
     ).toThrow();
+  });
+});
+
+describe("updateApplicationSchema", () => {
+  it("normalizes changed fields and clears optional values", () => {
+    expect(
+      updateApplicationSchema.parse({
+        appliedOn: null,
+        companyName: "  Example Labs  ",
+        location: "   ",
+        sourceUrl: null,
+        status: "interview",
+      }),
+    ).toEqual({
+      appliedOn: null,
+      companyName: "Example Labs",
+      location: null,
+      sourceUrl: null,
+      status: "interview",
+    });
+  });
+
+  it("rejects empty updates, unsafe links, and unknown fields", () => {
+    expect(() => updateApplicationSchema.parse({})).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({ sourceUrl: "javascript:alert(1)" }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({ workspaceId: "other" }),
+    ).toThrow();
+  });
+});
+
+describe("applicationIdSchema", () => {
+  it("accepts UUIDs and rejects control text", () => {
+    expect(
+      applicationIdSchema.parse("123e4567-e89b-12d3-a456-426614174000"),
+    ).toBe("123e4567-e89b-12d3-a456-426614174000");
+    expect(() => applicationIdSchema.parse("' OR 1=1 --")).toThrow();
   });
 });

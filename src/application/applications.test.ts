@@ -32,10 +32,34 @@ function repository() {
   const listApplications = vi.fn<ApplicationsRepository["listApplications"]>(
     () => [],
   );
+  const listApplicationEvents = vi.fn<
+    ApplicationsRepository["listApplicationEvents"]
+  >(() => []);
+  const updateApplication = vi.fn<ApplicationsRepository["updateApplication"]>(
+    (input) => ({
+      appliedOn: null,
+      companyName: input.companyName ?? "Example Studio",
+      createdAt: "2026-07-18T12:00:00.000Z",
+      id: input.applicationId,
+      location: null,
+      notes: null,
+      roleTitle: "Product Designer",
+      sourceUrl: null,
+      status: input.status ?? "prospect",
+      updatedAt: input.updatedAt,
+    }),
+  );
   return {
     createApplication,
+    listApplicationEvents,
     listApplications,
-    repository: { createApplication, listApplications },
+    repository: {
+      createApplication,
+      listApplicationEvents,
+      listApplications,
+      updateApplication,
+    },
+    updateApplication,
   };
 }
 
@@ -78,5 +102,39 @@ describe("ApplicationLedgerService", () => {
 
     expect(service.listApplications(actor)).toEqual([]);
     expect(store.listApplications).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("updates through the actor's workspace and identity", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-18T13:00:00.000Z"),
+    );
+
+    expect(
+      service.updateApplication(actor, "application-1", {
+        companyName: "Example Labs",
+        status: "interview",
+      }),
+    ).toMatchObject({ companyName: "Example Labs", status: "interview" });
+    expect(store.updateApplication).toHaveBeenCalledWith({
+      actorUserId: "user-1",
+      applicationId: "application-1",
+      companyName: "Example Labs",
+      status: "interview",
+      updatedAt: "2026-07-18T13:00:00.000Z",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("lists history through the actor's workspace scope", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(store.repository);
+
+    expect(service.listApplicationEvents(actor, "application-1")).toEqual([]);
+    expect(store.listApplicationEvents).toHaveBeenCalledWith(
+      "workspace-1",
+      "application-1",
+    );
   });
 });

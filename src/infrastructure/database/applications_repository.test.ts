@@ -51,6 +51,17 @@ describe("SqliteApplicationsRepository", () => {
       expect(repository.listApplications(setup.workspace.id)).toEqual([
         created,
       ]);
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toEqual([
+        expect.objectContaining({
+          actorDisplayName: "Alex Example",
+          fromStatus: null,
+          occurredAt: createdAt,
+          toStatus: "applied",
+          type: "application_created",
+        }),
+      ]);
     } finally {
       database.close();
     }
@@ -120,6 +131,145 @@ describe("SqliteApplicationsRepository", () => {
       expect(plan.map((row) => row.detail).join(" ")).toContain(
         "applications_by_workspace_updated",
       );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("updates fields and records only real status transitions", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: "Remote",
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+      const transitioned = repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        companyName: "Example Labs",
+        location: null,
+        status: "interview",
+        updatedAt: "2026-07-18T13:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(transitioned).toMatchObject({
+        companyName: "Example Labs",
+        location: null,
+        status: "interview",
+        updatedAt: "2026-07-18T13:00:00.000Z",
+      });
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toEqual([
+        expect.objectContaining({
+          actorDisplayName: "Alex Example",
+          fromStatus: "prospect",
+          occurredAt: "2026-07-18T13:00:00.000Z",
+          toStatus: "interview",
+          type: "status_changed",
+        }),
+        expect.objectContaining({
+          fromStatus: null,
+          occurredAt: createdAt,
+          toStatus: "prospect",
+          type: "application_created",
+        }),
+      ]);
+
+      repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        notes: "Updated without changing stage.",
+        status: "interview",
+        updatedAt: "2026-07-18T14:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toHaveLength(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps updates and history inside the requested workspace", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          companyName: "Cross-scope attempt",
+          updatedAt: "2026-07-18T13:00:00.000Z",
+          workspaceId: "workspace-00002",
+        }),
+      ).toBeUndefined();
+      expect(
+        repository.listApplicationEvents("workspace-00002", created.id),
+      ).toBeUndefined();
+      expect(repository.listApplications(setup.workspace.id)[0]).toMatchObject({
+        companyName: "Example Studio",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("prevents application history from being changed or removed", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        status: "prospect",
+        workspaceId: setup.workspace.id,
+      });
+      const eventId = database
+        .prepare("SELECT id FROM application_events WHERE application_id = ?")
+        .pluck()
+        .get(created.id);
+
+      expect(() =>
+        database
+          .prepare("UPDATE application_events SET to_status = ? WHERE id = ?")
+          .run("closed", eventId),
+      ).toThrow("application events are immutable");
+      expect(() =>
+        database
+          .prepare("DELETE FROM application_events WHERE id = ?")
+          .run(eventId),
+      ).toThrow("application events are immutable");
     } finally {
       database.close();
     }
