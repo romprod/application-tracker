@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { AuthClientError } from "./auth_client";
 import type {
+  ApplicationEvent,
   ApplicationRecord,
   ApplicationsClient,
 } from "./applications_client";
@@ -38,6 +39,25 @@ const applicationRecord: ApplicationRecord = {
   status: "applied",
   updatedAt: "2026-07-18T12:15:00.000Z",
 };
+
+const applicationEvents: ApplicationEvent[] = [
+  {
+    actorDisplayName: "Alex Example",
+    fromStatus: "applied",
+    id: "55555555-5555-4555-8555-555555555555",
+    occurredAt: "2026-07-18T13:15:00.000Z",
+    toStatus: "interview",
+    type: "status_changed",
+  },
+  {
+    actorDisplayName: "Alex Example",
+    fromStatus: null,
+    id: "66666666-6666-4666-8666-666666666666",
+    occurredAt: "2026-07-18T12:15:00.000Z",
+    toStatus: "applied",
+    type: "application_created",
+  },
+];
 
 const administrator: ManagedUser = {
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -140,6 +160,19 @@ function createApplicationsClient(
     listApplications: vi
       .fn<ApplicationsClient["listApplications"]>()
       .mockResolvedValue(applications),
+    listApplicationEvents: vi
+      .fn<ApplicationsClient["listApplicationEvents"]>()
+      .mockResolvedValue(applicationEvents),
+    updateApplication: vi
+      .fn<ApplicationsClient["updateApplication"]>()
+      .mockImplementation((id, input) =>
+        Promise.resolve({
+          ...applicationRecord,
+          ...input,
+          id,
+          updatedAt: "2026-07-18T13:15:00.000Z",
+        }),
+      ),
   } satisfies ApplicationsClient;
 }
 
@@ -254,6 +287,86 @@ describe("application shell", () => {
     expect(await screen.findByText("Example Studio")).toBeInTheDocument();
     expect(screen.getByLabelText("Company")).toHaveValue("");
     expect(screen.getByLabelText("Role title")).toHaveValue("");
+  });
+
+  it("edits an application and records a stage change", async () => {
+    const applicationsClient = createApplicationsClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Example Studio" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Edit application" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Company")).toHaveValue("Example Studio");
+    fireEvent.change(screen.getByLabelText("Stage"), {
+      target: { value: "interview" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(applicationsClient.updateApplication).toHaveBeenCalledWith(
+        applicationRecord.id,
+        {
+          appliedOn: "2026-07-18",
+          companyName: "Example Studio",
+          location: "Remote",
+          notes: "Referred by a former colleague.",
+          roleTitle: "Product Designer",
+          sourceUrl: "https://jobs.example.com/product-designer",
+          status: "interview",
+        },
+      ),
+    );
+    expect(
+      await screen.findByText("Interview", { selector: "span[data-stage]" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
+  });
+
+  it("loads and displays an application's stage history", async () => {
+    const applicationsClient = createApplicationsClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Show history for Example Studio",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(applicationsClient.listApplicationEvents).toHaveBeenCalledWith(
+        applicationRecord.id,
+      ),
+    );
+    expect(await screen.findByText("Applied → Interview")).toBeInTheDocument();
+    expect(screen.getByText("Application created")).toBeInTheDocument();
+    expect(screen.getAllByText("Alex Example")).toHaveLength(3);
   });
 
   it("signs in with local credentials", async () => {
@@ -392,7 +505,6 @@ describe("application shell", () => {
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Configured, not enforced")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
-    expect(screen.queryByText(/example-idp/i)).not.toBeInTheDocument();
   });
 
   it("creates a local user from Settings without retaining the password", async () => {

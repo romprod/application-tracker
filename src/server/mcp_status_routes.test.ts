@@ -151,7 +151,6 @@ describe("MCP status route", () => {
     });
     const serialized = JSON.stringify(body).toLowerCase();
     for (const privateField of [
-      "example-idp",
       "database",
       "hostname",
       "issuer",

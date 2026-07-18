@@ -9,10 +9,12 @@ import {
 import {
   browserApplicationsClient,
   ApplicationsClientError,
+  type ApplicationEvent,
   type ApplicationRecord,
   type ApplicationsClient,
   type ApplicationStatus,
   type CreateApplicationInput,
+  type UpdateApplicationInput,
 } from "./applications_client";
 import {
   browserMcpStatusClient,
@@ -783,6 +785,44 @@ function applicationInput(form: ApplicationFormState): CreateApplicationInput {
   };
 }
 
+function applicationUpdateInput(
+  form: ApplicationFormState,
+): UpdateApplicationInput {
+  return {
+    appliedOn: form.appliedOn.trim() || null,
+    companyName: form.companyName.trim(),
+    location: form.location.trim() || null,
+    notes: form.notes.trim() || null,
+    roleTitle: form.roleTitle.trim(),
+    sourceUrl: form.sourceUrl.trim() || null,
+    status: form.status,
+  };
+}
+
+function applicationForm(application: ApplicationRecord): ApplicationFormState {
+  return {
+    appliedOn: application.appliedOn ?? "",
+    companyName: application.companyName,
+    location: application.location ?? "",
+    notes: application.notes ?? "",
+    roleTitle: application.roleTitle,
+    sourceUrl: application.sourceUrl ?? "",
+    status: application.status,
+  };
+}
+
+function eventHeading(event: ApplicationEvent): string {
+  return event.type === "application_created"
+    ? "Application created"
+    : `${titleCase(event.fromStatus ?? "")} → ${titleCase(event.toStatus)}`;
+}
+
+function eventDetail(event: ApplicationEvent): string {
+  return event.type === "application_created"
+    ? `Filed in ${titleCase(event.toStatus)}`
+    : "Stage changed";
+}
+
 function ApplicationsView({
   applicationsClient,
 }: {
@@ -794,6 +834,13 @@ function ApplicationsView({
   const [formError, setFormError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string>();
+  const [openHistoryId, setOpenHistoryId] = useState<string>();
+  const [historyLoadingId, setHistoryLoadingId] = useState<string>();
+  const [historyErrorId, setHistoryErrorId] = useState<string>();
+  const [eventsByApplication, setEventsByApplication] = useState<
+    Record<string, ApplicationEvent[]>
+  >({});
 
   useEffect(() => {
     let active = true;
@@ -814,25 +861,83 @@ function ApplicationsView({
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function loadHistory(applicationId: string) {
+    setHistoryLoadingId(applicationId);
+    setHistoryErrorId(undefined);
+    void applicationsClient
+      .listApplicationEvents(applicationId)
+      .then((events) => {
+        setEventsByApplication((current) => ({
+          ...current,
+          [applicationId]: events,
+        }));
+        setHistoryLoadingId(undefined);
+      })
+      .catch(() => {
+        setHistoryErrorId(applicationId);
+        setHistoryLoadingId(undefined);
+      });
+  }
+
+  function toggleHistory(applicationId: string) {
+    if (openHistoryId === applicationId) {
+      setOpenHistoryId(undefined);
+      return;
+    }
+    setOpenHistoryId(applicationId);
+    if (!(applicationId in eventsByApplication)) loadHistory(applicationId);
+  }
+
+  function beginEdit(application: ApplicationRecord) {
+    setEditingId(application.id);
+    setForm(applicationForm(application));
+    setFormError(undefined);
+    setNotice(undefined);
+  }
+
+  function cancelEdit() {
+    setEditingId(undefined);
+    setForm(emptyApplicationForm);
+    setFormError(undefined);
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setFormError(undefined);
     setNotice(undefined);
-    void applicationsClient
-      .createApplication(applicationInput(form))
-      .then((created) => {
-        setApplications((current) => [created, ...(current ?? [])]);
+    const operation = editingId
+      ? applicationsClient.updateApplication(
+          editingId,
+          applicationUpdateInput(form),
+        )
+      : applicationsClient.createApplication(applicationInput(form));
+    void operation
+      .then((saved) => {
+        setApplications((current) =>
+          editingId
+            ? [saved, ...(current ?? []).filter(({ id }) => id !== saved.id)]
+            : [saved, ...(current ?? [])],
+        );
         setForm(emptyApplicationForm);
-        setNotice(`${created.companyName} was added to the ledger.`);
+        setNotice(
+          editingId
+            ? `${saved.companyName} was updated.`
+            : `${saved.companyName} was added to the ledger.`,
+        );
+        if (editingId && editingId in eventsByApplication) {
+          loadHistory(editingId);
+        }
+        setEditingId(undefined);
         setSubmitting(false);
       })
       .catch((caught: unknown) => {
+        const action = editingId ? "updated" : "added";
         setFormError(
           caught instanceof ApplicationsClientError &&
             caught.code === "validation_error"
             ? "Review the application details and try again."
-            : "The application could not be added. Please try again.",
+            : `The application could not be ${action}. Please try again.`,
         );
         setSubmitting(false);
       });
@@ -855,8 +960,8 @@ function ApplicationsView({
           <p className="eyebrow">Workspace · Application records</p>
           <h1 id="applications-title">Application ledger.</h1>
           <p className="lede">
-            Record each opportunity once. Stage changes, history, actions, and
-            outcomes follow in later ledger chapters.
+            Keep every opportunity current. Creation and stage changes form a
+            permanent timeline; actions and outcomes follow in later chapters.
           </p>
         </div>
         <dl className="application-totals" aria-label="Application summary">
@@ -957,6 +1062,71 @@ function ApplicationsView({
                     {application.notes && (
                       <p className="application-notes">{application.notes}</p>
                     )}
+                    <div className="application-record-actions">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${application.companyName}`}
+                        aria-pressed={editingId === application.id}
+                        onClick={() => beginEdit(application)}
+                      >
+                        <span aria-hidden="true">✎</span>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${
+                          openHistoryId === application.id ? "Hide" : "Show"
+                        } history for ${application.companyName}`}
+                        aria-controls={`application-history-${application.id}`}
+                        aria-expanded={openHistoryId === application.id}
+                        onClick={() => toggleHistory(application.id)}
+                      >
+                        <span aria-hidden="true">↳</span>
+                        History
+                      </button>
+                    </div>
+                    {openHistoryId === application.id && (
+                      <section
+                        className="application-history"
+                        id={`application-history-${application.id}`}
+                        aria-label={`History for ${application.companyName}`}
+                      >
+                        <div className="application-history-heading">
+                          <p>Stage history</p>
+                          <span>Newest first</span>
+                        </div>
+                        {historyLoadingId === application.id && (
+                          <p className="history-state">Opening history…</p>
+                        )}
+                        {historyErrorId === application.id && (
+                          <p className="history-error" role="alert">
+                            History could not be loaded. Try again.
+                          </p>
+                        )}
+                        {eventsByApplication[application.id] && (
+                          <ol className="application-timeline">
+                            {eventsByApplication[application.id]?.map(
+                              (event) => (
+                                <li key={event.id}>
+                                  <div>
+                                    <strong>{eventHeading(event)}</strong>
+                                    <span>{eventDetail(event)}</span>
+                                  </div>
+                                  <p>
+                                    <span>{event.actorDisplayName}</span>
+                                    <time dateTime={event.occurredAt}>
+                                      {new Date(
+                                        event.occurredAt,
+                                      ).toLocaleString()}
+                                    </time>
+                                  </p>
+                                </li>
+                              ),
+                            )}
+                          </ol>
+                        )}
+                      </section>
+                    )}
                   </article>
                 </li>
               ))}
@@ -971,10 +1141,14 @@ function ApplicationsView({
         >
           <div className="panel-heading intake-heading">
             <div>
-              <p className="eyebrow">New opportunity</p>
-              <h2 id="application-intake-title">Add an application</h2>
+              <p className="eyebrow">
+                {editingId ? "Revise opportunity" : "New opportunity"}
+              </p>
+              <h2 id="application-intake-title">
+                {editingId ? "Edit application" : "Add an application"}
+              </h2>
             </div>
-            <span className="index-number">+</span>
+            <span className="index-number">{editingId ? "↻" : "+"}</span>
           </div>
           <div className="field">
             <label htmlFor="application-company">Company</label>
@@ -1069,10 +1243,32 @@ function ApplicationsView({
             </p>
           )}
           <div className="application-intake-actions">
-            <p>You can add history and follow-up details in later stages.</p>
-            <button type="submit" disabled={submitting}>
-              {submitting ? "Adding…" : "Add application"}
-            </button>
+            <p>
+              {editingId
+                ? "A new stage adds a timeline entry. Other edits update the record only."
+                : "Creation and later stage changes appear in history."}
+            </p>
+            <div className="application-intake-buttons">
+              {editingId && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  disabled={submitting}
+                  onClick={cancelEdit}
+                >
+                  Cancel edit
+                </button>
+              )}
+              <button type="submit" disabled={submitting}>
+                {submitting
+                  ? editingId
+                    ? "Saving…"
+                    : "Adding…"
+                  : editingId
+                    ? "Save changes"
+                    : "Add application"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

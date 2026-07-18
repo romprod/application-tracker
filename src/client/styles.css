@@ -1152,6 +1152,162 @@ code {
   line-height: 1.45;
 }
 
+.application-record-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 18px;
+  margin-top: 20px;
+  border-top: 1px solid #dedbd1;
+}
+
+.application-record-actions button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 7px 10px;
+  color: #5c6964;
+  background: transparent;
+  border: 1px solid #b9bdb6;
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.application-record-actions button:hover,
+.application-record-actions button[aria-expanded="true"],
+.application-record-actions button[aria-pressed="true"] {
+  color: #fffdf7;
+  background: var(--evergreen);
+  border-color: var(--evergreen);
+}
+
+.application-record-actions button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.application-history {
+  margin-top: 18px;
+  background: #ebe8dd;
+  border-top: 1px solid #c8c9c1;
+  border-bottom: 1px solid #c8c9c1;
+}
+
+.application-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 43px;
+  padding: 0 14px;
+  border-bottom: 1px solid #d2d1c8;
+}
+
+.application-history-heading p,
+.application-history-heading span {
+  margin: 0;
+  font-size: 7px;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.application-history-heading p {
+  color: var(--evergreen);
+}
+
+.application-history-heading span {
+  color: #838b87;
+}
+
+.history-state,
+.history-error {
+  padding: 18px 14px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.history-state {
+  color: var(--muted);
+}
+
+.history-error {
+  color: #7f2f21;
+  background: #f4ded6;
+}
+
+.application-timeline {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.application-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 72px;
+  padding: 12px 14px 12px 30px;
+  border-bottom: 1px solid #d2d1c8;
+}
+
+.application-timeline li:last-child {
+  border-bottom: 0;
+}
+
+.application-timeline li::before {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  width: 7px;
+  height: 7px;
+  content: "";
+  background: var(--signal);
+  border: 2px solid #ebe8dd;
+  outline: 1px solid var(--signal);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.application-timeline li > div {
+  display: grid;
+  gap: 4px;
+}
+
+.application-timeline strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 17px;
+  font-weight: 560;
+}
+
+.application-timeline li > div > span {
+  color: #6e7773;
+  font-size: 8px;
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.application-timeline li > p {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  margin: 0;
+  color: #7d8581;
+  font-size: 8px;
+}
+
+.application-timeline li > p span {
+  color: #55625d;
+  font-weight: 700;
+}
+
 .application-intake {
   padding: 0 28px 30px;
   background: var(--paper);
@@ -1176,6 +1332,12 @@ code {
   display: grid;
   gap: 18px;
   padding-top: 27px;
+}
+
+.application-intake-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 9px;
 }
 
 .application-intake-actions p {
@@ -1212,6 +1374,18 @@ code {
 .application-intake-actions button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.application-intake-actions .secondary-action {
+  color: var(--evergreen);
+  background: transparent;
+  border-color: #9da9a3;
+}
+
+.application-intake-actions .secondary-action:hover:not(:disabled) {
+  color: #fffdf7;
+  background: var(--signal);
+  border-color: var(--signal);
 }
 
 .settings-main {
@@ -1934,6 +2108,15 @@ code {
 
   .application-details {
     gap: 13px;
+  }
+
+  .application-timeline li {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .application-timeline li > p {
+    justify-items: start;
   }
 
   h1 {

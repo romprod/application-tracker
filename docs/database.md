@@ -59,6 +59,13 @@ schema also trims text, validates dates, restricts source links to HTTP(S), and
 rejects unknown fields before SQL runs. Repository queries bind every user
 value as a parameter. See [`application-ledger.md`](application-ledger.md).
 
+The fourth migration adds `application_events` and backfills a creation event
+for every existing application. A composite foreign key keeps each event in
+the same workspace as its application, and another binds its actor to a member
+of that workspace. Creation and stage-transition writes use immediate
+transactions. Database triggers reject event updates and deletions, while a
+workspace-and-application index serves timeline reads.
+
 ## Backup status
 
 Online backup and verified restore tooling have not been implemented yet. Do

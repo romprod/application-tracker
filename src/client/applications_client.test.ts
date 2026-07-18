@@ -18,6 +18,25 @@ const application = {
   updatedAt: "2026-07-18T12:15:00.000Z",
 } as const;
 
+const events = [
+  {
+    actorDisplayName: "Alex Example",
+    fromStatus: "applied",
+    id: "22222222-2222-4222-8222-222222222222",
+    occurredAt: "2026-07-18T13:15:00.000Z",
+    toStatus: "interview",
+    type: "status_changed",
+  },
+  {
+    actorDisplayName: "Alex Example",
+    fromStatus: null,
+    id: "33333333-3333-4333-8333-333333333333",
+    occurredAt: "2026-07-18T12:15:00.000Z",
+    toStatus: "applied",
+    type: "application_created",
+  },
+] as const;
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -68,6 +87,54 @@ describe("browserApplicationsClient", () => {
     });
   });
 
+  it("updates through the same-origin JSON endpoint", async () => {
+    const updated = { ...application, location: null, status: "interview" };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ application: updated }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { location: null, status: "interview" as const };
+
+    await expect(
+      browserApplicationsClient.updateApplication(application.id, input),
+    ).resolves.toEqual(updated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${application.id}`,
+      {
+        body: JSON.stringify(input),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      },
+    );
+  });
+
+  it("lists application history without caching the response", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ events }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.listApplicationEvents(application.id),
+    ).resolves.toEqual(events);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${application.id}/events`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+  });
+
   it("rejects malformed application records", async () => {
     vi.stubGlobal(
       "fetch",
@@ -104,5 +171,23 @@ describe("browserApplicationsClient", () => {
     await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
       new ApplicationsClientError("invalid_response"),
     );
+  });
+
+  it("rejects malformed history entries", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            events: [{ ...events[0], type: "field_changed" }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(
+      browserApplicationsClient.listApplicationEvents(application.id),
+    ).rejects.toEqual(new ApplicationsClientError("invalid_response"));
   });
 });

@@ -49,9 +49,10 @@ identity schema, closed administrator setup, local browser login and logout,
 revocable sessions, administrator-managed local users, a Settings shell,
 an administrator-only sanitized MCP status page, and a workspace-scoped
 application intake and ledger. It supports application creation and listing but
-does not yet support editing, deletion, search, history, actions, or outcomes.
-It also does not run an MCP server. Automated tests and CI cover each completed
-boundary.
+also supports field editing and an immutable timeline for creation and stage
+changes. It does not yet support deletion, search, follow-up actions, contacts,
+or outcomes. It also does not run an MCP server. Automated tests and CI cover
+each completed boundary.
 
 ## Run the foundation
 
