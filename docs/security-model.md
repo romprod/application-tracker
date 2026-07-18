@@ -67,10 +67,14 @@
 - Request size, concurrency, and rate limits
 - Sanitized status that omits tokens, subjects, hostnames, and internal errors
 
-The administrator-only MCP status endpoint implements this disclosure boundary
-before either MCP transport exists. It reports protocol readiness, counts, and
-policy values. It never reports addresses, identity claims, secret material,
-database paths, or internal errors. See [`mcp-status.md`](mcp-status.md).
+The in-memory registry already enforces admission and lifecycle policy, but no
+remote request can reach it until OAuth and Streamable HTTP are implemented.
+Initializing reservations consume capacity before asynchronous setup begins.
+
+The administrator-only MCP status endpoint reports protocol readiness, remote
+registry counts, and policy values. It never reports addresses, identity
+claims, secret material, database paths, or internal errors. See
+[`mcp-status.md`](mcp-status.md).
 
 ### Documents
 

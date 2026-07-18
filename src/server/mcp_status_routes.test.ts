@@ -2,8 +2,12 @@ import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { AuthService } from "../application/auth.js";
-import { McpStatusService } from "../application/mcp_status.js";
+import {
+  ApplicationMcpRuntimeStatusProvider,
+  McpStatusService,
+} from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
+import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
@@ -36,7 +40,9 @@ async function createStatusApp() {
   });
   const passwordHash = await hasher.hash("correct horse battery staple");
   const dummyPasswordHash = await hasher.hash("not a real account password");
-  new SqliteSetupRepository(database).createInitialAdministrator({
+  const created = new SqliteSetupRepository(
+    database,
+  ).createInitialAdministrator({
     completedAt: "2026-01-01T00:00:00.000Z",
     displayName: "Alex Example",
     passwordHash,
@@ -66,26 +72,38 @@ async function createStatusApp() {
   );
   auditService.record({
     action: "get_tracker_context",
-    actorUserId: database
-      .prepare("SELECT id FROM users WHERE username = ?")
-      .pluck()
-      .get("alex") as string,
+    actorUserId: created.administrator.id,
     result: "success",
     targetType: "workspace",
     transport: "local_stdio",
-    workspaceId: database
-      .prepare("SELECT id FROM workspaces WHERE slug = ?")
-      .pluck()
-      .get("default") as string,
+    workspaceId: created.workspace.id,
+  });
+  const mcpPolicy = {
+    absoluteDurationMs: 14_400_000,
+    globalLimit: 6,
+    idleDurationMs: 900_000,
+    perActorLimit: 2,
+  };
+  let sessionSequence = 0;
+  const sessionRegistry = new RemoteMcpSessionRegistry(
+    mcpPolicy,
+    () => new Date("2026-01-01T02:00:00.000Z"),
+    () => `remote-session-${String(++sessionSequence)}`,
+  );
+  const activeSession = await sessionRegistry.reserve({
+    actorUserId: created.administrator.id,
+    workspaceId: created.workspace.id,
+  });
+  await sessionRegistry.activate(activeSession.id, {
+    close: () => undefined,
+  });
+  await sessionRegistry.reserve({
+    actorUserId: created.administrator.id,
+    workspaceId: created.workspace.id,
   });
   const mcpStatusService = new McpStatusService(
-    {
-      absoluteDurationMs: 14_400_000,
-      globalLimit: 6,
-      idleDurationMs: 900_000,
-      perActorLimit: 2,
-    },
-    undefined,
+    mcpPolicy,
+    new ApplicationMcpRuntimeStatusProvider(sessionRegistry),
     auditService,
   );
   const app = createApp({
@@ -171,11 +189,11 @@ describe("MCP status route", () => {
         ],
         sessions: {
           absoluteLifetimeSeconds: 14_400,
-          active: 0,
-          enforcement: "inactive",
+          active: 1,
+          enforcement: "active",
           globalLimit: 6,
           idleTimeoutSeconds: 900,
-          initializing: 0,
+          initializing: 1,
           perActorLimit: 2,
         },
         transports: {

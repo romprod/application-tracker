@@ -4,8 +4,12 @@ import { resolve } from "node:path";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
-import { McpStatusService } from "../application/mcp_status.js";
+import {
+  ApplicationMcpRuntimeStatusProvider,
+  McpStatusService,
+} from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
+import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -22,6 +26,7 @@ import { SqliteUsersRepository } from "../infrastructure/database/users_reposito
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
+import { McpSessionRuntime } from "./mcp_session_runtime.js";
 
 const logger = createJsonLogger();
 
@@ -66,9 +71,18 @@ async function startApplication(): Promise<void> {
     const mcpAuditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),
     );
+    const mcpSessionRegistry = new RemoteMcpSessionRegistry(config.mcp.session);
+    const mcpSessionRuntime = new McpSessionRuntime(
+      mcpSessionRegistry,
+      Math.min(
+        60_000,
+        Math.max(1_000, Math.floor(config.mcp.session.idleDurationMs / 2)),
+      ),
+      logger,
+    );
     const mcpStatusService = new McpStatusService(
       config.mcp.session,
-      undefined,
+      new ApplicationMcpRuntimeStatusProvider(mcpSessionRegistry),
       mcpAuditService,
     );
     const staticRoot =
@@ -90,6 +104,7 @@ async function startApplication(): Promise<void> {
       ...(staticRoot ? { staticRoot } : {}),
     });
 
+    mcpSessionRuntime.start();
     const server = app.listen(config.port, config.host, () => {
       logger.info("application_started", {
         bind: config.host === "0.0.0.0" ? "all_interfaces" : "configured",
@@ -100,8 +115,10 @@ async function startApplication(): Promise<void> {
 
     server.once("error", (error) => {
       logger.error("http_server_failed", { error });
-      if (database.open) database.close();
       process.exitCode = 1;
+      void mcpSessionRuntime.stop().finally(() => {
+        if (database.open) database.close();
+      });
     });
 
     function shutdown(signal: "SIGINT" | "SIGTERM"): void {
@@ -109,13 +126,23 @@ async function startApplication(): Promise<void> {
       shuttingDown = true;
       logger.info("application_stopping", { signal });
       server.close((error) => {
-        if (database.open) database.close();
-        if (error) {
-          logger.error("application_stop_failed", { error, signal });
-          process.exitCode = 1;
-          return;
-        }
-        logger.info("application_stopped", { signal });
+        void mcpSessionRuntime
+          .stop()
+          .catch((sessionError: unknown) => {
+            logger.error("mcp_session_shutdown_failed", {
+              error: sessionError,
+            });
+            process.exitCode = 1;
+          })
+          .finally(() => {
+            if (database.open) database.close();
+            if (error) {
+              logger.error("application_stop_failed", { error, signal });
+              process.exitCode = 1;
+              return;
+            }
+            logger.info("application_stopped", { signal });
+          });
       });
     }
 

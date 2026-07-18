@@ -60,8 +60,9 @@ stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
 server exposes five read-only tools through an explicit actor and workspace
 binding and records each accepted tool outcome in an immutable audit ledger.
-The app does not yet support documents, remote MCP, or mutating MCP tools.
-Automated tests and CI cover each completed boundary.
+A closed remote registry enforces session admission, expiry, and cleanup without
+exposing a network endpoint. The app does not yet support documents, remote MCP,
+or mutating MCP tools. Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 

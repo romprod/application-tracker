@@ -19,7 +19,7 @@ The response contains only:
 - local and remote transport states;
 - active and initializing session counts;
 - configured global and per-actor session limits;
-- configured idle and absolute lifetimes; and
+- configured idle and absolute lifetimes;
 - Boolean readiness flags for OAuth verification and audit events, plus the
   registered tool count; and
 - the 20 most recent workspace-scoped MCP audit events.
@@ -36,15 +36,16 @@ check this disclosure contract.
 
 The status marks local stdio as ready when the build contains the transport and
 tool registry. Each MCP client spawns its own process, so the website does not
-discover or count those processes. Active and initializing counts remain for
-the future remote session registry and stay at zero.
+discover or count those processes. Active and initializing counts cover only
+the closed remote registry. They stay at zero until a future authenticated
+remote adapter admits sessions.
 
 Local client setup, actor binding, revocation behavior, and tool contracts are
 documented in [`local-mcp.md`](local-mcp.md).
 
 ## Remote session policy
 
-The environment controls the future MCP session policy:
+The environment controls the closed remote MCP session policy:
 
 | Variable                       | Default | Meaning                          |
 | ------------------------------ | ------: | -------------------------------- |
@@ -56,12 +57,23 @@ The environment controls the future MCP session policy:
 Startup rejects a per-actor limit above the global limit and an absolute
 lifetime at or below the idle lifetime.
 
-These values do not govern local child processes. The status reports
-`enforcement: inactive` until the remote registry implements race-safe
-admission, expiry, explicit close, and shutdown cleanup.
+These values do not govern local child processes. The registry reports
+`enforcement: active` because it now provides:
+
+- atomic admission that counts initializing reservations;
+- installation-wide and per-actor limits;
+- idle expiry capped by an absolute lifetime;
+- idempotent explicit close;
+- periodic cleanup that releases capacity before closing resources; and
+- shutdown cleanup for active and initializing sessions.
+
+The registry stores opaque session IDs, local actor IDs, workspace IDs,
+timestamps, state, and an in-process close handle. The status API exposes only
+workspace-scoped counts. Registry readiness does not enable a network route or
+weaken the OAuth requirement.
 
 ## Remaining MCP milestones
 
-Remote HTTPS, OAuth verification, session enforcement, and mutating tools
-remain separate stages. Until those controls land, the remote transport stays
-disabled and local tools stay read-only.
+Remote HTTPS, OAuth verification, and mutating tools remain separate stages.
+Until those controls land, the remote transport stays disabled and local tools
+stay read-only.

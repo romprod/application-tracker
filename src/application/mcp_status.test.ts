@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { AuthenticatedActor } from "./auth.js";
 import type { McpAuditReader } from "./mcp_audit.js";
 import {
+  ApplicationMcpRuntimeStatusProvider,
   McpStatusForbiddenError,
   McpStatusService,
-  LocalMcpRuntimeStatusProvider,
 } from "./mcp_status.js";
 
 const admin: AuthenticatedActor = {
@@ -24,8 +24,9 @@ const policy = {
 };
 
 describe("McpStatusService", () => {
-  it("reports the available local runtime without claiming remote controls", () => {
-    const provider = new LocalMcpRuntimeStatusProvider();
+  it("reports enforced registry counts without claiming a remote transport", () => {
+    const sessionCounts = vi.fn(() => ({ active: 2, initializing: 1 }));
+    const provider = new ApplicationMcpRuntimeStatusProvider({ sessionCounts });
     const snapshot = vi.spyOn(provider, "snapshot");
     const listRecent = vi.fn(() => [
       {
@@ -61,11 +62,11 @@ describe("McpStatusService", () => {
       ],
       sessions: {
         absoluteLifetimeSeconds: 14_400,
-        active: 0,
-        enforcement: "inactive",
+        active: 2,
+        enforcement: "active",
         globalLimit: 6,
         idleTimeoutSeconds: 900,
-        initializing: 0,
+        initializing: 1,
         perActorLimit: 2,
       },
       transports: {
@@ -74,6 +75,7 @@ describe("McpStatusService", () => {
       },
     });
     expect(snapshot).toHaveBeenCalledWith("workspace-1");
+    expect(sessionCounts).toHaveBeenCalledWith("workspace-1");
     expect(listRecent).toHaveBeenCalledWith("workspace-1", 20);
   });
 

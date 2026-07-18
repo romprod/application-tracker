@@ -5,13 +5,7 @@ import {
   type McpAuditEvent,
   type McpAuditReader,
 } from "./mcp_audit.js";
-
-export interface McpSessionPolicy {
-  absoluteDurationMs: number;
-  globalLimit: number;
-  idleDurationMs: number;
-  perActorLimit: number;
-}
+import type { McpSessionCounts, McpSessionPolicy } from "./mcp_sessions.js";
 
 export interface McpRuntimeSnapshot {
   activeSessions: number;
@@ -27,6 +21,10 @@ export interface McpRuntimeSnapshot {
 
 export interface McpRuntimeStatusProvider {
   snapshot(workspaceId: string): McpRuntimeSnapshot;
+}
+
+export interface McpSessionCountsProvider {
+  sessionCounts(workspaceId: string): McpSessionCounts;
 }
 
 export interface McpStatus {
@@ -65,19 +63,25 @@ export class McpStatusForbiddenError extends Error {
   }
 }
 
-export class LocalMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
+export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
+  public constructor(
+    private readonly sessions: McpSessionCountsProvider = {
+      sessionCounts: () => ({ active: 0, initializing: 0 }),
+    },
+  ) {}
+
   public snapshot(workspaceId: string): McpRuntimeSnapshot {
-    void workspaceId;
+    const sessions = this.sessions.sessionCounts(workspaceId);
     return {
-      activeSessions: 0,
+      activeSessions: sessions.active,
       auditEventsAvailable: true,
       availability: "available",
-      initializingSessions: 0,
+      initializingSessions: sessions.initializing,
       localTransportState: "ready",
       oauthVerificationAvailable: false,
       registeredTools: localMcpToolNames.length,
       remoteTransportState: "disabled",
-      sessionEnforcement: "inactive",
+      sessionEnforcement: "active",
     };
   }
 }
@@ -85,7 +89,7 @@ export class LocalMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
 export class McpStatusService {
   public constructor(
     private readonly policy: McpSessionPolicy,
-    private readonly provider: McpRuntimeStatusProvider = new LocalMcpRuntimeStatusProvider(),
+    private readonly provider: McpRuntimeStatusProvider = new ApplicationMcpRuntimeStatusProvider(),
     private readonly auditReader: McpAuditReader = emptyMcpAuditReader,
   ) {}
 

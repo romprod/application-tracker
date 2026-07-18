@@ -1563,6 +1563,7 @@ function McpSettingsView({
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
   const localReady = status?.transports.local.state === "ready";
+  const registryReady = status?.sessions.enforcement === "active";
 
   useEffect(() => {
     let active = true;
@@ -1682,14 +1683,18 @@ function McpSettingsView({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Remote session policy</p>
-                <h2 id="policy-title">Configured, not enforced</h2>
+                <h2 id="policy-title">
+                  {registryReady
+                    ? "Registry ready"
+                    : "Configured, not enforced"}
+                </h2>
               </div>
               <span>{status.sessions.globalLimit} session ceiling</span>
             </div>
             <p>
-              These limits remain reserved for the remote session registry.
-              Local stdio processes rely on operating-system access and their
-              configured actor binding.
+              {registryReady
+                ? "The closed remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. Remote HTTP remains disabled."
+                : "These limits remain reserved for the remote session registry. Local stdio processes rely on operating-system access and their configured actor binding."}
             </p>
             <dl className="policy-list">
               <div>

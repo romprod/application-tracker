@@ -51,7 +51,7 @@ Local password verification and session lifecycle are described in
 [`authentication.md`](authentication.md).
 Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
-The sanitized MCP status boundary and future session policy are described in
+The sanitized MCP status boundary and closed remote session registry are described in
 [`mcp-status.md`](mcp-status.md).
 The local stdio transport, explicit actor binding, and read-only tools are
 described in [`local-mcp.md`](local-mcp.md).

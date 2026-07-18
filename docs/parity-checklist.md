@@ -44,7 +44,7 @@ tests and user documentation.
 - [ ] Remote HTTPS server with strict OAuth verification
 - [x] Read-only tool schemas, per-call authorization, and audit events
 - [ ] Mutating tool approval, transactions, and rollback tests
-- [ ] Global and per-actor session limits, expiry, and cleanup
+- [x] Global and per-actor session limits, expiry, and cleanup
 - [x] Administrator-only sanitized MCP status
 
 ## Release

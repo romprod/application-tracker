@@ -196,7 +196,7 @@ const mcpStatus: McpStatus = {
   sessions: {
     absoluteLifetimeSeconds: 14_400,
     active: 0,
-    enforcement: "inactive",
+    enforcement: "active",
     globalLimit: 6,
     idleTimeoutSeconds: 900,
     initializing: 0,
@@ -909,7 +909,7 @@ describe("application shell", () => {
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
     expect(screen.getByText("5 read-only tools available")).toBeInTheDocument();
-    expect(screen.getByText("Configured, not enforced")).toBeInTheDocument();
+    expect(screen.getByText("Registry ready")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Recent MCP activity" }),
@@ -917,6 +917,11 @@ describe("application shell", () => {
     expect(screen.getByText("Get Tracker Context")).toBeInTheDocument();
     expect(screen.getByText("Alex Example · @alex")).toBeInTheDocument();
     expect(screen.getByText("Success")).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("list", { name: "MCP security controls" }),
+      ).getByText("Active"),
+    ).toBeInTheDocument();
   });
 
   it("lets administrators maintain workspace lists", async () => {

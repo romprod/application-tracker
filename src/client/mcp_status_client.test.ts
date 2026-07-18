@@ -25,7 +25,7 @@ const status = {
   sessions: {
     absoluteLifetimeSeconds: 14_400,
     active: 0,
-    enforcement: "inactive",
+    enforcement: "active",
     globalLimit: 6,
     idleTimeoutSeconds: 900,
     initializing: 0,
