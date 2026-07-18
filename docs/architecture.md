@@ -45,6 +45,9 @@ and migrate representative prior schemas forward.
 The implementation and migration policy are described in
 [`database.md`](database.md).
 
+Local password verification and session lifecycle are described in
+[`authentication.md`](authentication.md).
+
 The initial schema will separate:
 
 - workspaces, users, credentials, memberships, sessions, and external identities

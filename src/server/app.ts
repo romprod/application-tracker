@@ -3,9 +3,13 @@ import express, { type ErrorRequestHandler, type Express } from "express";
 import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
+import type { AuthService } from "../application/auth.js";
+import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
 
 export interface AppOptions {
+  authCookie?: AuthCookieOptions;
+  authService?: AuthService;
   setupService?: SetupService;
   staticRoot?: string;
 }
@@ -37,6 +41,13 @@ export function createApp(options: AppOptions = {}): Express {
 
   if (options.setupService) {
     app.use("/api/setup", createSetupRouter(options.setupService));
+  }
+
+  if (options.authService && options.authCookie) {
+    app.use(
+      "/api/auth",
+      createAuthRouter(options.authService, options.authCookie),
+    );
   }
 
   if (options.staticRoot) {

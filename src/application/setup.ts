@@ -2,6 +2,7 @@ import type { InitialSetupInput } from "../domain/setup.js";
 
 export interface PasswordHasher {
   hash(password: string): Promise<string>;
+  verify(password: string, encodedHash: string): Promise<boolean>;
 }
 
 export interface SetupTokenVerifier {

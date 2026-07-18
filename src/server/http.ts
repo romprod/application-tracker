@@ -1,9 +1,13 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { randomBytes } from "node:crypto";
 
+import { AuthService } from "../application/auth.js";
 import { SetupService } from "../application/setup.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
+import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
+import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { createApp } from "./app.js";
@@ -16,16 +20,36 @@ if (existsSync(environmentPath)) {
 
 const config = parseRuntimeConfig(process.env);
 const database = openApplicationDatabase(config.databasePath);
+const passwordHasher = new ScryptPasswordHasher();
 const setupService = new SetupService(
   new SqliteSetupRepository(database),
-  new ScryptPasswordHasher(),
+  passwordHasher,
   new StaticSetupTokenVerifier(config.setupToken),
+);
+const dummyPasswordHash = await passwordHasher.hash(
+  randomBytes(32).toString("base64url"),
+);
+const authService = new AuthService(
+  new SqliteAuthRepository(database),
+  passwordHasher,
+  new CryptoSessionTokenManager(),
+  {
+    absoluteDurationMs: config.session.absoluteDurationMs,
+    dummyPasswordHash,
+    idleDurationMs: config.session.idleDurationMs,
+    refreshIntervalMs: config.session.refreshIntervalMs,
+  },
 );
 const staticRoot =
   config.nodeEnv === "production"
     ? resolve(process.cwd(), "dist/client")
     : undefined;
 const app = createApp({
+  authCookie: {
+    maxAgeSeconds: config.session.absoluteDurationMs / 1000,
+    secure: config.session.cookieSecure,
+  },
+  authService,
   setupService,
   ...(staticRoot ? { staticRoot } : {}),
 });

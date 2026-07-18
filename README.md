@@ -45,8 +45,9 @@ Development standards are defined in
 
 The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
-identity schema, automated tests, and CI. It does not yet persist job
-applications or provide user login.
+identity schema, local authentication APIs, automated tests, and CI. It does
+not yet persist job applications. The browser login screen is the current
+identity milestone.
 
 ## Run the foundation
 
