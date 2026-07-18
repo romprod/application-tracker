@@ -44,8 +44,9 @@ Development standards are defined in
 [`docs/parity-checklist.md`](docs/parity-checklist.md).
 
 The current foundation includes a typed configuration boundary, a sanitized
-health endpoint, a responsive application shell, automated tests, and CI. It
-does not yet persist application data or authenticate users.
+health endpoint, a responsive application shell, a migration-backed workspace
+identity schema, automated tests, and CI. It does not yet persist job
+applications or authenticate users.
 
 ## Run the foundation
 

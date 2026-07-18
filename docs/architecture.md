@@ -42,6 +42,9 @@ file permissions. All migrations are ordered, transactional where SQLite
 allows, and recorded in `schema_migrations`. Tests create a database from zero
 and migrate representative prior schemas forward.
 
+The implementation and migration policy are described in
+[`database.md`](database.md).
+
 The initial schema will separate:
 
 - workspaces, users, credentials, memberships, sessions, and external identities

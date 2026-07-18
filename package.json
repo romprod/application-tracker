@@ -26,6 +26,7 @@
   "dependencies": {
     "@fontsource-variable/archivo": "5.2.8",
     "@fontsource-variable/newsreader": "5.2.10",
+    "better-sqlite3": "12.11.1",
     "compression": "1.8.1",
     "express": "5.2.1",
     "helmet": "8.3.0",
@@ -37,6 +38,7 @@
     "@eslint/js": "10.0.1",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
+    "@types/better-sqlite3": "7.6.13",
     "@types/compression": "1.8.1",
     "@types/express": "5.0.6",
     "@types/node": "26.1.1",

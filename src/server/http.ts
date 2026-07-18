@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 
@@ -10,6 +11,7 @@ if (existsSync(environmentPath)) {
 }
 
 const config = parseRuntimeConfig(process.env);
+const database = openApplicationDatabase(config.databasePath);
 const staticRoot =
   config.nodeEnv === "production"
     ? resolve(process.cwd(), "dist/client")
@@ -25,6 +27,7 @@ const server = app.listen(config.port, config.host, () => {
 function shutdown(signal: string): void {
   console.info(`Received ${signal}; stopping Application Tracker`);
   server.close((error) => {
+    database.close();
     if (error) {
       console.error("Application Tracker did not stop cleanly", error);
       process.exitCode = 1;
