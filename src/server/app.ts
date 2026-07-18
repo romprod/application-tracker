@@ -1,5 +1,5 @@
 import compression from "compression";
-import express, { type ErrorRequestHandler, type Express } from "express";
+import express, { type Express } from "express";
 import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
@@ -14,11 +14,18 @@ import { createSetupRouter } from "./setup_routes.js";
 import { createMcpStatusRouter } from "./mcp_status_routes.js";
 import { createUsersRouter } from "./users_routes.js";
 import { createReferenceValuesRouter } from "./reference_values_routes.js";
+import {
+  apiNotFoundHandler,
+  createApiErrorHandler,
+  createApiRequestLogger,
+} from "./http_boundary.js";
+import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
 export interface AppOptions {
   applicationsService?: ApplicationLedgerService;
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
+  logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
   referenceValuesService?: ReferenceValuesService;
   setupService?: SetupService;
@@ -26,22 +33,14 @@ export interface AppOptions {
   usersService?: UserAdministrationService;
 }
 
-const internalErrorHandler: ErrorRequestHandler = (
-  _error,
-  _request,
-  response,
-  next,
-) => {
-  void next;
-  response.status(500).json({ error: { code: "internal_error" } });
-};
-
 export function createApp(options: AppOptions = {}): Express {
   const app = express();
+  const logger = options.logger ?? noOpLogger;
 
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(compression());
+  app.use("/api", createApiRequestLogger(logger));
   app.use(express.json({ limit: "256kb" }));
 
   app.get("/api/health", (_request, response) => {
@@ -96,6 +95,8 @@ export function createApp(options: AppOptions = {}): Express {
     );
   }
 
+  app.use("/api", apiNotFoundHandler);
+
   if (options.staticRoot) {
     app.use(express.static(options.staticRoot, { index: false }));
     app.use((request, response, next) => {
@@ -108,7 +109,7 @@ export function createApp(options: AppOptions = {}): Express {
     });
   }
 
-  app.use(internalErrorHandler);
+  app.use(createApiErrorHandler(logger));
 
   return app;
 }

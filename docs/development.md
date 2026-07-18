@@ -31,6 +31,8 @@ Useful commands:
 
 The database commands and live replacement procedure are documented in
 [`backup-restore.md`](backup-restore.md).
+API error responses and the fields permitted in runtime logs are documented in
+[`error-handling.md`](error-handling.md).
 
 ## Commit discipline
 

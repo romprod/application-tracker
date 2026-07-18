@@ -8,7 +8,7 @@ tests and user documentation.
 - [x] TypeScript toolchain, formatting, linting, tests, and CI
 - [x] Typed runtime configuration with safe local defaults
 - [x] Versioned SQLite migrations, online backup, and verified restore
-- [ ] Structured error handling and redacted logging
+- [x] Structured error handling and redacted logging
 
 ## Identity and administration
 

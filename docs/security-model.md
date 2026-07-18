@@ -77,6 +77,8 @@ database paths, or internal errors. See [`mcp-status.md`](mcp-status.md).
 - Foreign keys, constraints, transactions, and migration checks
 - Owner-only database, backup, and secret permissions
 - Online backups with integrity verification and documented restore testing
+- Stable API error codes and server-generated request correlation identifiers
+- Structured runtime logs that omit content, credentials, identity, and topology
 - Dependency lockfile, automated audit, and reproducible production build
 - Release scanner for credentials, databases, private paths, and infrastructure
 

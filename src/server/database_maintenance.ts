@@ -10,6 +10,9 @@ import {
 } from "../infrastructure/database/backup_restore.js";
 import { parseRuntimeConfig } from "./config.js";
 import { parseDatabaseMaintenanceArguments } from "./database_maintenance_arguments.js";
+import { createJsonLogger } from "./logging.js";
+
+const logger = createJsonLogger();
 
 const environmentPath = resolve(process.cwd(), ".env");
 if (existsSync(environmentPath)) process.loadEnvFile(environmentPath);
@@ -54,7 +57,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : "Unknown error";
-  console.error(`Database maintenance failed: ${message}`);
+  logger.error("database_maintenance_failed", { error });
   process.exitCode = 1;
 });

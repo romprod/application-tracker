@@ -55,9 +55,11 @@ next actions with optional due dates, and an immutable timeline for creation
 and stage changes. Application removal is workspace-scoped and audited without
 erasing that timeline. Workspace administrators can configure statuses,
 sources, role types, and document types. Operator commands provide online
-SQLite backup, verification, and non-overwriting restore. The app does not yet
-support documents or an MCP server. Automated tests and CI cover each completed
-boundary.
+SQLite backup, verification, and non-overwriting restore. API failures use
+stable error codes and server-generated request IDs; structured runtime logs
+redact credentials, content, identity, and private topology. The app does not
+yet support documents or an MCP server. Automated tests and CI cover each
+completed boundary.
 
 ## Run the foundation
 
