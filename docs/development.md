@@ -11,9 +11,10 @@ npm ci
 npm run dev
 ```
 
-The browser runs at `http://127.0.0.1:5173`; Vite forwards `/api` requests to
-the backend at `http://127.0.0.1:3333`. Both services bind to loopback by
-default.
+The browser runs at `http://<server-ip>:5173`; Vite forwards `/api` requests to
+the backend on port 3333. Both services bind to `0.0.0.0` so containers and
+other devices on an allowed network can reach them. Use host firewall rules to
+limit access. The Vite development server is not a production reverse proxy.
 
 Useful commands:
 

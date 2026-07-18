@@ -6,7 +6,7 @@ const runtimeEnvironmentSchema = z.object({
     .trim()
     .min(1)
     .default("./data/application-tracker.sqlite"),
-  HOST: z.string().trim().min(1).default("127.0.0.1"),
+  HOST: z.string().trim().min(1).default("0.0.0.0"),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),

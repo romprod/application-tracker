@@ -73,7 +73,9 @@
 
 ## Security posture
 
-The default local server binds to loopback. Internet exposure requires explicit
-configuration and a supported authentication mode. A deployment with missing
-security-sensitive configuration fails closed rather than falling back to an
-unauthenticated public service.
+The server binds to all interfaces by default for LAN and container access. The
+host firewall must limit who can reach it. Internet exposure requires a
+supported authentication mode and HTTPS at a trusted reverse proxy. The Vite
+development server must never be used as the public reverse proxy. A deployment
+with missing security-sensitive configuration fails closed rather than falling
+back to an unauthenticated public service.
