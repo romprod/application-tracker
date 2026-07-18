@@ -10,7 +10,8 @@ outcomes, documents, and MCP tools.
 An application contains:
 
 - company and role title;
-- one built-in stage: `prospect`, `applied`, `interview`, `offer`, or `closed`;
+- one workspace-defined status;
+- optional workspace-defined source and role type;
 - optional location, HTTP(S) source link, applied date, notes, current next
   action, and next-action due date;
 - up to ten ordered contacts, each with a name and optional role, email, and
@@ -24,14 +25,16 @@ ISO dates and contact email addresses, caps each relation list at ten entries,
 and accepts only HTTP(S) web links. The browser validates returned dates,
 contacts, and links again before rendering them.
 
-The built-in stages provide a small working workflow. A member can move a
-record directly between them. Configurable stages and transition rules belong
-to the Lists milestone; the current ledger does not claim that capability.
+Administrators manage statuses, sources, and role types in Settings → Lists.
+Members choose active values when creating or editing an application. An
+inactive value remains visible on records that already use it but is not
+offered for new selections. A status's closed-outcome flag, rather than its
+label, determines whether the application counts as open.
 
 ## Workspace interface
 
-The dashboard derives total, open, stage, and closed counts from the active
-workspace's application records. It orders open next actions by due date,
+The dashboard derives total, open, dynamic status, and closed counts from the
+active workspace's application records. It orders open next actions by due date,
 leaving undated actions last. Overdue, today, tomorrow, and upcoming labels make
 the immediate work visible. The Applications page provides text search, stage
 and location filters, and accessible sorting for every displayed data column.
@@ -68,7 +71,8 @@ Each application has an immutable timeline with two event types:
 Changing a company, role, date, location, source link, note, or next action does
 not create a timeline event. Saving the same stage again also creates no event.
 The timeline identifies the member who made each recorded change and displays
-the newest event first.
+the newest event first. Events retain the status labels used at the time of the
+change, so later list renames do not rewrite history.
 
 ## Authorization and HTTP boundary
 
@@ -113,6 +117,13 @@ zero-based position. Creating or updating an application writes its ordered
 contacts and links in the same immediate transaction as the parent record and
 any stage event. A failed relation write rolls back the entire change.
 
+Migration 9 connects each application to workspace-scoped status, source, and
+role-type values. It backfills existing records against the generic defaults,
+validates category and workspace ownership with foreign keys and triggers, and
+rebuilds event storage to retain arbitrary status-label snapshots. The original
+stage column remains as an internal compatibility field and is no longer part
+of the repository or HTTP contract.
+
 Foreign keys bind records, contacts, links, events, and deletion audits to a
 workspace and its members. Creation, editing, and removal transactions update
 related state atomically. Database triggers reject event updates and deletions.
@@ -121,5 +132,6 @@ workspace-first indexes for ledger, relation, and timeline reads.
 
 ## Deferred behavior
 
-Configurable transition rules and outcomes remain unchecked in the capability
-checklist.
+Configurable transition rules remain deferred. Statuses can represent open or
+closed outcomes, but the application does not restrict which transitions a
+member may make.

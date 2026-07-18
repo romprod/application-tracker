@@ -51,7 +51,7 @@ Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
 The sanitized MCP status boundary and future session policy are described in
 [`mcp-status.md`](mcp-status.md).
-The first application-record slice is described in
+The application ledger is described in
 [`application-ledger.md`](application-ledger.md).
 Workspace-owned statuses, sources, role types, and document types are described
 in [`reference-lists.md`](reference-lists.md).

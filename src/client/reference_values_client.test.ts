@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { browserReferenceValuesClient } from "./reference_values_client";
+import {
+  browserReferenceValuesClient,
+  ReferenceValuesClientError,
+} from "./reference_values_client";
 
 const value = {
   category: "status" as const,
@@ -71,5 +74,23 @@ describe("browserReferenceValuesClient", () => {
     await expect(
       browserReferenceValuesClient.deleteValue(value.id),
     ).resolves.toBeUndefined();
+  });
+
+  it("rejects malformed list values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ values: [{ ...value, id: "not-an-id" }] }),
+            { status: 200 },
+          ),
+        ),
+    );
+
+    await expect(browserReferenceValuesClient.listValues()).rejects.toEqual(
+      new ReferenceValuesClientError("invalid_response"),
+    );
   });
 });

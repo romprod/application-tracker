@@ -24,11 +24,11 @@ tests and user documentation.
 - [x] Application field updates
 - [x] Audited application deletion
 - [x] Application search, filtering, and sorting controls
-- [x] Creation and built-in status transition timeline events
+- [x] Creation and status transition timeline events
 - [x] Current next action and optional due date
 - [x] Contacts and additional links
 - [x] Dashboard metrics scoped to the active workspace
-- [ ] Configurable statuses, sources, role types, and document types
+- [x] Configurable statuses, sources, role types, and document types
 
 ## Documents
 

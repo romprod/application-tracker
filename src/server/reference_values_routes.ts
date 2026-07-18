@@ -9,6 +9,7 @@ import type { AuthService, AuthenticatedActor } from "../application/auth.js";
 import {
   ReferenceValueConflictError,
   ReferenceValueInvalidError,
+  ReferenceValueInUseError,
   ReferenceValueNotFoundError,
   ReferenceValueRequiredError,
   ReferenceValuesForbiddenError,
@@ -59,6 +60,10 @@ function handleKnownError(
   }
   if (error instanceof ReferenceValueRequiredError) {
     response.status(409).json({ error: { code: "reference_value_required" } });
+    return;
+  }
+  if (error instanceof ReferenceValueInUseError) {
+    response.status(409).json({ error: { code: "reference_value_in_use" } });
     return;
   }
   if (error instanceof ReferenceValueNotFoundError) {

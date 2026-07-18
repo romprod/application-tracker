@@ -6,6 +6,10 @@ import {
   updateApplicationSchema,
 } from "./applications.js";
 
+const statusId = "11111111-1111-4111-8111-111111111111";
+const sourceId = "22222222-2222-4222-8222-222222222222";
+const roleTypeId = "33333333-3333-4333-8333-333333333333";
+
 describe("createApplicationSchema", () => {
   it("normalizes a complete application record", () => {
     expect(
@@ -30,9 +34,11 @@ describe("createApplicationSchema", () => {
         nextAction: "  Send the portfolio follow-up.  ",
         nextActionDue: "2026-07-21",
         notes: "  Referred by a former colleague.  ",
+        roleTypeId,
         roleTitle: "  Product Designer  ",
+        sourceId,
         sourceUrl: "  https://jobs.example.com/product-designer  ",
-        status: "applied",
+        statusId,
       }),
     ).toEqual({
       appliedOn: "2026-07-18",
@@ -55,13 +61,15 @@ describe("createApplicationSchema", () => {
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
       notes: "Referred by a former colleague.",
+      roleTypeId,
       roleTitle: "Product Designer",
+      sourceId,
       sourceUrl: "https://jobs.example.com/product-designer",
-      status: "applied",
+      statusId,
     });
   });
 
-  it("uses a prospect stage and removes blank optional values", () => {
+  it("requires a workspace status and removes blank optional values", () => {
     expect(
       createApplicationSchema.parse({
         companyName: "Example Studio",
@@ -71,11 +79,12 @@ describe("createApplicationSchema", () => {
         notes: "",
         roleTitle: "Product Designer",
         sourceUrl: "",
+        statusId,
       }),
     ).toEqual({
       companyName: "Example Studio",
       roleTitle: "Product Designer",
-      status: "prospect",
+      statusId,
     });
   });
 
@@ -139,8 +148,10 @@ describe("updateApplicationSchema", () => {
         location: "   ",
         nextAction: "  ",
         nextActionDue: "",
+        roleTypeId: null,
+        sourceId: null,
         sourceUrl: null,
-        status: "interview",
+        statusId,
       }),
     ).toEqual({
       appliedOn: null,
@@ -150,8 +161,10 @@ describe("updateApplicationSchema", () => {
       location: null,
       nextAction: null,
       nextActionDue: null,
+      roleTypeId: null,
+      sourceId: null,
       sourceUrl: null,
-      status: "interview",
+      statusId,
     });
   });
 

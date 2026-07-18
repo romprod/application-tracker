@@ -1,12 +1,5 @@
 import { z } from "zod";
-
-export const applicationStatusSchema = z.enum([
-  "prospect",
-  "applied",
-  "interview",
-  "offer",
-  "closed",
-]);
+import { referenceValueIdSchema } from "./reference_values.js";
 
 export const applicationIdSchema = z.uuid();
 
@@ -67,7 +60,9 @@ export const createApplicationSchema = z.strictObject({
   nextAction: optionalText(500),
   nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
   notes: optionalText(5000),
+  roleTypeId: referenceValueIdSchema.optional(),
   roleTitle: z.string().trim().min(1).max(160),
+  sourceId: referenceValueIdSchema.optional(),
   sourceUrl: z.preprocess(
     blankToUndefined,
     z
@@ -76,7 +71,7 @@ export const createApplicationSchema = z.strictObject({
       .max(2048)
       .optional(),
   ),
-  status: applicationStatusSchema.default("prospect"),
+  statusId: referenceValueIdSchema,
 });
 
 export const updateApplicationSchema = z
@@ -97,7 +92,9 @@ export const updateApplicationSchema = z
       .preprocess(blankToNull, z.iso.date().nullable())
       .optional(),
     notes: nullableText(5000).optional(),
+    roleTypeId: referenceValueIdSchema.nullable().optional(),
     roleTitle: z.string().trim().min(1).max(160).optional(),
+    sourceId: referenceValueIdSchema.nullable().optional(),
     sourceUrl: z
       .preprocess(
         blankToNull,
@@ -108,13 +105,12 @@ export const updateApplicationSchema = z
           .nullable(),
       )
       .optional(),
-    status: applicationStatusSchema.optional(),
+    statusId: referenceValueIdSchema.optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
     message: "At least one application field must be supplied",
   });
 
-export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
 export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;

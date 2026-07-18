@@ -1,6 +1,5 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type {
-  ApplicationStatus,
   ApplicationContactInput,
   ApplicationLinkInput,
   CreateApplicationInput,
@@ -30,9 +29,15 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  roleType: string | null;
+  roleTypeId: string | null;
   roleTitle: string;
+  source: string | null;
+  sourceId: string | null;
   sourceUrl: string | null;
-  status: ApplicationStatus;
+  status: string;
+  statusId: string;
+  statusIsTerminal: boolean;
   updatedAt: string;
 }
 
@@ -47,9 +52,11 @@ export interface CreateApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  roleTypeId: string | null;
   roleTitle: string;
+  sourceId: string | null;
   sourceUrl: string | null;
-  status: ApplicationStatus;
+  statusId: string;
   workspaceId: string;
 }
 
@@ -64,10 +71,10 @@ export type ApplicationEventType = "application_created" | "status_changed";
 
 export interface ApplicationEvent {
   actorDisplayName: string;
-  fromStatus: ApplicationStatus | null;
+  fromStatus: string | null;
   id: string;
   occurredAt: string;
-  toStatus: ApplicationStatus;
+  toStatus: string;
   type: ApplicationEventType;
 }
 
@@ -116,6 +123,13 @@ export class ApplicationNotFoundError extends Error {
   }
 }
 
+export class InvalidApplicationReferenceError extends Error {
+  public constructor() {
+    super("Invalid application reference value");
+    this.name = "InvalidApplicationReferenceError";
+  }
+}
+
 export class ApplicationLedgerService {
   public constructor(
     private readonly repository: ApplicationsRepository,
@@ -137,9 +151,11 @@ export class ApplicationLedgerService {
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: input.notes ?? null,
+      roleTypeId: input.roleTypeId ?? null,
       roleTitle: input.roleTitle,
+      sourceId: input.sourceId ?? null,
       sourceUrl: input.sourceUrl ?? null,
-      status: input.status,
+      statusId: input.statusId,
       workspaceId: actor.workspaceId,
     });
   }

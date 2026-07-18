@@ -22,6 +22,23 @@ function createRepository() {
   };
 }
 
+function referenceId(
+  database: ReturnType<typeof openApplicationDatabase>,
+  workspaceId: string,
+  category: "role_type" | "source" | "status",
+  label: string,
+): string {
+  const id = database
+    .prepare(
+      `SELECT id FROM reference_values
+       WHERE workspace_id = ? AND category = ? AND label = ?`,
+    )
+    .pluck()
+    .get(workspaceId, category, label);
+  if (typeof id !== "string") throw new Error("Missing test reference value");
+  return id;
+}
+
 describe("SqliteApplicationsRepository", () => {
   it("creates and lists application fields without internal scope data", () => {
     const { database, repository, setup } = createRepository();
@@ -50,9 +67,26 @@ describe("SqliteApplicationsRepository", () => {
             url: "https://careers.example.com/application",
           },
         ],
+        roleTypeId: referenceId(
+          database,
+          setup.workspace.id,
+          "role_type",
+          "Full-time",
+        ),
         roleTitle: "Product Designer",
+        sourceId: referenceId(
+          database,
+          setup.workspace.id,
+          "source",
+          "Referral",
+        ),
         sourceUrl: "https://jobs.example.com/product-designer",
-        status: "applied",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Applied",
+        ),
         workspaceId: setup.workspace.id,
       });
 
@@ -76,7 +110,9 @@ describe("SqliteApplicationsRepository", () => {
         location: "Remote",
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
-        status: "applied",
+        roleType: "Full-time",
+        source: "Referral",
+        status: "Applied",
       });
       expect(created).not.toHaveProperty("workspaceId");
       expect(created).not.toHaveProperty("createdByUserId");
@@ -90,7 +126,7 @@ describe("SqliteApplicationsRepository", () => {
           actorDisplayName: "Alex Example",
           fromStatus: null,
           occurredAt: createdAt,
-          toStatus: "applied",
+          toStatus: "Applied",
           type: "application_created",
         }),
       ]);
@@ -115,7 +151,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Security Engineer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
       database
@@ -137,7 +178,12 @@ describe("SqliteApplicationsRepository", () => {
           notes: null,
           roleTitle: "Invalid record",
           sourceUrl: null,
-          status: "prospect",
+          statusId: referenceId(
+            database,
+            setup.workspace.id,
+            "status",
+            "Prospect",
+          ),
           workspaceId: "workspace-00002",
         }),
       ).toThrow();
@@ -183,7 +229,7 @@ describe("SqliteApplicationsRepository", () => {
       notes: null,
       roleTitle: "Product Designer",
       sourceUrl: null,
-      status: "prospect" as const,
+      statusId: referenceId(database, setup.workspace.id, "status", "Prospect"),
       workspaceId: setup.workspace.id,
     };
 
@@ -225,7 +271,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
       const transitioned = repository.updateApplication({
@@ -249,7 +300,12 @@ describe("SqliteApplicationsRepository", () => {
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
-        status: "interview",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Interview",
+        ),
         updatedAt: "2026-07-18T13:00:00.000Z",
         workspaceId: setup.workspace.id,
       });
@@ -273,7 +329,7 @@ describe("SqliteApplicationsRepository", () => {
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
-        status: "interview",
+        status: "Interview",
         updatedAt: "2026-07-18T13:00:00.000Z",
       });
       expect(
@@ -281,15 +337,15 @@ describe("SqliteApplicationsRepository", () => {
       ).toEqual([
         expect.objectContaining({
           actorDisplayName: "Alex Example",
-          fromStatus: "prospect",
+          fromStatus: "Prospect",
           occurredAt: "2026-07-18T13:00:00.000Z",
-          toStatus: "interview",
+          toStatus: "Interview",
           type: "status_changed",
         }),
         expect.objectContaining({
           fromStatus: null,
           occurredAt: createdAt,
-          toStatus: "prospect",
+          toStatus: "Prospect",
           type: "application_created",
         }),
       ]);
@@ -300,7 +356,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: "Updated without changing stage.",
         nextAction: null,
         nextActionDue: null,
-        status: "interview",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Interview",
+        ),
         updatedAt: "2026-07-18T14:00:00.000Z",
         workspaceId: setup.workspace.id,
       });
@@ -330,6 +391,72 @@ describe("SqliteApplicationsRepository", () => {
     }
   });
 
+  it("keeps inactive historical selections while rejecting new use", () => {
+    const { database, repository, setup } = createRepository();
+    const statusId = referenceId(
+      database,
+      setup.workspace.id,
+      "status",
+      "Applied",
+    );
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        statusId,
+        workspaceId: setup.workspace.id,
+      });
+      database
+        .prepare(
+          `UPDATE reference_values SET is_active = 0
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(setup.workspace.id, statusId);
+
+      expect(
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          notes: "The historical status remains selected.",
+          updatedAt: "2026-07-18T13:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toMatchObject({
+        notes: "The historical status remains selected.",
+        status: "Applied",
+        statusId,
+      });
+
+      expect(() =>
+        repository.createApplication({
+          appliedOn: null,
+          companyName: "Another Studio",
+          createdAt: "2026-07-18T14:00:00.000Z",
+          createdByUserId: setup.administrator.id,
+          location: null,
+          nextAction: null,
+          nextActionDue: null,
+          notes: null,
+          roleTitle: "Engineer",
+          sourceUrl: null,
+          statusId,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow("Invalid application reference value");
+    } finally {
+      database.close();
+    }
+  });
+
   it("rolls back an invalid relation replacement atomically", () => {
     const { database, repository, setup } = createRepository();
 
@@ -354,7 +481,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
 
@@ -405,7 +537,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
 
@@ -452,7 +589,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
 
@@ -526,7 +668,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
 
@@ -567,7 +714,12 @@ describe("SqliteApplicationsRepository", () => {
         notes: null,
         roleTitle: "Product Designer",
         sourceUrl: null,
-        status: "prospect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
         workspaceId: setup.workspace.id,
       });
       const eventId = database

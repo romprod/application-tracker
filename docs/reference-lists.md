@@ -23,7 +23,7 @@ Every category must retain at least one active value. Disabling a value keeps
 it available for historical records while removing it from new-entry choices.
 A value can be deleted only when it is not required by these invariants. Once
 applications refer to the lists, referenced values also remain protected from
-deletion.
+deletion, including after an application is removed from normal views.
 
 ## Storage and API
 
@@ -31,6 +31,11 @@ Migration 8 creates strict, workspace-scoped `reference_values` storage and a
 workspace-insert trigger that seeds defaults. Labels are unique without regard
 to case inside each workspace and category. Repository queries bind all input
 values and order results by category and workspace-owned sort order.
+
+Migration 9 connects applications to statuses, sources, and role types. It
+backfills prior applications, rejects inactive or wrong-category selections,
+and keeps status labels in immutable history events as point-in-time snapshots.
+Document types are ready for the document-storage milestone.
 
 Authenticated members can read `GET /api/settings/lists`. The create, update,
 and delete routes require an administrator and a matching browser origin. The

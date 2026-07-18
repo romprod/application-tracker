@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import {
   ReferenceValueConflictError,
   ReferenceValueInvalidError,
+  ReferenceValueInUseError,
   ReferenceValueNotFoundError,
   ReferenceValueRequiredError,
   type CreateReferenceValueRecord,
@@ -156,6 +157,16 @@ export class SqliteReferenceValuesRepository implements ReferenceValuesRepositor
     const remove = this.database.transaction(() => {
       const current = this.findRequired(workspaceId, referenceValueId);
       this.assertRequiredValueRemains(workspaceId, current, false, false);
+      const applicationUses = this.database
+        .prepare(
+          `SELECT 1 FROM applications
+           WHERE status_reference_id = ? OR source_reference_id = ?
+             OR role_type_reference_id = ?
+           LIMIT 1`,
+        )
+        .pluck()
+        .get(referenceValueId, referenceValueId, referenceValueId);
+      if (applicationUses !== undefined) throw new ReferenceValueInUseError();
       this.database
         .prepare(
           "DELETE FROM reference_values WHERE workspace_id = ? AND id = ?",

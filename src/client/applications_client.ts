@@ -1,5 +1,4 @@
-export type ApplicationStatus =
-  "prospect" | "applied" | "interview" | "offer" | "closed";
+export type ApplicationStatus = string;
 
 export interface ApplicationContact {
   email: string | null;
@@ -31,9 +30,15 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  roleType: string | null;
+  roleTypeId: string | null;
   roleTitle: string;
+  source: string | null;
+  sourceId: string | null;
   sourceUrl: string | null;
   status: ApplicationStatus;
+  statusId: string;
+  statusIsTerminal: boolean;
   updatedAt: string;
 }
 
@@ -46,9 +51,11 @@ export interface CreateApplicationInput {
   nextAction?: string;
   nextActionDue?: string;
   notes?: string;
+  roleTypeId?: string;
   roleTitle: string;
+  sourceId?: string;
   sourceUrl?: string;
-  status: ApplicationStatus;
+  statusId: string;
 }
 
 export interface UpdateApplicationInput {
@@ -60,9 +67,11 @@ export interface UpdateApplicationInput {
   nextAction?: string | null;
   nextActionDue?: string | null;
   notes?: string | null;
+  roleTypeId?: string | null;
   roleTitle?: string;
+  sourceId?: string | null;
   sourceUrl?: string | null;
-  status?: ApplicationStatus;
+  statusId?: string;
 }
 
 export interface ApplicationEvent {
@@ -100,6 +109,29 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+function isReferenceValueId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.test(
+      value,
+    )
+  );
+}
+
+function isReferenceLabel(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.trim().length > 0 && value.length <= 80
+  );
+}
+
+function isNullableReferenceLabel(value: unknown): value is string | null {
+  return value === null || isReferenceLabel(value);
+}
+
+function isNullableReferenceValueId(value: unknown): value is string | null {
+  return value === null || isReferenceValueId(value);
+}
+
 function isNullableIsoDate(value: unknown): value is string | null {
   if (value === null) return true;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -120,16 +152,6 @@ function isNullableHttpUrl(value: unknown): value is string | null {
   } catch {
     return false;
   }
-}
-
-function isApplicationStatus(value: unknown): value is ApplicationStatus {
-  return (
-    value === "prospect" ||
-    value === "applied" ||
-    value === "interview" ||
-    value === "offer" ||
-    value === "closed"
-  );
 }
 
 function parseContact(value: unknown): ApplicationContact {
@@ -188,9 +210,17 @@ function parseApplication(value: unknown): ApplicationRecord {
     !isNullableString(value.nextAction) ||
     !isNullableIsoDate(value.nextActionDue) ||
     !isNullableString(value.notes) ||
+    !isNullableReferenceLabel(value.roleType) ||
+    !isNullableReferenceValueId(value.roleTypeId) ||
+    (value.roleType === null) !== (value.roleTypeId === null) ||
     typeof value.roleTitle !== "string" ||
+    !isNullableReferenceLabel(value.source) ||
+    !isNullableReferenceValueId(value.sourceId) ||
+    (value.source === null) !== (value.sourceId === null) ||
     !isNullableHttpUrl(value.sourceUrl) ||
-    !isApplicationStatus(value.status) ||
+    !isReferenceLabel(value.status) ||
+    !isReferenceValueId(value.statusId) ||
+    typeof value.statusIsTerminal !== "boolean" ||
     typeof value.updatedAt !== "string"
   ) {
     throw new ApplicationsClientError("invalid_response");
@@ -206,9 +236,15 @@ function parseApplication(value: unknown): ApplicationRecord {
     nextAction: value.nextAction,
     nextActionDue: value.nextActionDue,
     notes: value.notes,
+    roleType: value.roleType,
+    roleTypeId: value.roleTypeId,
     roleTitle: value.roleTitle,
+    source: value.source,
+    sourceId: value.sourceId,
     sourceUrl: value.sourceUrl,
     status: value.status,
+    statusId: value.statusId,
+    statusIsTerminal: value.statusIsTerminal,
     updatedAt: value.updatedAt,
   };
 }
@@ -219,13 +255,13 @@ function parseApplicationEvent(value: unknown): ApplicationEvent {
     typeof value.actorDisplayName !== "string" ||
     typeof value.id !== "string" ||
     typeof value.occurredAt !== "string" ||
-    !isApplicationStatus(value.toStatus) ||
+    !isReferenceLabel(value.toStatus) ||
     (value.type !== "application_created" && value.type !== "status_changed")
   ) {
     throw new ApplicationsClientError("invalid_response");
   }
   const fromStatus = value.fromStatus;
-  if (fromStatus !== null && !isApplicationStatus(fromStatus)) {
+  if (fromStatus !== null && !isReferenceLabel(fromStatus)) {
     throw new ApplicationsClientError("invalid_response");
   }
   if (

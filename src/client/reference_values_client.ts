@@ -54,16 +54,30 @@ function isCategory(value: unknown): value is ReferenceCategory {
   );
 }
 
+function isReferenceValueId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.test(
+      value,
+    )
+  );
+}
+
 function parseValue(value: unknown): ReferenceValue {
   if (
     !isRecord(value) ||
     !isCategory(value.category) ||
     typeof value.createdAt !== "string" ||
-    typeof value.id !== "string" ||
+    !isReferenceValueId(value.id) ||
     typeof value.isActive !== "boolean" ||
     typeof value.isTerminal !== "boolean" ||
     typeof value.label !== "string" ||
+    value.label.trim().length === 0 ||
+    value.label.length > 80 ||
     typeof value.sortOrder !== "number" ||
+    !Number.isSafeInteger(value.sortOrder) ||
+    value.sortOrder <= 0 ||
+    (value.category !== "status" && value.isTerminal) ||
     typeof value.updatedAt !== "string"
   ) {
     throw new ReferenceValuesClientError("invalid_response");

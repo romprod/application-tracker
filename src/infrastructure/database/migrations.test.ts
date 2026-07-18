@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
       expect(
         database
           .prepare(
@@ -322,7 +322,7 @@ describe("migrateDatabase", () => {
       ).toEqual({
         fromStatus: null,
         occurredAt: "2026-07-17T11:00:00.000Z",
-        toStatus: "interview",
+        toStatus: "Interview",
         type: "application_created",
       });
     } finally {
@@ -406,6 +406,115 @@ describe("migrateDatabase", () => {
         nextAction: null,
         nextActionDue: null,
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("connects existing applications and history to workspace statuses", () => {
+    const database = new Database(":memory:");
+    const applicationId = "application-version-eight";
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 8));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          "workspace-version-eight",
+          "Version Eight",
+          "version-eight",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?)`,
+        )
+        .run(
+          "user-version-eight",
+          "version-eight",
+          "Version Eight User",
+          "2026-07-18T10:00:00.000Z",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES (?, ?, 'admin', ?)`,
+        )
+        .run(
+          "workspace-version-eight",
+          "user-version-eight",
+          "2026-07-18T10:00:00.000Z",
+        );
+      database
+        .prepare(
+          `UPDATE reference_values
+           SET label = 'Submitted', updated_at = '2026-07-18T10:30:00.000Z'
+           WHERE workspace_id = ? AND category = 'status' AND label = 'Applied'`,
+        )
+        .run("workspace-version-eight");
+      database
+        .prepare(
+          `INSERT INTO applications
+             (id, workspace_id, company_name, role_title, status,
+              created_by_user_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          applicationId,
+          "workspace-version-eight",
+          "Example Studio",
+          "Product Designer",
+          "applied",
+          "user-version-eight",
+          "2026-07-18T11:00:00.000Z",
+          "2026-07-18T11:00:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO application_events
+             (id, workspace_id, application_id, actor_user_id, event_type,
+              from_status, to_status, occurred_at)
+           VALUES (?, ?, ?, ?, 'application_created', NULL, 'applied', ?)`,
+        )
+        .run(
+          "event-version-eight",
+          "workspace-version-eight",
+          applicationId,
+          "user-version-eight",
+          "2026-07-18T11:00:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT applications.legacy_status AS legacyStatus,
+                    reference_values.label AS status
+             FROM applications
+             JOIN reference_values
+               ON reference_values.id = applications.status_reference_id
+             WHERE applications.id = ?`,
+          )
+          .get(applicationId),
+      ).toEqual({ legacyStatus: "applied", status: "Submitted" });
+      expect(
+        database
+          .prepare(
+            `SELECT from_status AS fromStatus, to_status AS toStatus
+             FROM application_events WHERE application_id = ?`,
+          )
+          .get(applicationId),
+      ).toEqual({ fromStatus: null, toStatus: "Applied" });
+      expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();
     }

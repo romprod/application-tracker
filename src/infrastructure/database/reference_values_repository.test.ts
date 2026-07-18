@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ReferenceValueConflictError,
+  ReferenceValueInUseError,
   ReferenceValueRequiredError,
 } from "../../application/reference_values.js";
 import { openApplicationDatabase } from "./connection.js";
+import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteReferenceValuesRepository } from "./reference_values_repository.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
 
@@ -164,6 +166,52 @@ describe("SqliteReferenceValuesRepository", () => {
           workspaceId,
         }),
       ).toThrow(ReferenceValueRequiredError);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("protects values that are referenced by application history", () => {
+    const { database, repository, workspaceId } = createRepository();
+
+    try {
+      const prospect = repository
+        .listReferenceValues(workspaceId)
+        .find(
+          ({ category, label }) =>
+            category === "status" && label === "Prospect",
+        );
+      if (!prospect) throw new Error("Missing default status");
+      const administratorId = database
+        .prepare(
+          `SELECT user_id FROM workspace_memberships
+           WHERE workspace_id = ? AND role = 'admin'`,
+        )
+        .pluck()
+        .get(workspaceId);
+      if (typeof administratorId !== "string") {
+        throw new Error("Missing test administrator");
+      }
+      new SqliteApplicationsRepository(database).createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: administratorId,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTypeId: null,
+        roleTitle: "Product Designer",
+        sourceId: null,
+        sourceUrl: null,
+        statusId: prospect.id,
+        workspaceId,
+      });
+
+      expect(() =>
+        repository.deleteReferenceValue(workspaceId, prospect.id),
+      ).toThrow(ReferenceValueInUseError);
     } finally {
       database.close();
     }

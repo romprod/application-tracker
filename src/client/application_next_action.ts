@@ -29,7 +29,7 @@ export function nextActionApplications(
   return applications
     .filter(
       (application) =>
-        application.status !== "closed" && application.nextAction !== null,
+        !application.statusIsTerminal && application.nextAction !== null,
     )
     .map((application, index) => ({ application, index }))
     .sort((left, right) => {

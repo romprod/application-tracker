@@ -7,7 +7,7 @@ function application(
   id: string,
   nextAction: string | null,
   nextActionDue: string | null,
-  status: ApplicationRecord["status"] = "applied",
+  statusIsTerminal = false,
 ): ApplicationRecord {
   return {
     appliedOn: null,
@@ -20,9 +20,15 @@ function application(
     nextAction,
     nextActionDue,
     notes: null,
+    roleType: null,
+    roleTypeId: null,
     roleTitle: "Product Designer",
+    source: null,
+    sourceId: null,
     sourceUrl: null,
-    status,
+    status: statusIsTerminal ? "Closed" : "Applied",
+    statusId: statusIsTerminal ? "status-closed" : "status-applied",
+    statusIsTerminal,
     updatedAt: "2026-07-18T09:00:00.000Z",
   };
 }
@@ -49,7 +55,7 @@ describe("next action presentation", () => {
   it("orders open actions by due date and leaves undated actions last", () => {
     const ordered = nextActionApplications([
       application("undated", "Prepare questions", null),
-      application("closed", "Archive notes", "2026-07-16", "closed"),
+      application("closed", "Archive notes", "2026-07-16", true),
       application("later", "Send references", "2026-07-22"),
       application("missing", null, "2026-07-15"),
       application("first", "Follow up", "2026-07-18"),

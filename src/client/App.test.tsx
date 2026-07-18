@@ -60,19 +60,25 @@ const applicationRecord: ApplicationRecord = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  roleType: "Full-time",
+  roleTypeId: "99999999-9999-4999-8999-999999999999",
   roleTitle: "Product Designer",
+  source: "Referral",
+  sourceId: "88888888-8888-4888-8888-888888888888",
   sourceUrl: "https://jobs.example.com/product-designer",
-  status: "applied",
+  status: "Applied",
+  statusId: "12121212-1212-4121-8121-121212121212",
+  statusIsTerminal: false,
   updatedAt: "2026-07-18T12:15:00.000Z",
 };
 
 const applicationEvents: ApplicationEvent[] = [
   {
     actorDisplayName: "Alex Example",
-    fromStatus: "applied",
+    fromStatus: "Applied",
     id: "55555555-5555-4555-8555-555555555555",
     occurredAt: "2026-07-18T13:15:00.000Z",
-    toStatus: "interview",
+    toStatus: "Interview",
     type: "status_changed",
   },
   {
@@ -80,7 +86,7 @@ const applicationEvents: ApplicationEvent[] = [
     fromStatus: null,
     id: "66666666-6666-4666-8666-666666666666",
     occurredAt: "2026-07-18T12:15:00.000Z",
-    toStatus: "applied",
+    toStatus: "Applied",
     type: "application_created",
   },
 ];
@@ -116,6 +122,26 @@ const referenceValues: ReferenceValue[] = [
     isTerminal: false,
     label: "Prospect",
     sortOrder: 10,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    category: "status",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "12121212-1212-4121-8121-121212121212",
+    isActive: true,
+    isTerminal: false,
+    label: "Applied",
+    sortOrder: 20,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    category: "status",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "13131313-1313-4131-8131-131313131313",
+    isActive: true,
+    isTerminal: false,
+    label: "Interview",
+    sortOrder: 30,
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
   {
@@ -281,6 +307,10 @@ function createApplicationsClient(
           contacts: contacts ?? applicationRecord.contacts,
           id,
           links: input.links ?? applicationRecord.links,
+          status:
+            input.statusId === "13131313-1313-4131-8131-131313131313"
+              ? "Interview"
+              : applicationRecord.status,
           updatedAt: "2026-07-18T13:15:00.000Z",
         });
       }),
@@ -319,6 +349,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={createApplicationsClient()}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -350,6 +381,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -394,6 +426,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -405,7 +438,10 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Log application" }));
+    await screen.findByRole("option", { name: "Prospect" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Log application" })[0]!,
+    );
     await screen.findByRole("heading", { name: "Log an application" });
     fireEvent.change(screen.getByLabelText("Company"), {
       target: { value: "Example Studio" },
@@ -421,7 +457,7 @@ describe("application shell", () => {
         contacts: [],
         links: [],
         roleTitle: "Product Designer",
-        status: "prospect",
+        statusId: "77777777-7777-4777-8777-777777777777",
       }),
     );
     expect(await screen.findByText("Example Studio")).toBeInTheDocument();
@@ -435,6 +471,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -465,7 +502,7 @@ describe("application shell", () => {
       "Hiring portal",
     );
     fireEvent.change(screen.getByLabelText("Stage"), {
-      target: { value: "interview" },
+      target: { value: "13131313-1313-4131-8131-131313131313" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -481,9 +518,11 @@ describe("application shell", () => {
           nextAction: "Send the portfolio follow-up.",
           nextActionDue: "2026-07-21",
           notes: "Referred by a former colleague.",
+          roleTypeId: "99999999-9999-4999-8999-999999999999",
           roleTitle: "Product Designer",
+          sourceId: "88888888-8888-4888-8888-888888888888",
           sourceUrl: "https://jobs.example.com/product-designer",
-          status: "interview",
+          statusId: "13131313-1313-4131-8131-131313131313",
         },
       ),
     );
@@ -500,6 +539,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -511,7 +551,10 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Log application" }));
+    await screen.findByRole("option", { name: "Prospect" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Log application" })[0]!,
+    );
     fireEvent.change(screen.getByLabelText("Company"), {
       target: { value: "Example Studio" },
     });
@@ -552,7 +595,7 @@ describe("application shell", () => {
           },
         ],
         roleTitle: "Product Designer",
-        status: "prospect",
+        statusId: "77777777-7777-4777-8777-777777777777",
       }),
     );
   });
@@ -561,6 +604,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={createApplicationsClient()}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -605,6 +649,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -653,6 +698,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -679,6 +725,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -873,7 +920,7 @@ describe("application shell", () => {
         name: "Lists that fit your search.",
       }),
     ).toBeInTheDocument();
-    expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
+    expect(referenceValuesClient.listValues).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Referral")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("New source"), {

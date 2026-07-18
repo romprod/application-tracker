@@ -66,6 +66,13 @@ export class ReferenceValueRequiredError extends Error {
   }
 }
 
+export class ReferenceValueInUseError extends Error {
+  public constructor() {
+    super("The reference value is used by an application");
+    this.name = "ReferenceValueInUseError";
+  }
+}
+
 export class ReferenceValueInvalidError extends Error {
   public constructor() {
     super("The reference value is invalid for its category");

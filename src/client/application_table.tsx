@@ -139,8 +139,11 @@ function NextActionCell({ application }: { application: ApplicationRecord }) {
 
 export function StatusChip({ status }: { status: ApplicationStatus }) {
   return (
-    <span className="tracker-status-chip" data-status={status}>
-      {titleCase(status)}
+    <span
+      className="tracker-status-chip"
+      data-status={status.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}
+    >
+      {status}
     </span>
   );
 }
@@ -191,8 +194,4 @@ export function formatDateTime(value: string): string {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
-}
-
-function titleCase(value: string): string {
-  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }

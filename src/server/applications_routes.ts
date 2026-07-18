@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 
 import {
   ApplicationNotFoundError,
+  InvalidApplicationReferenceError,
   type ApplicationLedgerService,
 } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
@@ -60,7 +61,7 @@ export function createApplicationsRouter(
     });
   });
 
-  router.post("/", (request, response) => {
+  router.post("/", (request, response, next) => {
     const actor = authService.getActor(requestSessionToken(request));
     if (!actor) {
       response.status(401).json({ error: { code: "authentication_required" } });
@@ -71,9 +72,19 @@ export function createApplicationsRouter(
       response.status(400).json({ error: { code: "validation_error" } });
       return;
     }
-    response.status(201).json({
-      application: applicationsService.createApplication(actor, parsed.data),
-    });
+    try {
+      response.status(201).json({
+        application: applicationsService.createApplication(actor, parsed.data),
+      });
+    } catch (error) {
+      if (error instanceof InvalidApplicationReferenceError) {
+        response
+          .status(400)
+          .json({ error: { code: "invalid_application_reference" } });
+        return;
+      }
+      next(error);
+    }
   });
 
   router.get("/:applicationId/events", (request, response, next) => {
@@ -127,6 +138,12 @@ export function createApplicationsRouter(
     } catch (error) {
       if (error instanceof ApplicationNotFoundError) {
         response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      if (error instanceof InvalidApplicationReferenceError) {
+        response
+          .status(400)
+          .json({ error: { code: "invalid_application_reference" } });
         return;
       }
       next(error);

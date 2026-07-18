@@ -9,7 +9,6 @@ import {
 import type {
   ApplicationEvent,
   ApplicationRecord,
-  ApplicationStatus,
   CreateApplicationInput,
   UpdateApplicationInput,
 } from "./applications_client";
@@ -20,6 +19,7 @@ import {
   formatDateTime,
 } from "./application_table";
 import { dueLabel } from "./application_next_action";
+import type { ReferenceValue } from "./reference_values_client";
 
 export interface ApplicationFormState {
   appliedOn: string;
@@ -30,9 +30,11 @@ export interface ApplicationFormState {
   nextAction: string;
   nextActionDue: string;
   notes: string;
+  roleTypeId: string;
   roleTitle: string;
+  sourceId: string;
   sourceUrl: string;
-  status: ApplicationStatus;
+  statusId: string;
 }
 
 interface ApplicationContactForm {
@@ -47,23 +49,32 @@ interface ApplicationLinkForm {
   url: string;
 }
 
-const emptyApplicationForm: ApplicationFormState = {
-  appliedOn: "",
-  companyName: "",
-  contacts: [],
-  links: [],
-  location: "",
-  nextAction: "",
-  nextActionDue: "",
-  notes: "",
-  roleTitle: "",
-  sourceUrl: "",
-  status: "prospect",
-};
+function emptyApplicationForm(
+  referenceValues: ReferenceValue[],
+): ApplicationFormState {
+  return {
+    appliedOn: "",
+    companyName: "",
+    contacts: [],
+    links: [],
+    location: "",
+    nextAction: "",
+    nextActionDue: "",
+    notes: "",
+    roleTypeId: "",
+    roleTitle: "",
+    sourceId: "",
+    sourceUrl: "",
+    statusId:
+      referenceValues.find(
+        ({ category, isActive }) => category === "status" && isActive,
+      )?.id ?? "",
+  };
+}
 
 type ApplicationTextField = Exclude<
   keyof ApplicationFormState,
-  "contacts" | "links" | "status"
+  "contacts" | "links" | "roleTypeId" | "sourceId" | "statusId"
 >;
 
 function contactInput(contact: ApplicationContactForm) {
@@ -96,12 +107,14 @@ export function applicationInput(
     contacts: form.contacts.map(contactInput),
     links: form.links.map(linkInput),
     roleTitle: form.roleTitle.trim(),
-    status: form.status,
+    statusId: form.statusId,
     ...(appliedOn ? { appliedOn } : {}),
     ...(location ? { location } : {}),
     ...(nextAction ? { nextAction } : {}),
     ...(nextActionDue ? { nextActionDue } : {}),
     ...(notes ? { notes } : {}),
+    ...(form.roleTypeId ? { roleTypeId: form.roleTypeId } : {}),
+    ...(form.sourceId ? { sourceId: form.sourceId } : {}),
     ...(sourceUrl ? { sourceUrl } : {}),
   };
 }
@@ -118,9 +131,11 @@ export function applicationUpdateInput(
     nextAction: form.nextAction.trim() || null,
     nextActionDue: form.nextActionDue.trim() || null,
     notes: form.notes.trim() || null,
+    roleTypeId: form.roleTypeId || null,
     roleTitle: form.roleTitle.trim(),
+    sourceId: form.sourceId || null,
     sourceUrl: form.sourceUrl.trim() || null,
-    status: form.status,
+    statusId: form.statusId,
   };
 }
 
@@ -139,21 +154,23 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
     nextAction: application.nextAction ?? "",
     nextActionDue: application.nextActionDue ?? "",
     notes: application.notes ?? "",
+    roleTypeId: application.roleTypeId ?? "",
     roleTitle: application.roleTitle,
+    sourceId: application.sourceId ?? "",
     sourceUrl: application.sourceUrl ?? "",
-    status: application.status,
+    statusId: application.statusId,
   };
 }
 
 function eventHeading(event: ApplicationEvent): string {
   return event.type === "application_created"
     ? "Application created"
-    : `${titleCase(event.fromStatus ?? "")} → ${titleCase(event.toStatus)}`;
+    : `${event.fromStatus ?? ""} → ${event.toStatus}`;
 }
 
 function eventDetail(event: ApplicationEvent): string {
   return event.type === "application_created"
-    ? `Filed in ${titleCase(event.toStatus)}`
+    ? `Filed in ${event.toStatus}`
     : "Stage changed";
 }
 
@@ -288,6 +305,14 @@ export function ApplicationDrawer({
             <div>
               <dt>Updated</dt>
               <dd>{formatDate(application.updatedAt)}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{application.source ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Role type</dt>
+              <dd>{application.roleType ?? "Not recorded"}</dd>
             </div>
           </dl>
           {application.sourceUrl && (
@@ -519,6 +544,7 @@ export function ApplicationDialog({
   mode,
   onClose,
   onSave,
+  referenceValues,
   submitting,
 }: {
   application: ApplicationRecord | undefined;
@@ -526,14 +552,29 @@ export function ApplicationDialog({
   mode: "create" | "edit";
   onClose: () => void;
   onSave: (form: ApplicationFormState) => void;
+  referenceValues: ReferenceValue[];
   submitting: boolean;
 }) {
   const [form, setForm] = useState<ApplicationFormState>(
-    application ? applicationForm(application) : emptyApplicationForm,
+    application
+      ? applicationForm(application)
+      : emptyApplicationForm(referenceValues),
   );
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, "#application-company");
   const title = mode === "create" ? "Log an application" : "Edit application";
+  const statuses = referenceValues.filter(
+    ({ category, id, isActive }) =>
+      category === "status" && (isActive || id === form.statusId),
+  );
+  const sources = referenceValues.filter(
+    ({ category, id, isActive }) =>
+      category === "source" && (isActive || id === form.sourceId),
+  );
+  const roleTypes = referenceValues.filter(
+    ({ category, id, isActive }) =>
+      category === "role_type" && (isActive || id === form.roleTypeId),
+  );
 
   function updateText(field: ApplicationTextField, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -638,19 +679,21 @@ export function ApplicationDialog({
                 <label htmlFor="application-status">Stage</label>
                 <select
                   id="application-status"
-                  value={form.status}
+                  required
+                  value={form.statusId}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      status: event.target.value as ApplicationStatus,
+                      statusId: event.target.value,
                     }))
                   }
                 >
-                  <option value="prospect">Prospect</option>
-                  <option value="applied">Applied</option>
-                  <option value="interview">Interview</option>
-                  <option value="offer">Offer</option>
-                  <option value="closed">Closed</option>
+                  {statuses.map((status) => (
+                    <option key={status.id} value={status.id}>
+                      {status.label}
+                      {status.isActive ? "" : " (inactive)"}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="field">
@@ -671,6 +714,48 @@ export function ApplicationDialog({
               <span>02</span> Context and notes
             </legend>
             <div className="tracker-form-grid">
+              <div className="field">
+                <label htmlFor="application-role-type">Role type</label>
+                <select
+                  id="application-role-type"
+                  value={form.roleTypeId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      roleTypeId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  {roleTypes.map((roleType) => (
+                    <option key={roleType.id} value={roleType.id}>
+                      {roleType.label}
+                      {roleType.isActive ? "" : " (inactive)"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="application-source-type">Source</label>
+                <select
+                  id="application-source-type"
+                  value={form.sourceId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      sourceId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  {sources.map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.label}
+                      {source.isActive ? "" : " (inactive)"}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="field">
                 <label htmlFor="application-location">Location</label>
                 <input
@@ -957,8 +1042,4 @@ export function ApplicationDialog({
       </section>
     </div>
   );
-}
-
-function titleCase(value: string): string {
-  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }

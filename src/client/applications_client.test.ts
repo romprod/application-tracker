@@ -28,19 +28,25 @@ const application = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  roleType: "Full-time",
+  roleTypeId: "66666666-6666-4666-8666-666666666666",
   roleTitle: "Product Designer",
+  source: "Referral",
+  sourceId: "55555555-5555-4555-8555-555555555555",
   sourceUrl: "https://jobs.example.com/product-designer",
-  status: "applied",
+  status: "Applied",
+  statusId: "44444444-4444-4444-8444-444444444444",
+  statusIsTerminal: false,
   updatedAt: "2026-07-18T12:15:00.000Z",
 } as const;
 
 const events = [
   {
     actorDisplayName: "Alex Example",
-    fromStatus: "applied",
+    fromStatus: "Applied",
     id: "22222222-2222-4222-8222-222222222222",
     occurredAt: "2026-07-18T13:15:00.000Z",
-    toStatus: "interview",
+    toStatus: "Interview",
     type: "status_changed",
   },
   {
@@ -48,7 +54,7 @@ const events = [
     fromStatus: null,
     id: "33333333-3333-4333-8333-333333333333",
     occurredAt: "2026-07-18T12:15:00.000Z",
-    toStatus: "applied",
+    toStatus: "Applied",
     type: "application_created",
   },
 ] as const;
@@ -86,7 +92,7 @@ describe("browserApplicationsClient", () => {
     const input = {
       companyName: "Example Studio",
       roleTitle: "Product Designer",
-      status: "applied" as const,
+      statusId: application.statusId,
     };
 
     await expect(
@@ -104,14 +110,19 @@ describe("browserApplicationsClient", () => {
   });
 
   it("updates through the same-origin JSON endpoint", async () => {
-    const updated = { ...application, location: null, status: "interview" };
+    const updated = {
+      ...application,
+      location: null,
+      status: "Interview",
+      statusId: "77777777-7777-4777-8777-777777777777",
+    };
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
         new Response(JSON.stringify({ application: updated }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    const input = { location: null, status: "interview" as const };
+    const input = { location: null, statusId: updated.statusId };
 
     await expect(
       browserApplicationsClient.updateApplication(application.id, input),
@@ -263,6 +274,38 @@ describe("browserApplicationsClient", () => {
       ),
     );
 
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+  });
+
+  it("rejects malformed or unpaired application list values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, sourceId: null }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, statusId: "not-an-id" }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
     await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
       new ApplicationsClientError("invalid_response"),
     );

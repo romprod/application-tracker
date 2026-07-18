@@ -222,6 +222,7 @@ export function App({
             <ApplicationWorkspace
               applicationsClient={applicationsClient}
               page={view.page}
+              referenceValuesClient={referenceValuesClient}
               session={view.session}
               navigate={navigate}
               {...(view.logoutError ? { error: view.logoutError } : {})}
@@ -870,6 +871,9 @@ function listsError(error: unknown): string {
     }
     if (error.code === "reference_value_required") {
       return "Keep at least one active value in each list and one closed status.";
+    }
+    if (error.code === "reference_value_in_use") {
+      return "This value is used by an application. Disable it to keep history intact.";
     }
   }
   return "The list could not be changed. Please try again.";

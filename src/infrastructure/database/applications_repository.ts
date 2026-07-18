@@ -2,37 +2,55 @@ import { randomUUID } from "node:crypto";
 
 import type Database from "better-sqlite3";
 
-import type {
-  ApplicationContact,
-  ApplicationEvent,
-  ApplicationLink,
-  ApplicationRecord,
-  ApplicationsRepository,
-  CreateApplicationRecord,
-  DeleteApplicationRecord,
-  UpdateApplicationRecord,
+import {
+  InvalidApplicationReferenceError,
+  type ApplicationContact,
+  type ApplicationEvent,
+  type ApplicationLink,
+  type ApplicationRecord,
+  type ApplicationsRepository,
+  type CreateApplicationRecord,
+  type DeleteApplicationRecord,
+  type UpdateApplicationRecord,
 } from "../../application/applications.js";
 
-type StoredApplicationRecord = Omit<ApplicationRecord, "contacts" | "links">;
+interface StoredApplicationRecord extends Omit<
+  ApplicationRecord,
+  "contacts" | "links" | "statusIsTerminal"
+> {
+  statusIsTerminal: number;
+}
 
 type StoredContact = ApplicationContact & { applicationId: string };
 type StoredLink = ApplicationLink & { applicationId: string };
 
 function publicApplicationSelect(): string {
   return `SELECT
-            id,
-            company_name AS companyName,
-            role_title AS roleTitle,
-            status,
-            location,
-            source_url AS sourceUrl,
-            applied_on AS appliedOn,
-            next_action AS nextAction,
-            next_action_due AS nextActionDue,
-            notes,
-            created_at AS createdAt,
-            updated_at AS updatedAt
-          FROM applications`;
+            applications.id,
+            applications.company_name AS companyName,
+            applications.role_title AS roleTitle,
+            statuses.id AS statusId,
+            statuses.label AS status,
+            statuses.is_terminal AS statusIsTerminal,
+            sources.id AS sourceId,
+            sources.label AS source,
+            role_types.id AS roleTypeId,
+            role_types.label AS roleType,
+            applications.location,
+            applications.source_url AS sourceUrl,
+            applications.applied_on AS appliedOn,
+            applications.next_action AS nextAction,
+            applications.next_action_due AS nextActionDue,
+            applications.notes,
+            applications.created_at AS createdAt,
+            applications.updated_at AS updatedAt
+          FROM applications AS applications
+          JOIN reference_values AS statuses
+            ON statuses.id = applications.status_reference_id
+          LEFT JOIN reference_values AS sources
+            ON sources.id = applications.source_reference_id
+          LEFT JOIN reference_values AS role_types
+            ON role_types.id = applications.role_type_reference_id`;
 }
 
 export class SqliteApplicationsRepository implements ApplicationsRepository {
@@ -46,6 +64,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     const applications = stored.map((application) => ({
       ...application,
       contacts: [] as ApplicationContact[],
+      statusIsTerminal: application.statusIsTerminal === 1,
       links: [] as ApplicationLink[],
     }));
     const byId = new Map(
@@ -132,20 +151,35 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     const id = randomUUID();
     const eventId = randomUUID();
     const create = this.database.transaction(() => {
+      const status = this.activeReference(
+        input.workspaceId,
+        input.statusId,
+        "status",
+      );
+      if (input.sourceId) {
+        this.activeReference(input.workspaceId, input.sourceId, "source");
+      }
+      if (input.roleTypeId) {
+        this.activeReference(input.workspaceId, input.roleTypeId, "role_type");
+      }
       this.database
         .prepare(
           `INSERT INTO applications
-           (id, workspace_id, company_name, role_title, status, location,
-            source_url, applied_on, next_action, next_action_due, notes,
-            created_by_user_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workspace_id, company_name, role_title, legacy_status,
+            status_reference_id, source_reference_id, role_type_reference_id,
+            location, source_url, applied_on, next_action, next_action_due,
+            notes, created_by_user_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
           input.workspaceId,
           input.companyName,
           input.roleTitle,
-          input.status,
+          status.isTerminal ? "closed" : "prospect",
+          input.statusId,
+          input.sourceId,
+          input.roleTypeId,
           input.location,
           input.sourceUrl,
           input.appliedOn,
@@ -168,38 +202,28 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.workspaceId,
           id,
           input.createdByUserId,
-          input.status,
+          status.label,
           input.createdAt,
         );
       this.replaceContacts(input.workspaceId, id, input.contacts ?? []);
       this.replaceLinks(input.workspaceId, id, input.links ?? []);
+      const stored = this.findStoredApplication(input.workspaceId, id);
+      if (!stored) throw new Error("Created application could not be read");
+      const [created] = this.hydrateApplications(input.workspaceId, [stored]);
+      if (!created)
+        throw new Error("Created application could not be hydrated");
+      return created;
     });
-    create.immediate();
-
-    return {
-      appliedOn: input.appliedOn,
-      companyName: input.companyName,
-      contacts: input.contacts ?? [],
-      createdAt: input.createdAt,
-      id,
-      location: input.location,
-      links: input.links ?? [],
-      nextAction: input.nextAction,
-      nextActionDue: input.nextActionDue,
-      notes: input.notes,
-      roleTitle: input.roleTitle,
-      sourceUrl: input.sourceUrl,
-      status: input.status,
-      updatedAt: input.createdAt,
-    };
+    return create.immediate();
   }
 
   public listApplications(workspaceId: string): ApplicationRecord[] {
     const stored = this.database
       .prepare(
         `${publicApplicationSelect()}
-         WHERE workspace_id = ? AND deleted_at IS NULL
-         ORDER BY updated_at DESC, id DESC`,
+         WHERE applications.workspace_id = ?
+           AND applications.deleted_at IS NULL
+         ORDER BY applications.updated_at DESC, applications.id DESC`,
       )
       .all(workspaceId) as StoredApplicationRecord[];
     return this.hydrateApplications(workspaceId, stored);
@@ -273,62 +297,61 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     input: UpdateApplicationRecord,
   ): ApplicationRecord | undefined {
     const update = this.database.transaction(() => {
-      const stored = this.database
-        .prepare(
-          `${publicApplicationSelect()}
-           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
-        )
-        .get(input.workspaceId, input.applicationId) as
-        StoredApplicationRecord | undefined;
+      const stored = this.findStoredApplication(
+        input.workspaceId,
+        input.applicationId,
+      );
       if (!stored) return undefined;
       const [current] = this.hydrateApplications(input.workspaceId, [stored]);
       if (!current) return undefined;
 
-      const updated: ApplicationRecord = {
-        appliedOn:
-          input.appliedOn === undefined ? current.appliedOn : input.appliedOn,
-        companyName: input.companyName ?? current.companyName,
-        contacts: input.contacts ?? current.contacts,
-        createdAt: current.createdAt,
-        id: current.id,
-        location:
-          input.location === undefined ? current.location : input.location,
-        links: input.links ?? current.links,
-        nextAction:
-          input.nextAction === undefined
-            ? current.nextAction
-            : input.nextAction,
-        nextActionDue:
-          input.nextActionDue === undefined
-            ? current.nextActionDue
-            : input.nextActionDue,
-        notes: input.notes === undefined ? current.notes : input.notes,
-        roleTitle: input.roleTitle ?? current.roleTitle,
-        sourceUrl:
-          input.sourceUrl === undefined ? current.sourceUrl : input.sourceUrl,
-        status: input.status ?? current.status,
-        updatedAt: input.updatedAt,
-      };
+      const statusId = input.statusId ?? current.statusId;
+      const status =
+        statusId === current.statusId
+          ? {
+              isTerminal: current.statusIsTerminal,
+              label: current.status,
+            }
+          : this.activeReference(input.workspaceId, statusId, "status");
+      const sourceId =
+        input.sourceId === undefined ? current.sourceId : input.sourceId;
+      const roleTypeId =
+        input.roleTypeId === undefined ? current.roleTypeId : input.roleTypeId;
+      if (sourceId && sourceId !== current.sourceId) {
+        this.activeReference(input.workspaceId, sourceId, "source");
+      }
+      if (roleTypeId && roleTypeId !== current.roleTypeId) {
+        this.activeReference(input.workspaceId, roleTypeId, "role_type");
+      }
 
       this.database
         .prepare(
           `UPDATE applications
-           SET company_name = ?, role_title = ?, status = ?, location = ?,
-               source_url = ?, applied_on = ?, next_action = ?,
-               next_action_due = ?, notes = ?, updated_at = ?
+           SET company_name = ?, role_title = ?, legacy_status = ?,
+               status_reference_id = ?, source_reference_id = ?,
+               role_type_reference_id = ?, location = ?, source_url = ?,
+               applied_on = ?, next_action = ?, next_action_due = ?,
+               notes = ?, updated_at = ?
            WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
         )
         .run(
-          updated.companyName,
-          updated.roleTitle,
-          updated.status,
-          updated.location,
-          updated.sourceUrl,
-          updated.appliedOn,
-          updated.nextAction,
-          updated.nextActionDue,
-          updated.notes,
-          updated.updatedAt,
+          input.companyName ?? current.companyName,
+          input.roleTitle ?? current.roleTitle,
+          status.isTerminal ? "closed" : "prospect",
+          statusId,
+          sourceId,
+          roleTypeId,
+          input.location === undefined ? current.location : input.location,
+          input.sourceUrl === undefined ? current.sourceUrl : input.sourceUrl,
+          input.appliedOn === undefined ? current.appliedOn : input.appliedOn,
+          input.nextAction === undefined
+            ? current.nextAction
+            : input.nextAction,
+          input.nextActionDue === undefined
+            ? current.nextActionDue
+            : input.nextActionDue,
+          input.notes === undefined ? current.notes : input.notes,
+          input.updatedAt,
           input.workspaceId,
           input.applicationId,
         );
@@ -344,7 +367,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         this.replaceLinks(input.workspaceId, input.applicationId, input.links);
       }
 
-      if (updated.status !== current.status) {
+      if (statusId !== current.statusId) {
         this.database
           .prepare(
             `INSERT INTO application_events
@@ -358,14 +381,51 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             input.applicationId,
             input.actorUserId,
             current.status,
-            updated.status,
+            status.label,
             input.updatedAt,
           );
       }
-
+      const updatedStored = this.findStoredApplication(
+        input.workspaceId,
+        input.applicationId,
+      );
+      if (!updatedStored) return undefined;
+      const [updated] = this.hydrateApplications(input.workspaceId, [
+        updatedStored,
+      ]);
       return updated;
     });
 
     return update.immediate();
+  }
+
+  private activeReference(
+    workspaceId: string,
+    referenceValueId: string,
+    category: "role_type" | "source" | "status",
+  ): { isTerminal: boolean; label: string } {
+    const row = this.database
+      .prepare(
+        `SELECT label, is_terminal AS isTerminal
+         FROM reference_values
+         WHERE workspace_id = ? AND id = ? AND category = ? AND is_active = 1`,
+      )
+      .get(workspaceId, referenceValueId, category) as
+      { isTerminal: number; label: string } | undefined;
+    if (!row) throw new InvalidApplicationReferenceError();
+    return { isTerminal: row.isTerminal === 1, label: row.label };
+  }
+
+  private findStoredApplication(
+    workspaceId: string,
+    applicationId: string,
+  ): StoredApplicationRecord | undefined {
+    return this.database
+      .prepare(
+        `${publicApplicationSelect()}
+         WHERE applications.workspace_id = ? AND applications.id = ?
+           AND applications.deleted_at IS NULL`,
+      )
+      .get(workspaceId, applicationId) as StoredApplicationRecord | undefined;
   }
 }

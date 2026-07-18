@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createReferenceValueSchema,
+  referenceValueIdSchema,
   updateReferenceValueSchema,
 } from "./reference_values.js";
 
@@ -41,5 +42,13 @@ describe("reference value schemas", () => {
     expect(
       updateReferenceValueSchema.parse({ label: "  Community board " }),
     ).toEqual({ label: "Community board" });
+  });
+
+  it("accepts seeded and generated identifiers but rejects control text", () => {
+    expect(referenceValueIdSchema.parse("a".repeat(32))).toBe("a".repeat(32));
+    expect(
+      referenceValueIdSchema.parse("11111111-1111-4111-8111-111111111111"),
+    ).toBe("11111111-1111-4111-8111-111111111111");
+    expect(() => referenceValueIdSchema.parse("' OR 1=1 --")).toThrow();
   });
 });

@@ -54,10 +54,13 @@ and records the creating workspace member. A composite foreign key prevents an
 actor from creating a record outside their membership. The list index covers
 workspace scope and reverse update order.
 
-The table constrains field lengths and the built-in stage values. The domain
-schema also trims text, validates dates, restricts source links to HTTP(S), and
-rejects unknown fields before SQL runs. Repository queries bind every user
-value as a parameter. See [`application-ledger.md`](application-ledger.md).
+The original table constrains field lengths and the initial built-in stage
+values. Migration 9 replaces that public stage contract with workspace-owned
+references while retaining the original column as an internal compatibility
+field. The domain schema trims text, validates dates, restricts source links to
+HTTP(S), and rejects unknown fields before SQL runs. Repository queries bind
+every user value as a parameter. See
+[`application-ledger.md`](application-ledger.md).
 
 The fourth migration adds `application_events` and backfills a creation event
 for every existing application. A composite foreign key keeps each event in
@@ -87,6 +90,14 @@ installations, while the migration backfills any existing workspace. Database
 constraints enforce category values, case-insensitive label uniqueness, active
 and closed-outcome flags, and deterministic ordering. See
 [`reference-lists.md`](reference-lists.md).
+
+The ninth migration links applications to their workspace's reference values.
+It backfills existing statuses, adds foreign keys, and combines unique
+workspace-and-ID pairs with ownership triggers. New or changed selections must
+use an active value from the correct category. Event storage is rebuilt without
+the original fixed-stage constraint so immutable history can retain any
+workspace status label. The open-action index no longer relies on a hard-coded
+status name; the service uses each status's closed-outcome flag.
 
 ## Backup status
 

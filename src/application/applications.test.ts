@@ -13,6 +13,8 @@ const actor: AuthenticatedActor = {
   workspace: { name: "Applications" },
   workspaceId: "workspace-1",
 };
+const prospectId = "11111111-1111-4111-8111-111111111111";
+const interviewId = "22222222-2222-4222-8222-222222222222";
 
 function repository() {
   const deleteApplication = vi.fn<ApplicationsRepository["deleteApplication"]>(
@@ -30,9 +32,15 @@ function repository() {
       nextAction: input.nextAction,
       nextActionDue: input.nextActionDue,
       notes: input.notes,
+      roleType: null,
+      roleTypeId: input.roleTypeId,
       roleTitle: input.roleTitle,
+      source: null,
+      sourceId: input.sourceId,
       sourceUrl: input.sourceUrl,
-      status: input.status,
+      status: input.statusId === interviewId ? "Interview" : "Prospect",
+      statusId: input.statusId,
+      statusIsTerminal: false,
       updatedAt: input.createdAt,
     }),
   );
@@ -54,9 +62,15 @@ function repository() {
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: null,
+      roleType: null,
+      roleTypeId: null,
       roleTitle: "Product Designer",
+      source: null,
+      sourceId: null,
       sourceUrl: null,
-      status: input.status ?? "prospect",
+      status: input.statusId === interviewId ? "Interview" : "Prospect",
+      statusId: input.statusId ?? prospectId,
+      statusIsTerminal: false,
       updatedAt: input.updatedAt,
     }),
   );
@@ -102,7 +116,7 @@ describe("ApplicationLedgerService", () => {
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
         roleTitle: "Product Designer",
-        status: "prospect",
+        statusId: prospectId,
       }),
     ).toMatchObject({
       companyName: "Example Studio",
@@ -121,7 +135,7 @@ describe("ApplicationLedgerService", () => {
           url: "https://careers.example.com/application",
         },
       ],
-      status: "prospect",
+      status: "Prospect",
     });
     expect(store.createApplication).toHaveBeenCalledWith({
       appliedOn: null,
@@ -146,9 +160,11 @@ describe("ApplicationLedgerService", () => {
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
       notes: null,
+      roleTypeId: null,
       roleTitle: "Product Designer",
+      sourceId: null,
       sourceUrl: null,
-      status: "prospect",
+      statusId: prospectId,
       workspaceId: "workspace-1",
     });
   });
@@ -171,14 +187,14 @@ describe("ApplicationLedgerService", () => {
     expect(
       service.updateApplication(actor, "application-1", {
         companyName: "Example Labs",
-        status: "interview",
+        statusId: interviewId,
       }),
-    ).toMatchObject({ companyName: "Example Labs", status: "interview" });
+    ).toMatchObject({ companyName: "Example Labs", status: "Interview" });
     expect(store.updateApplication).toHaveBeenCalledWith({
       actorUserId: "user-1",
       applicationId: "application-1",
       companyName: "Example Labs",
-      status: "interview",
+      statusId: interviewId,
       updatedAt: "2026-07-18T13:00:00.000Z",
       workspaceId: "workspace-1",
     });

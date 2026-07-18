@@ -5,7 +5,6 @@ import {
   type ApplicationEvent,
   type ApplicationRecord,
   type ApplicationsClient,
-  type ApplicationStatus,
 } from "./applications_client";
 import {
   ApplicationDialog,
@@ -22,6 +21,10 @@ import {
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
 import { dueLabel, nextActionApplications } from "./application_next_action";
+import type {
+  ReferenceValue,
+  ReferenceValuesClient,
+} from "./reference_values_client";
 
 export function ApplicationWorkspace({
   applicationsClient,
@@ -29,6 +32,7 @@ export function ApplicationWorkspace({
   navigate,
   notice: initialNotice,
   page,
+  referenceValuesClient,
   session,
 }: {
   applicationsClient: ApplicationsClient;
@@ -36,9 +40,12 @@ export function ApplicationWorkspace({
   navigate: (page: "applications" | "overview") => void;
   notice?: string;
   page: "applications" | "overview";
+  referenceValuesClient: ReferenceValuesClient;
   session: AuthenticatedSession;
 }) {
   const [applications, setApplications] = useState<ApplicationRecord[]>();
+  const [referenceValues, setReferenceValues] = useState<ReferenceValue[]>();
+  const [referenceLoadError, setReferenceLoadError] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [notice, setNotice] = useState(initialNotice);
   const [formMode, setFormMode] = useState<"create" | "edit">();
@@ -71,6 +78,21 @@ export function ApplicationWorkspace({
     };
   }, [applicationsClient]);
 
+  useEffect(() => {
+    let active = true;
+    void referenceValuesClient
+      .listValues()
+      .then((loaded) => {
+        if (active) setReferenceValues(loaded);
+      })
+      .catch(() => {
+        if (active) setReferenceLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [referenceValuesClient]);
+
   function openApplication(application: ApplicationRecord) {
     const request = historyRequest.current + 1;
     historyRequest.current = request;
@@ -101,6 +123,10 @@ export function ApplicationWorkspace({
   }
 
   function beginCreate() {
+    if (!referenceValues) {
+      setNotice("Application lists are still loading. Please try again.");
+      return;
+    }
     setFormMode("create");
     setEditingApplication(undefined);
     setFormError(undefined);
@@ -190,7 +216,8 @@ export function ApplicationWorkspace({
         const action = editingId ? "updated" : "added";
         setFormError(
           caught instanceof ApplicationsClientError &&
-            caught.code === "validation_error"
+            (caught.code === "validation_error" ||
+              caught.code === "invalid_application_reference")
             ? "Review the application details and try again."
             : `The application could not be ${action}. Please try again.`,
         );
@@ -210,6 +237,11 @@ export function ApplicationWorkspace({
           {error}
         </div>
       )}
+      {referenceLoadError && (
+        <div className="workspace-error" role="alert">
+          Application lists could not be loaded. Reload the page to try again.
+        </div>
+      )}
       {page === "overview" ? (
         <DashboardView
           applications={applications}
@@ -217,6 +249,7 @@ export function ApplicationWorkspace({
           onAdd={beginCreate}
           onOpen={openApplication}
           onViewAll={() => navigate("applications")}
+          referenceValues={referenceValues ?? []}
           session={session}
         />
       ) : (
@@ -225,6 +258,7 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
+          referenceValues={referenceValues ?? []}
         />
       )}
       {selectedApplication && (
@@ -251,6 +285,7 @@ export function ApplicationWorkspace({
           mode={formMode}
           onClose={closeForm}
           onSave={saveApplication}
+          referenceValues={referenceValues ?? []}
           submitting={submitting}
         />
       )}
@@ -273,6 +308,7 @@ function DashboardView({
   onAdd,
   onOpen,
   onViewAll,
+  referenceValues,
   session,
 }: {
   applications: ApplicationRecord[] | undefined;
@@ -280,21 +316,23 @@ function DashboardView({
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
   onViewAll: () => void;
+  referenceValues: ReferenceValue[];
   session: AuthenticatedSession;
 }) {
-  const count = (status: ApplicationStatus) =>
-    applications?.filter((application) => application.status === status)
+  const count = (statusId: string) =>
+    applications?.filter((application) => application.statusId === statusId)
       .length ?? 0;
   const total = applications?.length ?? 0;
   const open =
-    applications?.filter(({ status }) => status !== "closed").length ?? 0;
-  const statusCounts = [
-    { label: "Prospect", status: "prospect" as const },
-    { label: "Applied", status: "applied" as const },
-    { label: "Interview", status: "interview" as const },
-    { label: "Offer", status: "offer" as const },
-    { label: "Closed", status: "closed" as const },
-  ];
+    applications?.filter(({ statusIsTerminal }) => !statusIsTerminal).length ??
+    0;
+  const referencedStatusIds = new Set(
+    (applications ?? []).map(({ statusId }) => statusId),
+  );
+  const statusCounts = referenceValues.filter(
+    ({ category, id, isActive }) =>
+      category === "status" && (isActive || referencedStatusIds.has(id)),
+  );
   const activeFocus = nextActionApplications(applications ?? []);
 
   return (
@@ -335,14 +373,14 @@ function DashboardView({
       <section className="tracker-metrics" aria-label="Application metrics">
         <Metric label="Total" value={total} note="all records" />
         <Metric label="Open" value={open} note="active search" accent />
-        <Metric label="Applied" value={count("applied")} note="submitted" />
-        <Metric
-          label="Interviews"
-          value={count("interview")}
-          note="in conversation"
-        />
-        <Metric label="Offers" value={count("offer")} note="received" />
-        <Metric label="Closed" value={count("closed")} note="completed" />
+        {statusCounts.slice(0, 4).map((status) => (
+          <Metric
+            key={status.id}
+            label={status.label}
+            value={count(status.id)}
+            note={status.isTerminal ? "closed outcome" : "workspace status"}
+          />
+        ))}
       </section>
 
       {loadError && <ApplicationLoadError />}
@@ -364,21 +402,23 @@ function DashboardView({
                 <span>{total} total</span>
               </div>
               <div className="tracker-status-bars">
-                {statusCounts.map(({ label, status }) => {
-                  const value = count(status);
+                {statusCounts.map((status) => {
+                  const value = count(status.id);
                   const width =
                     total === 0
                       ? 0
                       : Math.max((value / total) * 100, value ? 4 : 0);
                   return (
-                    <div className="tracker-status-row" key={status}>
+                    <div className="tracker-status-row" key={status.id}>
                       <div>
-                        <span>{label}</span>
+                        <span>{status.label}</span>
                         <strong>{value}</strong>
                       </div>
                       <div className="tracker-status-track" aria-hidden="true">
                         <span
-                          data-status={status}
+                          data-status={
+                            status.isTerminal ? "terminal" : "active"
+                          }
                           style={{ width: `${width}%` }}
                         />
                       </div>
@@ -484,11 +524,13 @@ function ApplicationsPage({
   loadError,
   onAdd,
   onOpen,
+  referenceValues,
 }: {
   applications: ApplicationRecord[] | undefined;
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
+  referenceValues: ReferenceValue[];
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -504,6 +546,13 @@ function ApplicationsPage({
       ].sort((left, right) => left.localeCompare(right)),
     [applications],
   );
+  const referencedStatusIds = new Set(
+    (applications ?? []).map(({ statusId }) => statusId),
+  );
+  const statuses = referenceValues.filter(
+    ({ category, id, isActive }) =>
+      category === "status" && (isActive || referencedStatusIds.has(id)),
+  );
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return (applications ?? []).filter((application) => {
@@ -516,6 +565,8 @@ function ApplicationsPage({
           application.location,
           application.nextAction,
           application.notes,
+          application.roleType,
+          application.source,
           application.sourceUrl,
           ...application.contacts.flatMap((contact) => [
             contact.name,
@@ -527,7 +578,7 @@ function ApplicationsPage({
         ].some((value) => value?.toLocaleLowerCase().includes(query));
       return (
         matchesSearch &&
-        (!status || application.status === status) &&
+        (!status || application.statusId === status) &&
         (!location || application.location === location)
       );
     });
@@ -572,11 +623,11 @@ function ApplicationsPage({
             onChange={(event) => setStatus(event.target.value)}
           >
             <option value="">All stages</option>
-            <option value="prospect">Prospect</option>
-            <option value="applied">Applied</option>
-            <option value="interview">Interview</option>
-            <option value="offer">Offer</option>
-            <option value="closed">Closed</option>
+            {statuses.map((value) => (
+              <option key={value.id} value={value.id}>
+                {value.label}
+              </option>
+            ))}
           </select>
         </label>
         <label className="tracker-filter-field">
