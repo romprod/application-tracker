@@ -14,7 +14,7 @@ export interface AuthCookieOptions {
   secure: boolean;
 }
 
-function requestToken(request: Request): string | undefined {
+export function requestSessionToken(request: Request): string | undefined {
   const value = parseCookie(request.headers.cookie ?? "")[sessionCookieName];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -67,7 +67,7 @@ export function createAuthRouter(
     try {
       const result = await authService.login(
         parsed.data,
-        requestToken(request),
+        requestSessionToken(request),
       );
       response.setHeader(
         "Set-Cookie",
@@ -84,12 +84,12 @@ export function createAuthRouter(
   });
 
   router.get("/session", (request, response) => {
-    const session = authService.getSession(requestToken(request));
+    const session = authService.getSession(requestSessionToken(request));
     response.json(session ?? { authenticated: false });
   });
 
   router.post("/logout", (request, response) => {
-    authService.logout(requestToken(request));
+    authService.logout(requestSessionToken(request));
     response.setHeader("Set-Cookie", expiredSessionCookie(cookieOptions));
     response.status(204).send();
   });

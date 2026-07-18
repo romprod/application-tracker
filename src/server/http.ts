@@ -4,12 +4,14 @@ import { randomBytes } from "node:crypto";
 
 import { AuthService } from "../application/auth.js";
 import { SetupService } from "../application/setup.js";
+import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
+import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 
@@ -40,6 +42,10 @@ const authService = new AuthService(
     refreshIntervalMs: config.session.refreshIntervalMs,
   },
 );
+const usersService = new UserAdministrationService(
+  new SqliteUsersRepository(database),
+  passwordHasher,
+);
 const staticRoot =
   config.nodeEnv === "production"
     ? resolve(process.cwd(), "dist/client")
@@ -51,6 +57,7 @@ const app = createApp({
   },
   authService,
   setupService,
+  usersService,
   ...(staticRoot ? { staticRoot } : {}),
 });
 

@@ -14,7 +14,7 @@ tests and user documentation.
 
 - [x] Closed first-run setup with one-time administrator creation
 - [x] Local login, logout, session rotation, expiry, and revocation
-- [ ] Administrator and member workspace roles
+- [x] Administrator and member workspace roles
 - [ ] Optional OpenID Connect login and identity linking
 - [ ] Settings navigation with Lists, Users, and MCP sections
 

@@ -47,6 +47,8 @@ The implementation and migration policy are described in
 
 Local password verification and session lifecycle are described in
 [`authentication.md`](authentication.md).
+Administrator account creation, roles, and disablement are described in
+[`user-management.md`](user-management.md).
 
 The initial schema will separate:
 

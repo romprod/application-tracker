@@ -4,14 +4,17 @@ import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
 import type { AuthService } from "../application/auth.js";
+import type { UserAdministrationService } from "../application/users.js";
 import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
+import { createUsersRouter } from "./users_routes.js";
 
 export interface AppOptions {
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
   setupService?: SetupService;
   staticRoot?: string;
+  usersService?: UserAdministrationService;
 }
 
 const internalErrorHandler: ErrorRequestHandler = (
@@ -47,6 +50,13 @@ export function createApp(options: AppOptions = {}): Express {
     app.use(
       "/api/auth",
       createAuthRouter(options.authService, options.authCookie),
+    );
+  }
+
+  if (options.authService && options.usersService) {
+    app.use(
+      "/api/settings/users",
+      createUsersRouter(options.authService, options.usersService),
     );
   }
 

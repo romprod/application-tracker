@@ -72,6 +72,11 @@ export interface AuthenticatedSession {
   };
 }
 
+export interface AuthenticatedActor extends AuthenticatedSession {
+  userId: string;
+  workspaceId: string;
+}
+
 export interface LoginResult {
   session: AuthenticatedSession;
   token: string;
@@ -102,6 +107,14 @@ function publicSession(
       username: session.username,
     },
     workspace: { name: session.workspaceName },
+  };
+}
+
+function authenticatedActor(session: ActiveSession): AuthenticatedActor {
+  return {
+    ...publicSession(session),
+    userId: session.userId,
+    workspaceId: session.workspaceId,
   };
 }
 
@@ -156,7 +169,7 @@ export class AuthService {
     return { session: publicSession(account), token: issued.token };
   }
 
-  public getSession(token?: string): AuthenticatedSession | undefined {
+  public getActor(token?: string): AuthenticatedActor | undefined {
     if (!token) return undefined;
 
     const now = this.clock();
@@ -182,7 +195,18 @@ export class AuthService {
       if (!refreshed) return undefined;
     }
 
-    return publicSession(session);
+    return authenticatedActor(session);
+  }
+
+  public getSession(token?: string): AuthenticatedSession | undefined {
+    const actor = this.getActor(token);
+    return actor
+      ? {
+          authenticated: true,
+          user: { ...actor.user },
+          workspace: { ...actor.workspace },
+        }
+      : undefined;
   }
 
   public logout(token?: string): void {
