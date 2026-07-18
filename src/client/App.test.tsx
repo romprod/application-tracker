@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { AuthClientError } from "./auth_client";
 import type {
+  ApplicationRecord,
+  ApplicationsClient,
+} from "./applications_client";
+import type {
   AuthClient,
   AuthSession,
   AuthenticatedSession,
@@ -20,6 +24,19 @@ const authenticatedSession: AuthenticatedSession = {
     username: "alex",
   },
   workspace: { name: "Applications" },
+};
+
+const applicationRecord: ApplicationRecord = {
+  appliedOn: "2026-07-18",
+  companyName: "Example Studio",
+  createdAt: "2026-07-18T12:15:00.000Z",
+  id: "44444444-4444-4444-8444-444444444444",
+  location: "Remote",
+  notes: "Referred by a former colleague.",
+  roleTitle: "Product Designer",
+  sourceUrl: "https://jobs.example.com/product-designer",
+  status: "applied",
+  updatedAt: "2026-07-18T12:15:00.000Z",
 };
 
 const administrator: ManagedUser = {
@@ -113,6 +130,19 @@ function createMcpStatusClient() {
   } satisfies McpStatusClient;
 }
 
+function createApplicationsClient(
+  applications: ApplicationRecord[] = [applicationRecord],
+) {
+  return {
+    createApplication: vi
+      .fn<ApplicationsClient["createApplication"]>()
+      .mockResolvedValue(applicationRecord),
+    listApplications: vi
+      .fn<ApplicationsClient["listApplications"]>()
+      .mockResolvedValue(applications),
+  } satisfies ApplicationsClient;
+}
+
 describe("application shell", () => {
   it("asks an unauthenticated user to sign in after setup", async () => {
     render(
@@ -162,6 +192,68 @@ describe("application shell", () => {
     expect(
       screen.getByRole("button", { name: "Sign out" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the application ledger for an authenticated user", async () => {
+    const applicationsClient = createApplicationsClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Application ledger." }),
+    ).toBeInTheDocument();
+    expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
+    expect(screen.getByText("Example Studio")).toBeInTheDocument();
+    expect(screen.getByText("Product Designer")).toBeInTheDocument();
+  });
+
+  it("adds an application and clears the intake form", async () => {
+    const applicationsClient = createApplicationsClient([]);
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    await screen.findByRole("heading", { name: "Add an application" });
+    fireEvent.change(screen.getByLabelText("Company"), {
+      target: { value: "Example Studio" },
+    });
+    fireEvent.change(screen.getByLabelText("Role title"), {
+      target: { value: "Product Designer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add application" }));
+
+    await waitFor(() =>
+      expect(applicationsClient.createApplication).toHaveBeenCalledWith({
+        companyName: "Example Studio",
+        roleTitle: "Product Designer",
+        status: "prospect",
+      }),
+    );
+    expect(await screen.findByText("Example Studio")).toBeInTheDocument();
+    expect(screen.getByLabelText("Company")).toHaveValue("");
+    expect(screen.getByLabelText("Role title")).toHaveValue("");
   });
 
   it("signs in with local credentials", async () => {

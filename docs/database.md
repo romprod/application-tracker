@@ -34,7 +34,7 @@ Migration tests must prove all of the following:
 - rerunning migrations is safe
 - a failed migration rolls back
 - constraints and foreign keys reject invalid data
-- a supported previous schema migrates forward when version two is added
+- supported previous schemas migrate forward
 
 ## Initial identity schema
 
@@ -46,6 +46,18 @@ workspace they do not belong to. Only a token hash is stored.
 
 No migration creates a user or a default password. See
 [`initial-setup.md`](initial-setup.md) for the closed administrator flow.
+
+## Application ledger schema
+
+The third migration creates `applications`. Each row belongs to one workspace
+and records the creating workspace member. A composite foreign key prevents an
+actor from creating a record outside their membership. The list index covers
+workspace scope and reverse update order.
+
+The table constrains field lengths and the built-in stage values. The domain
+schema also trims text, validates dates, restricts source links to HTTP(S), and
+rejects unknown fields before SQL runs. Repository queries bind every user
+value as a parameter. See [`application-ledger.md`](application-ledger.md).
 
 ## Backup status
 

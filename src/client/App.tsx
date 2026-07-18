@@ -7,6 +7,14 @@ import {
   type AuthenticatedSession,
 } from "./auth_client";
 import {
+  browserApplicationsClient,
+  ApplicationsClientError,
+  type ApplicationRecord,
+  type ApplicationsClient,
+  type ApplicationStatus,
+  type CreateApplicationInput,
+} from "./applications_client";
+import {
   browserMcpStatusClient,
   type McpStatus,
   type McpStatusClient,
@@ -38,12 +46,13 @@ const buildSteps = [
   },
   {
     label: "Application ledger",
-    status: "Next",
-    summary: "Applications, events, documents, actions, and outcomes.",
+    status: "Active",
+    summary: "Workspace-scoped application intake and review.",
   },
 ] as const;
 
-type ReadyPage = "overview" | "settings-mcp" | "settings-users";
+type ReadyPage =
+  "applications" | "overview" | "settings-mcp" | "settings-users";
 
 type AppView =
   | { kind: "loading" }
@@ -60,6 +69,7 @@ type AppView =
     };
 
 interface AppProps {
+  applicationsClient?: ApplicationsClient;
   authClient?: AuthClient;
   mcpStatusClient?: McpStatusClient;
   setupClient?: SetupClient;
@@ -67,6 +77,7 @@ interface AppProps {
 }
 
 export function App({
+  applicationsClient = browserApplicationsClient,
   authClient = browserAuthClient,
   mcpStatusClient = browserMcpStatusClient,
   setupClient = browserSetupClient,
@@ -215,6 +226,9 @@ export function App({
             {...(view.notice ? { notice: view.notice } : {})}
           />
         )}
+        {view.kind === "ready" && view.page === "applications" && (
+          <ApplicationsView applicationsClient={applicationsClient} />
+        )}
         {view.kind === "ready" && view.page === "settings-users" && (
           <UsersSettingsView navigate={navigate} usersClient={usersClient} />
         )}
@@ -353,11 +367,17 @@ function Sidebar({
             </button>
           </li>
           <li>
-            <span className="future-navigation" aria-disabled="true">
-              <span>02</span>
+            <button
+              type="button"
+              aria-current={activePage === "applications" ? "page" : undefined}
+              className={
+                activePage === "applications" ? "active-navigation" : ""
+              }
+              onClick={() => onNavigate("applications")}
+            >
+              <span aria-hidden="true">02</span>
               Applications
-              <small>soon</small>
-            </span>
+            </button>
           </li>
           <li>
             <span className="future-navigation" aria-disabled="true">
@@ -721,6 +741,341 @@ function SetupView({
           </button>
         </div>
       </form>
+    </main>
+  );
+}
+
+interface ApplicationFormState {
+  appliedOn: string;
+  companyName: string;
+  location: string;
+  notes: string;
+  roleTitle: string;
+  sourceUrl: string;
+  status: ApplicationStatus;
+}
+
+const emptyApplicationForm: ApplicationFormState = {
+  appliedOn: "",
+  companyName: "",
+  location: "",
+  notes: "",
+  roleTitle: "",
+  sourceUrl: "",
+  status: "prospect",
+};
+
+type ApplicationTextField = Exclude<keyof ApplicationFormState, "status">;
+
+function applicationInput(form: ApplicationFormState): CreateApplicationInput {
+  const appliedOn = form.appliedOn.trim();
+  const location = form.location.trim();
+  const notes = form.notes.trim();
+  const sourceUrl = form.sourceUrl.trim();
+  return {
+    companyName: form.companyName.trim(),
+    roleTitle: form.roleTitle.trim(),
+    status: form.status,
+    ...(appliedOn ? { appliedOn } : {}),
+    ...(location ? { location } : {}),
+    ...(notes ? { notes } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+  };
+}
+
+function ApplicationsView({
+  applicationsClient,
+}: {
+  applicationsClient: ApplicationsClient;
+}) {
+  const [applications, setApplications] = useState<ApplicationRecord[]>();
+  const [loadError, setLoadError] = useState(false);
+  const [form, setForm] = useState<ApplicationFormState>(emptyApplicationForm);
+  const [formError, setFormError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void applicationsClient
+      .listApplications()
+      .then((loaded) => {
+        if (active) setApplications(loaded);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applicationsClient]);
+
+  function updateText(field: ApplicationTextField, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormError(undefined);
+    setNotice(undefined);
+    void applicationsClient
+      .createApplication(applicationInput(form))
+      .then((created) => {
+        setApplications((current) => [created, ...(current ?? [])]);
+        setForm(emptyApplicationForm);
+        setNotice(`${created.companyName} was added to the ledger.`);
+        setSubmitting(false);
+      })
+      .catch((caught: unknown) => {
+        setFormError(
+          caught instanceof ApplicationsClientError &&
+            caught.code === "validation_error"
+            ? "Review the application details and try again."
+            : "The application could not be added. Please try again.",
+        );
+        setSubmitting(false);
+      });
+  }
+
+  const openCount = applications?.filter(
+    (application) => application.status !== "closed",
+  ).length;
+  const interviewCount = applications?.filter(
+    (application) => application.status === "interview",
+  ).length;
+
+  return (
+    <main id="main-content" tabIndex={-1} className="applications-main">
+      <section
+        className="application-hero"
+        aria-labelledby="applications-title"
+      >
+        <div>
+          <p className="eyebrow">Workspace · Application records</p>
+          <h1 id="applications-title">Application ledger.</h1>
+          <p className="lede">
+            Record each opportunity once. Stage changes, history, actions, and
+            outcomes follow in later ledger chapters.
+          </p>
+        </div>
+        <dl className="application-totals" aria-label="Application summary">
+          <div>
+            <dt>Records</dt>
+            <dd>{applications?.length ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Open</dt>
+            <dd>{openCount ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Interviews</dt>
+            <dd>{interviewCount ?? "—"}</dd>
+          </div>
+        </dl>
+      </section>
+
+      {notice && (
+        <div className="ledger-notice" role="status">
+          {notice}
+        </div>
+      )}
+
+      <div className="application-workspace">
+        <section
+          className="application-register"
+          aria-labelledby="register-title"
+        >
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Opportunity register</p>
+              <h2 id="register-title">Current records</h2>
+            </div>
+            <span>{applications?.length ?? 0} filed</span>
+          </div>
+
+          {!applications && !loadError && (
+            <p className="panel-state">Opening the ledger…</p>
+          )}
+          {loadError && (
+            <p className="form-error" role="alert">
+              Applications could not be loaded. Reload the page to try again.
+            </p>
+          )}
+          {applications?.length === 0 && (
+            <div className="empty-ledger">
+              <span aria-hidden="true">00</span>
+              <div>
+                <h3>The ledger is empty.</h3>
+                <p>Add the first opportunity with the intake form.</p>
+              </div>
+            </div>
+          )}
+          {applications && applications.length > 0 && (
+            <ol className="application-list">
+              {applications.map((application, index) => (
+                <li key={application.id}>
+                  <span className="application-index" aria-hidden="true">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <article>
+                    <header>
+                      <div>
+                        <h3>{application.companyName}</h3>
+                        <p>{application.roleTitle}</p>
+                      </div>
+                      <span data-stage={application.status}>
+                        {titleCase(application.status)}
+                      </span>
+                    </header>
+                    <dl className="application-details">
+                      <div>
+                        <dt>Location</dt>
+                        <dd>{application.location ?? "Not recorded"}</dd>
+                      </div>
+                      <div>
+                        <dt>Applied</dt>
+                        <dd>{application.appliedOn ?? "Not recorded"}</dd>
+                      </div>
+                      <div>
+                        <dt>Listing</dt>
+                        <dd>
+                          {application.sourceUrl ? (
+                            <a
+                              href={application.sourceUrl}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              Open source
+                            </a>
+                          ) : (
+                            "Not recorded"
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {application.notes && (
+                      <p className="application-notes">{application.notes}</p>
+                    )}
+                  </article>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        <form
+          className="application-intake"
+          aria-labelledby="application-intake-title"
+          onSubmit={submit}
+        >
+          <div className="panel-heading intake-heading">
+            <div>
+              <p className="eyebrow">New opportunity</p>
+              <h2 id="application-intake-title">Add an application</h2>
+            </div>
+            <span className="index-number">+</span>
+          </div>
+          <div className="field">
+            <label htmlFor="application-company">Company</label>
+            <input
+              autoComplete="organization"
+              id="application-company"
+              maxLength={160}
+              required
+              value={form.companyName}
+              onChange={(event) =>
+                updateText("companyName", event.target.value)
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="application-role">Role title</label>
+            <input
+              autoComplete="off"
+              id="application-role"
+              maxLength={160}
+              required
+              value={form.roleTitle}
+              onChange={(event) => updateText("roleTitle", event.target.value)}
+            />
+          </div>
+          <div className="intake-pair">
+            <div className="field">
+              <label htmlFor="application-status">Stage</label>
+              <select
+                id="application-status"
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    status: event.target.value as ApplicationStatus,
+                  }))
+                }
+              >
+                <option value="prospect">Prospect</option>
+                <option value="applied">Applied</option>
+                <option value="interview">Interview</option>
+                <option value="offer">Offer</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="application-date">Applied date</label>
+              <input
+                id="application-date"
+                type="date"
+                value={form.appliedOn}
+                onChange={(event) =>
+                  updateText("appliedOn", event.target.value)
+                }
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="application-location">Location</label>
+            <input
+              autoComplete="off"
+              id="application-location"
+              maxLength={160}
+              value={form.location}
+              onChange={(event) => updateText("location", event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="application-source">Source link</label>
+            <input
+              autoComplete="url"
+              id="application-source"
+              maxLength={2048}
+              type="url"
+              value={form.sourceUrl}
+              onChange={(event) => updateText("sourceUrl", event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="application-notes">Notes</label>
+            <textarea
+              id="application-notes"
+              maxLength={5000}
+              rows={4}
+              value={form.notes}
+              onChange={(event) => updateText("notes", event.target.value)}
+            />
+          </div>
+          {formError && (
+            <p className="form-error" role="alert">
+              {formError}
+            </p>
+          )}
+          <div className="application-intake-actions">
+            <p>You can add history and follow-up details in later stages.</p>
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Adding…" : "Add application"}
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }
@@ -1258,7 +1613,7 @@ function Overview({
       <section className="hero" aria-labelledby="page-title">
         <div className="hero-copy">
           <p className="eyebrow">
-            {session.workspace.name} · Application ledger · Build 005
+            {session.workspace.name} · Application ledger · Build 007
           </p>
           <h1 id="page-title">Your search, kept in order.</h1>
           <p className="lede">
@@ -1267,11 +1622,11 @@ function Overview({
           </p>
         </div>
         <div className="index-card" aria-label="Foundation summary">
-          <span className="index-number">02</span>
+          <span className="index-number">03</span>
           <div>
             <p>Current chapter</p>
-            <strong>Local identity</strong>
-            <span>Administrator setup and browser sessions are ready.</span>
+            <strong>Application ledger</strong>
+            <span>Workspace-scoped intake and records are ready.</span>
           </div>
         </div>
       </section>
@@ -1308,7 +1663,7 @@ function Overview({
 
       <footer className="page-footer">
         <p>Designed for one private workspace. Ready to grow deliberately.</p>
-        <span>Application Tracker / Identity</span>
+        <span>Application Tracker / Ledger</span>
       </footer>
     </main>
   );

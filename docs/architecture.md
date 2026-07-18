@@ -51,11 +51,13 @@ Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
 The sanitized MCP status boundary and future session policy are described in
 [`mcp-status.md`](mcp-status.md).
+The first application-record slice is described in
+[`application-ledger.md`](application-ledger.md).
 
-The initial schema will separate:
+The schema separates:
 
 - workspaces, users, credentials, memberships, sessions, and external identities
-- applications, application events, and reference values
+- applications, with events and reference values planned in later migrations
 - file objects, document metadata, and application-document associations
 - administrative settings and security audit events
 

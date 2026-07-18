@@ -20,7 +20,8 @@ tests and user documentation.
 
 ## Application tracking
 
-- [ ] Application create, read, update, delete, search, and sorting
+- [x] Workspace-scoped application creation and chronological listing
+- [ ] Application update, deletion, search, and sorting controls
 - [ ] Status transitions, timeline events, contacts, links, and next actions
 - [ ] Dashboard metrics scoped to the active workspace
 - [ ] Configurable statuses, sources, role types, and document types

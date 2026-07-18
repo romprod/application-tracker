@@ -783,7 +783,8 @@ code {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   min-height: 49px;
   padding: 10px 12px;
@@ -796,12 +797,14 @@ code {
 }
 
 .field input:hover,
-.field select:hover {
+.field select:hover,
+.field textarea:hover {
   border-color: var(--moss);
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: 3px solid rgb(200 88 59 / 25%);
   outline-offset: 2px;
   border-color: var(--signal);
@@ -817,6 +820,11 @@ code {
     calc(100% - 11px) 21px;
   background-repeat: no-repeat;
   background-size: 6px 6px;
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .field small {
@@ -900,6 +908,310 @@ code {
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.03em;
+}
+
+.applications-main {
+  min-height: calc(100vh - 88px);
+  background: var(--paper-light);
+}
+
+.application-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(48px, 8vw, 120px);
+  align-items: end;
+  padding: clamp(56px, 7vw, 94px) clamp(28px, 6vw, 94px) 54px;
+  background:
+    linear-gradient(90deg, transparent 0 72%, rgb(23 60 53 / 4%) 72% 100%),
+    var(--paper-light);
+  border-bottom: 1px solid var(--line);
+}
+
+.application-hero h1 {
+  max-width: 800px;
+  margin: 18px 0 25px;
+  font-size: clamp(62px, 8vw, 108px);
+}
+
+.application-hero .lede {
+  max-width: 680px;
+}
+
+.application-totals {
+  display: grid;
+  grid-template-columns: repeat(3, 92px);
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.application-totals div {
+  display: grid;
+  gap: 7px;
+  padding: 18px 10px 8px;
+  border-right: 1px solid var(--line);
+}
+
+.application-totals dt {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.application-totals dd {
+  margin: 0;
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 35px;
+  line-height: 1;
+}
+
+.ledger-notice {
+  padding: 13px clamp(28px, 6vw, 94px);
+  color: var(--evergreen);
+  background: #dce8dc;
+  border-bottom: 1px solid #abc1ae;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+.application-workspace {
+  display: grid;
+  grid-template-columns: minmax(540px, 1.35fr) minmax(330px, 0.65fr);
+  gap: clamp(42px, 6vw, 88px);
+  align-items: start;
+  padding: 58px clamp(28px, 6vw, 94px) 88px;
+}
+
+.application-register,
+.application-intake {
+  min-width: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.empty-ledger {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 26px;
+  align-items: center;
+  min-height: 190px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.empty-ledger > span {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  color: #a3aaa6;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 24px;
+  border-right: 1px solid var(--line);
+}
+
+.empty-ledger h3 {
+  margin: 0;
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 28px;
+  font-weight: 520;
+}
+
+.empty-ledger p {
+  margin: 7px 0 0;
+  font-size: 11px;
+}
+
+.application-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.application-list > li {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.application-index {
+  padding-top: 27px;
+  color: #909895;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 16px;
+  border-right: 1px solid var(--line);
+}
+
+.application-list article {
+  min-width: 0;
+  padding: 24px 0 26px 28px;
+}
+
+.application-list article > header {
+  display: flex;
+  gap: 24px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.application-list h3 {
+  margin: 0;
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 28px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.application-list header p {
+  margin: 7px 0 0;
+  color: #5f6b67;
+  font-size: 12px;
+}
+
+.application-list header > span {
+  flex: 0 0 auto;
+  padding: 6px 8px 5px;
+  color: #59635f;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border: 1px solid #bdc2bb;
+}
+
+.application-list header > span[data-stage="applied"] {
+  color: #285b50;
+  background: #e0e6dc;
+  border-color: #a9c0ad;
+}
+
+.application-list header > span[data-stage="interview"] {
+  color: #765116;
+  background: #f0e5c8;
+  border-color: #d4bd82;
+}
+
+.application-list header > span[data-stage="offer"] {
+  color: #fffdf7;
+  background: var(--moss);
+  border-color: var(--moss);
+}
+
+.application-list header > span[data-stage="closed"] {
+  color: #8a3f2c;
+  background: #f4e4dc;
+  border-color: #dab6a8;
+}
+
+.application-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 18px 0 0;
+  margin: 19px 0 0;
+  border-top: 1px solid #dedbd1;
+}
+
+.application-details > div {
+  min-width: 0;
+  padding-right: 14px;
+}
+
+.application-details dt {
+  color: #8a928f;
+  font-size: 7px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.application-details dd {
+  overflow: hidden;
+  margin: 5px 0 0;
+  color: #53605c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.application-details a {
+  color: var(--moss);
+  font-weight: 680;
+  text-underline-offset: 3px;
+}
+
+.application-notes {
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: #65706c;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.application-intake {
+  padding: 0 28px 30px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.intake-heading .index-number {
+  color: var(--signal);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 48px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.intake-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.application-intake-actions {
+  display: grid;
+  gap: 18px;
+  padding-top: 27px;
+}
+
+.application-intake-actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.application-intake-actions button {
+  min-height: 50px;
+  color: #fffdf7;
+  background: var(--evergreen);
+  border: 1px solid var(--evergreen);
+  border-radius: 0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.application-intake-actions button:hover:not(:disabled) {
+  color: var(--evergreen);
+  background: transparent;
+}
+
+.application-intake-actions button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 4px;
+}
+
+.application-intake-actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .settings-main {
@@ -1465,6 +1777,22 @@ code {
 }
 
 @media (max-width: 1180px) {
+  .application-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .application-totals {
+    width: max-content;
+  }
+
+  .application-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .application-intake {
+    max-width: 680px;
+  }
+
   .settings-hero {
     grid-template-columns: 1fr;
   }
@@ -1540,6 +1868,10 @@ code {
   .settings-main {
     min-height: calc(100vh - 152px);
   }
+
+  .applications-main {
+    min-height: calc(100vh - 152px);
+  }
 }
 
 @media (max-width: 680px) {
@@ -1570,6 +1902,38 @@ code {
   .hero {
     gap: 46px;
     padding-top: 54px;
+  }
+
+  .application-hero {
+    padding-top: 54px;
+    background: var(--paper-light);
+  }
+
+  .application-hero h1 {
+    font-size: clamp(54px, 18vw, 78px);
+  }
+
+  .application-totals {
+    grid-template-columns: repeat(3, minmax(76px, 1fr));
+    width: 100%;
+  }
+
+  .application-workspace {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .application-list article {
+    padding-left: 20px;
+  }
+
+  .application-details,
+  .intake-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .application-details {
+    gap: 13px;
   }
 
   h1 {

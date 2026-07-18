@@ -47,9 +47,11 @@ The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
 identity schema, closed administrator setup, local browser login and logout,
 revocable sessions, administrator-managed local users, a Settings shell,
-an administrator-only sanitized MCP status page, automated tests, and CI. It
-does not yet persist job applications or run an MCP server. The MCP page marks
-all transports and enforcement controls inactive until those features ship.
+an administrator-only sanitized MCP status page, and a workspace-scoped
+application intake and ledger. It supports application creation and listing but
+does not yet support editing, deletion, search, history, actions, or outcomes.
+It also does not run an MCP server. Automated tests and CI cover each completed
+boundary.
 
 ## Run the foundation
 
