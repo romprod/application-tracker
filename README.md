@@ -1,0 +1,51 @@
+# Application Tracker
+
+Application Tracker is a self-hosted, local-first workspace for recording job
+applications, documents, follow-up actions, and outcomes. It will provide a web
+interface and optional Model Context Protocol (MCP) integrations over local
+stdio and authenticated HTTPS.
+
+> This repository is being built in public-ready stages. It does not yet
+> contain a runnable release.
+
+## Product principles
+
+- A fresh installation contains no sample or personal data.
+- Installation never creates a known default password.
+- Local accounts work without an external identity provider.
+- Optional OpenID Connect integrates with providers such as a self-hosted identity provider.
+- All application data belongs to an explicit workspace.
+- Administrative settings require an administrator role.
+- MCP clients receive the same validation and authorization as the website.
+- Untrusted document parsing runs behind strict resource limits.
+- Public source contains no deployment identity, credentials, or private
+  infrastructure details.
+
+The product contract lives in
+[`docs/product-contract.md`](docs/product-contract.md). The architecture and
+security boundaries are documented before implementation so each feature can
+be added in a small, testable commit.
+
+## Planned capabilities
+
+- Application pipeline, events, contacts, links, notes, and due actions
+- Versioned CV and cover-letter records with application associations
+- Configurable statuses, sources, role types, and document types
+- Local users with administrator and member roles
+- Optional OpenID Connect login and account linking
+- Settings sections for Lists, Users, and MCP status
+- Local and remote MCP tools with explicit actor context and audit events
+- Online SQLite backup, verified restore, and migration tooling
+
+## Repository status
+
+Development standards are defined in
+[`docs/development.md`](docs/development.md). Feature parity is tracked in
+[`docs/parity-checklist.md`](docs/parity-checklist.md).
+
+## License
+
+Application Tracker is source-available under the [Elastic License 2.0](LICENSE).
+You may use, modify, and redistribute it, but you may not provide the software
+to third parties as a hosted or managed service that exposes a substantial set
+of its features.
