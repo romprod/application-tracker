@@ -1549,6 +1549,10 @@ function statusLabel(value: string): string {
   return value.split("_").map(titleCase).join(" ");
 }
 
+function formatAuditTime(value: string): string {
+  return `${value.slice(0, 16).replace("T", " ")} UTC`;
+}
+
 function McpSettingsView({
   mcpStatusClient,
   navigate,
@@ -1730,6 +1734,48 @@ function McpSettingsView({
               </li>
             </ul>
           </aside>
+
+          <section className="mcp-audit" aria-labelledby="mcp-audit-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Append-only security record</p>
+                <h2 id="mcp-audit-title">Recent MCP activity</h2>
+              </div>
+              <span>{status.recentAuditEvents.length} shown</span>
+            </div>
+            {status.recentAuditEvents.length === 0 ? (
+              <p className="mcp-audit-empty">
+                No MCP tool calls have been recorded for this workspace.
+              </p>
+            ) : (
+              <ol className="mcp-audit-list">
+                {status.recentAuditEvents.map((event, index) => (
+                  <li
+                    key={`${event.occurredAt}-${event.action}-${String(index)}`}
+                  >
+                    <div>
+                      <strong>{statusLabel(event.action)}</strong>
+                      <span>
+                        {event.actor.displayName} · @{event.actor.username}
+                      </span>
+                    </div>
+                    <div>
+                      <span data-result={event.result}>
+                        {statusLabel(event.result)}
+                      </span>
+                      <small>
+                        {statusLabel(event.targetType)} ·{" "}
+                        {statusLabel(event.transport)}
+                      </small>
+                      <time dateTime={event.occurredAt}>
+                        {formatAuditTime(event.occurredAt)}
+                      </time>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         </div>
       )}
     </main>

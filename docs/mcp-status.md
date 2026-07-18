@@ -2,7 +2,7 @@
 
 Application Tracker exposes an administrator-only MCP status page at
 Settings → MCP. The page reports what the current build can do without exposing
-deployment or identity details.
+deployment or identity-provider details.
 
 The build includes a local stdio transport and five read-only tools. Remote
 Streamable HTTP remains disabled. The page reports both facts directly.
@@ -21,7 +21,14 @@ The response contains only:
 - configured global and per-actor session limits;
 - configured idle and absolute lifetimes; and
 - Boolean readiness flags for OAuth verification and audit events, plus the
-  registered tool count.
+  registered tool count; and
+- the 20 most recent workspace-scoped MCP audit events.
+
+Each displayed event contains the local actor's display name and username,
+tool action, target type, result, transport, and timestamp. It contains no tool
+arguments, application fields, protocol payloads, or internal errors. Audit
+rows are append-only and remain in the database until the installation's data
+is retired under the operator's retention policy.
 
 The response omits network addresses, hostnames, identity-provider details,
 subjects, tokens, credentials, database paths, and internal errors. Server tests
@@ -55,6 +62,6 @@ admission, expiry, explicit close, and shutdown cleanup.
 
 ## Remaining MCP milestones
 
-Remote HTTPS, OAuth verification, session enforcement, security audit events,
-and mutating tools remain separate stages. Until those controls land, the
-remote transport stays disabled and local tools stay read-only.
+Remote HTTPS, OAuth verification, session enforcement, and mutating tools
+remain separate stages. Until those controls land, the remote transport stays
+disabled and local tools stay read-only.

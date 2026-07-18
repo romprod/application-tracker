@@ -8,10 +8,20 @@ import {
 const status = {
   availability: "planned",
   capabilities: {
-    auditEvents: false,
+    auditEvents: true,
     oauthVerification: false,
     registeredTools: 0,
   },
+  recentAuditEvents: [
+    {
+      action: "get_tracker_context",
+      actor: { displayName: "Alex Example", username: "alex" },
+      occurredAt: "2026-01-01T10:00:00.000Z",
+      result: "success",
+      targetType: "workspace",
+      transport: "local_stdio",
+    },
+  ],
   sessions: {
     absoluteLifetimeSeconds: 14_400,
     active: 0,
@@ -55,6 +65,27 @@ describe("browserMcpStatusClient", () => {
         new Response(JSON.stringify({ status: { availability: "ready" } }), {
           status: 200,
         }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).rejects.toEqual(
+      new McpStatusClientError("invalid_response"),
+    );
+  });
+
+  it("rejects malformed audit events", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            status: {
+              ...status,
+              recentAuditEvents: [{ actor: { username: "alex" } }],
+            },
+          }),
+          { status: 200 },
+        ),
       ),
     );
 

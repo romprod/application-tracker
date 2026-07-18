@@ -99,6 +99,12 @@ the original fixed-stage constraint so immutable history can retain any
 workspace status label. The open-action index no longer relies on a hard-coded
 status name; the service uses each status's closed-outcome flag.
 
+The tenth migration adds append-only MCP audit events. Each row records the
+workspace, actor, transport, tool action, target type, result, and timestamp.
+Database constraints restrict these fields to implemented values, and triggers
+reject updates and deletions. The audit record retains actor attribution even
+after an administrator disables the account.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

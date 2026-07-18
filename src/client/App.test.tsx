@@ -179,10 +179,20 @@ const referenceValues: ReferenceValue[] = [
 const mcpStatus: McpStatus = {
   availability: "available",
   capabilities: {
-    auditEvents: false,
+    auditEvents: true,
     oauthVerification: false,
     registeredTools: 5,
   },
+  recentAuditEvents: [
+    {
+      action: "get_tracker_context",
+      actor: { displayName: "Alex Example", username: "alex" },
+      occurredAt: "2026-01-01T10:00:00.000Z",
+      result: "success",
+      targetType: "workspace",
+      transport: "local_stdio",
+    },
+  ],
   sessions: {
     absoluteLifetimeSeconds: 14_400,
     active: 0,
@@ -901,6 +911,12 @@ describe("application shell", () => {
     expect(screen.getByText("5 read-only tools available")).toBeInTheDocument();
     expect(screen.getByText("Configured, not enforced")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Recent MCP activity" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Get Tracker Context")).toBeInTheDocument();
+    expect(screen.getByText("Alex Example · @alex")).toBeInTheDocument();
+    expect(screen.getByText("Success")).toBeInTheDocument();
   });
 
   it("lets administrators maintain workspace lists", async () => {

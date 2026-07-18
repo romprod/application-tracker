@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
 import { McpStatusService } from "../application/mcp_status.js";
+import { McpAuditService } from "../application/mcp_audit.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -13,6 +14,7 @@ import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
+import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
@@ -61,7 +63,14 @@ async function startApplication(): Promise<void> {
     const referenceValuesService = new ReferenceValuesService(
       new SqliteReferenceValuesRepository(database),
     );
-    const mcpStatusService = new McpStatusService(config.mcp.session);
+    const mcpAuditService = new McpAuditService(
+      new SqliteMcpAuditRepository(database),
+    );
+    const mcpStatusService = new McpStatusService(
+      config.mcp.session,
+      undefined,
+      mcpAuditService,
+    );
     const staticRoot =
       config.nodeEnv === "production"
         ? resolve(process.cwd(), "dist/client")

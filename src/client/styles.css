@@ -2005,9 +2005,14 @@ code {
 }
 
 .mcp-ledger,
-.mcp-policy {
+.mcp-policy,
+.mcp-audit {
   min-width: 0;
   border-top: 1px solid var(--ink);
+}
+
+.mcp-audit {
+  grid-column: 1 / -1;
 }
 
 .mcp-ledger .panel-heading > span[data-state="planned"] {
@@ -2155,6 +2160,77 @@ code {
 
 .capability-list li[data-ready="true"] strong {
   color: var(--moss);
+}
+
+.mcp-audit-empty {
+  padding: 28px 0;
+  margin: 0;
+  color: var(--muted);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mcp-audit-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.mcp-audit-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  min-height: 78px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.mcp-audit-list li > div {
+  display: grid;
+  gap: 5px;
+}
+
+.mcp-audit-list li > div:last-child {
+  grid-template-columns: auto auto;
+  justify-items: end;
+}
+
+.mcp-audit-list strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.mcp-audit-list li > div:first-child > span,
+.mcp-audit-list small,
+.mcp-audit-list time {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mcp-audit-list li > div:last-child > span {
+  padding: 4px 7px;
+  color: #8a3f2c;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid #cfb5aa;
+}
+
+.mcp-audit-list li > div:last-child > span[data-result="success"] {
+  color: var(--moss);
+  background: #e0e6dc;
+  border-color: #a9c0ad;
+}
+
+.mcp-audit-list time {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 1180px) {

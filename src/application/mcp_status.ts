@@ -1,5 +1,10 @@
 import type { AuthenticatedActor } from "./auth.js";
 import { localMcpToolNames } from "./mcp.js";
+import {
+  emptyMcpAuditReader,
+  type McpAuditEvent,
+  type McpAuditReader,
+} from "./mcp_audit.js";
 
 export interface McpSessionPolicy {
   absoluteDurationMs: number;
@@ -31,6 +36,7 @@ export interface McpStatus {
     oauthVerification: boolean;
     registeredTools: number;
   };
+  recentAuditEvents: McpAuditEvent[];
   sessions: {
     absoluteLifetimeSeconds: number;
     active: number;
@@ -64,7 +70,7 @@ export class LocalMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
     void workspaceId;
     return {
       activeSessions: 0,
-      auditEventsAvailable: false,
+      auditEventsAvailable: true,
       availability: "available",
       initializingSessions: 0,
       localTransportState: "ready",
@@ -80,6 +86,7 @@ export class McpStatusService {
   public constructor(
     private readonly policy: McpSessionPolicy,
     private readonly provider: McpRuntimeStatusProvider = new LocalMcpRuntimeStatusProvider(),
+    private readonly auditReader: McpAuditReader = emptyMcpAuditReader,
   ) {}
 
   public getStatus(actor: AuthenticatedActor): McpStatus {
@@ -93,6 +100,7 @@ export class McpStatusService {
         oauthVerification: runtime.oauthVerificationAvailable,
         registeredTools: runtime.registeredTools,
       },
+      recentAuditEvents: this.auditReader.listRecent(actor.workspaceId, 20),
       sessions: {
         absoluteLifetimeSeconds: this.policy.absoluteDurationMs / 1000,
         active: runtime.activeSessions,

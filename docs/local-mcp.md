@@ -65,6 +65,13 @@ codes such as `actor_unavailable` and `application_not_found`; unexpected
 failures return `internal_error` without exception details. Every tool is
 annotated as read-only, non-destructive, idempotent, and closed-world.
 
+Each accepted tool invocation appends an immutable audit event with its actor,
+workspace, action, target type, result, transport, and timestamp. The event
+stores no tool arguments, application content, credentials, or protocol
+payloads. If the event cannot be stored, the tool returns `internal_error`
+without returning workspace data. Settings → MCP shows the 20 most recent
+events to administrators.
+
 The local milestone does not add create, update, or delete tools. It also does
-not provide remote Streamable HTTP, OAuth, a remote session registry, or MCP
-security audit events. Those controls remain closed release milestones.
+not provide remote Streamable HTTP, OAuth, or a remote session registry. Those
+controls remain closed release milestones.

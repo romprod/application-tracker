@@ -59,8 +59,9 @@ SQLite backup, verification, and non-overwriting restore. API failures use
 stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
 server exposes five read-only tools through an explicit actor and workspace
-binding. The app does not yet support documents, remote MCP, or mutating MCP
-tools. Automated tests and CI cover each completed boundary.
+binding and records each accepted tool outcome in an immutable audit ledger.
+The app does not yet support documents, remote MCP, or mutating MCP tools.
+Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 

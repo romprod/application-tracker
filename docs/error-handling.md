@@ -53,8 +53,8 @@ Database maintenance commands print successful artifact reports to standard
 output because the path and digest are part of their operator interface. Their
 failure logs follow the redacted runtime contract.
 
-Application logs do not replace security audit events. Audit records need an
-explicit schema, actor, workspace, action, target, result, and retention policy.
-MCP audit events remain a separate release milestone. Reverse proxies and
-container platforms also need their own redaction policy because this code
-cannot control their access logs.
+Application logs do not replace security audit events. MCP tool outcomes use a
+separate append-only database schema with an actor, workspace, action, target
+type, result, transport, and timestamp. See [`local-mcp.md`](local-mcp.md).
+Reverse proxies and container platforms need their own redaction policy because
+this code cannot control their access logs.

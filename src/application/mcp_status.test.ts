@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "./auth.js";
+import type { McpAuditReader } from "./mcp_audit.js";
 import {
   McpStatusForbiddenError,
   McpStatusService,
@@ -26,15 +27,38 @@ describe("McpStatusService", () => {
   it("reports the available local runtime without claiming remote controls", () => {
     const provider = new LocalMcpRuntimeStatusProvider();
     const snapshot = vi.spyOn(provider, "snapshot");
-    const service = new McpStatusService(policy, provider);
+    const listRecent = vi.fn(() => [
+      {
+        action: "get_tracker_context" as const,
+        actor: { displayName: "Alex", username: "alex" },
+        occurredAt: "2026-01-01T10:00:00.000Z",
+        result: "success" as const,
+        targetType: "workspace" as const,
+        transport: "local_stdio" as const,
+      },
+    ]);
+    const auditReader: McpAuditReader = {
+      listRecent,
+    };
+    const service = new McpStatusService(policy, provider, auditReader);
 
     expect(service.getStatus(admin)).toEqual({
       availability: "available",
       capabilities: {
-        auditEvents: false,
+        auditEvents: true,
         oauthVerification: false,
         registeredTools: 5,
       },
+      recentAuditEvents: [
+        {
+          action: "get_tracker_context",
+          actor: { displayName: "Alex", username: "alex" },
+          occurredAt: "2026-01-01T10:00:00.000Z",
+          result: "success",
+          targetType: "workspace",
+          transport: "local_stdio",
+        },
+      ],
       sessions: {
         absoluteLifetimeSeconds: 14_400,
         active: 0,
@@ -50,6 +74,7 @@ describe("McpStatusService", () => {
       },
     });
     expect(snapshot).toHaveBeenCalledWith("workspace-1");
+    expect(listRecent).toHaveBeenCalledWith("workspace-1", 20);
   });
 
   it("requires an administrator", () => {

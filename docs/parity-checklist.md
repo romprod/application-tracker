@@ -42,7 +42,8 @@ tests and user documentation.
 
 - [x] Local stdio server with explicit workspace and actor context
 - [ ] Remote HTTPS server with strict OAuth verification
-- [ ] Tool schemas, authorization, transactions, and audit events
+- [x] Read-only tool schemas, per-call authorization, and audit events
+- [ ] Mutating tool approval, transactions, and rollback tests
 - [ ] Global and per-actor session limits, expiry, and cleanup
 - [x] Administrator-only sanitized MCP status
 

@@ -5,6 +5,7 @@ export interface McpStatus {
     oauthVerification: boolean;
     registeredTools: number;
   };
+  recentAuditEvents: McpAuditEvent[];
   sessions: {
     absoluteLifetimeSeconds: number;
     active: number;
@@ -26,6 +27,28 @@ export interface McpStatus {
   };
 }
 
+export interface McpAuditEvent {
+  action:
+    | "get_application"
+    | "get_job_search_summary"
+    | "get_reference_data"
+    | "get_tracker_context"
+    | "list_applications";
+  actor: {
+    displayName: string;
+    username: string;
+  };
+  occurredAt: string;
+  result: "denied" | "error" | "not_found" | "success";
+  targetType:
+    | "application"
+    | "application_collection"
+    | "job_search"
+    | "reference_data"
+    | "workspace";
+  transport: "local_stdio" | "remote_http";
+}
+
 export interface McpStatusClient {
   getStatus(): Promise<McpStatus>;
 }
@@ -45,6 +68,45 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+function parseAuditEvent(value: unknown): McpAuditEvent {
+  if (
+    !isRecord(value) ||
+    (value.action !== "get_application" &&
+      value.action !== "get_job_search_summary" &&
+      value.action !== "get_reference_data" &&
+      value.action !== "get_tracker_context" &&
+      value.action !== "list_applications") ||
+    !isRecord(value.actor) ||
+    typeof value.actor.displayName !== "string" ||
+    typeof value.actor.username !== "string" ||
+    typeof value.occurredAt !== "string" ||
+    Number.isNaN(Date.parse(value.occurredAt)) ||
+    (value.result !== "denied" &&
+      value.result !== "error" &&
+      value.result !== "not_found" &&
+      value.result !== "success") ||
+    (value.targetType !== "application" &&
+      value.targetType !== "application_collection" &&
+      value.targetType !== "job_search" &&
+      value.targetType !== "reference_data" &&
+      value.targetType !== "workspace") ||
+    (value.transport !== "local_stdio" && value.transport !== "remote_http")
+  ) {
+    throw new McpStatusClientError("invalid_response");
+  }
+  return {
+    action: value.action,
+    actor: {
+      displayName: value.actor.displayName,
+      username: value.actor.username,
+    },
+    occurredAt: value.occurredAt,
+    result: value.result,
+    targetType: value.targetType,
+    transport: value.transport,
+  };
+}
+
 function parseStatus(value: unknown): McpStatus {
   if (
     !isRecord(value) ||
@@ -55,6 +117,8 @@ function parseStatus(value: unknown): McpStatus {
     typeof value.capabilities.auditEvents !== "boolean" ||
     typeof value.capabilities.oauthVerification !== "boolean" ||
     !isNonNegativeInteger(value.capabilities.registeredTools) ||
+    !Array.isArray(value.recentAuditEvents) ||
+    value.recentAuditEvents.length > 20 ||
     !isRecord(value.sessions) ||
     !isNonNegativeInteger(value.sessions.absoluteLifetimeSeconds) ||
     !isNonNegativeInteger(value.sessions.active) ||
@@ -85,6 +149,7 @@ function parseStatus(value: unknown): McpStatus {
       oauthVerification: value.capabilities.oauthVerification,
       registeredTools: value.capabilities.registeredTools,
     },
+    recentAuditEvents: value.recentAuditEvents.map(parseAuditEvent),
     sessions: {
       absoluteLifetimeSeconds: value.sessions.absoluteLifetimeSeconds,
       active: value.sessions.active,

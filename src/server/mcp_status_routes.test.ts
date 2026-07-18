@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { AuthService } from "../application/auth.js";
 import { McpStatusService } from "../application/mcp_status.js";
+import { McpAuditService } from "../application/mcp_audit.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
+import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { UserAdministrationService } from "../application/users.js";
 import { createApp } from "./app.js";
@@ -57,12 +59,35 @@ async function createStatusApp() {
     new SqliteUsersRepository(database),
     hasher,
   );
-  const mcpStatusService = new McpStatusService({
-    absoluteDurationMs: 14_400_000,
-    globalLimit: 6,
-    idleDurationMs: 900_000,
-    perActorLimit: 2,
+  const auditService = new McpAuditService(
+    new SqliteMcpAuditRepository(database),
+    () => new Date("2026-01-01T01:00:00.000Z"),
+    () => "audit-event-1",
+  );
+  auditService.record({
+    action: "get_tracker_context",
+    actorUserId: database
+      .prepare("SELECT id FROM users WHERE username = ?")
+      .pluck()
+      .get("alex") as string,
+    result: "success",
+    targetType: "workspace",
+    transport: "local_stdio",
+    workspaceId: database
+      .prepare("SELECT id FROM workspaces WHERE slug = ?")
+      .pluck()
+      .get("default") as string,
   });
+  const mcpStatusService = new McpStatusService(
+    {
+      absoluteDurationMs: 14_400_000,
+      globalLimit: 6,
+      idleDurationMs: 900_000,
+      perActorLimit: 2,
+    },
+    undefined,
+    auditService,
+  );
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
@@ -130,10 +155,20 @@ describe("MCP status route", () => {
       status: {
         availability: "available",
         capabilities: {
-          auditEvents: false,
+          auditEvents: true,
           oauthVerification: false,
           registeredTools: 5,
         },
+        recentAuditEvents: [
+          {
+            action: "get_tracker_context",
+            actor: { displayName: "Alex Example", username: "alex" },
+            occurredAt: "2026-01-01T01:00:00.000Z",
+            result: "success",
+            targetType: "workspace",
+            transport: "local_stdio",
+          },
+        ],
         sessions: {
           absoluteLifetimeSeconds: 14_400,
           active: 0,

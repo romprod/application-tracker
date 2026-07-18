@@ -3,8 +3,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationNotFoundError } from "../application/applications.js";
-import type { LocalMcpTools } from "../application/mcp.js";
-import { localMcpToolNames } from "../application/mcp.js";
+import {
+  LocalMcpActorUnavailableError,
+  type LocalMcpTools,
+  localMcpToolNames,
+} from "../application/mcp.js";
+import type { McpAuditRecorder } from "../application/mcp_audit.js";
+import type { ApplicationLogger } from "./logging.js";
 import { createLocalMcpServer } from "./mcp_server.js";
 
 const clients: Client[] = [];
@@ -52,7 +57,15 @@ describe("local MCP server", () => {
   it("registers bounded read-only tools without actor selection arguments", async () => {
     const tools = fakeTools();
     const listApplications = vi.spyOn(tools, "listApplications");
-    const server = createLocalMcpServer(tools);
+    const record = vi.fn();
+    const recorder: McpAuditRecorder = { record };
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder,
+        workspaceId: "workspace-1",
+      },
+    });
     const client = new Client({ name: "test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
@@ -116,5 +129,100 @@ describe("local MCP server", () => {
         type: "text",
       },
     ]);
+    expect(record).toHaveBeenCalledTimes(5);
+    expect(record).toHaveBeenNthCalledWith(1, {
+      action: "get_tracker_context",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "workspace",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(5, {
+      action: "get_application",
+      actorUserId: "actor-user-1",
+      result: "not_found",
+      targetType: "application",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("audits revoked access as denied", async () => {
+    const tools = fakeTools();
+    tools.getTrackerContext = vi.fn(() => {
+      throw new LocalMcpActorUnavailableError();
+    });
+    const record = vi.fn();
+    const recorder: McpAuditRecorder = { record };
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder,
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {},
+      name: "get_tracker_context",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(record).toHaveBeenCalledWith({
+      action: "get_tracker_context",
+      actorUserId: "actor-user-1",
+      result: "denied",
+      targetType: "workspace",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("fails closed when a required audit event cannot be stored", async () => {
+    const tools = fakeTools();
+    const errorLog = vi.fn<ApplicationLogger["error"]>();
+    const logger: ApplicationLogger = { error: errorLog, info: vi.fn() };
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: {
+          record: () => {
+            throw new Error("synthetic database failure");
+          },
+        },
+        workspaceId: "workspace-1",
+      },
+      logger,
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {},
+      name: "get_tracker_context",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      { text: '{"error":{"code":"internal_error"}}', type: "text" },
+    ]);
+    expect(errorLog).toHaveBeenCalledOnce();
+    const [event, context] = errorLog.mock.calls[0] ?? [];
+    expect(event).toBe("mcp_audit_failed");
+    expect(context?.tool).toBe("get_tracker_context");
+    expect(context?.error).toBeInstanceOf(Error);
   });
 });

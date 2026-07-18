@@ -7,6 +7,12 @@ import {
   LocalMcpActorUnavailableError,
   type LocalMcpTools,
 } from "../application/mcp.js";
+import type {
+  McpAuditAction,
+  McpAuditRecorder,
+  McpAuditResult,
+  McpAuditTargetType,
+} from "../application/mcp_audit.js";
 import { applicationIdSchema } from "../domain/applications.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
@@ -135,29 +141,75 @@ function failedToolResult(code: string): CallToolResult {
   };
 }
 
-function executeTool(
-  tool: string,
+interface LocalMcpAuditOptions {
+  actorUserId: string;
+  recorder: McpAuditRecorder;
+  workspaceId: string;
+}
+
+interface LocalMcpServerOptions {
+  audit?: LocalMcpAuditOptions;
+  logger?: ApplicationLogger;
+}
+
+function recordAuditEvent(
+  audit: LocalMcpAuditOptions | undefined,
   logger: ApplicationLogger,
+  tool: McpAuditAction,
+  targetType: McpAuditTargetType,
+  result: McpAuditResult,
+): boolean {
+  if (!audit) return true;
+  try {
+    audit.recorder.record({
+      action: tool,
+      actorUserId: audit.actorUserId,
+      result,
+      targetType,
+      transport: "local_stdio",
+      workspaceId: audit.workspaceId,
+    });
+    return true;
+  } catch (error) {
+    logger.error("mcp_audit_failed", { error, tool });
+    return false;
+  }
+}
+
+function executeTool(
+  tool: McpAuditAction,
+  targetType: McpAuditTargetType,
+  logger: ApplicationLogger,
+  audit: LocalMcpAuditOptions | undefined,
   operation: () => object,
 ): CallToolResult {
   try {
-    return successfulToolResult(operation());
+    const value = operation();
+    return recordAuditEvent(audit, logger, tool, targetType, "success")
+      ? successfulToolResult(value)
+      : failedToolResult("internal_error");
   } catch (error) {
     if (error instanceof LocalMcpActorUnavailableError) {
-      return failedToolResult("actor_unavailable");
+      return recordAuditEvent(audit, logger, tool, targetType, "denied")
+        ? failedToolResult("actor_unavailable")
+        : failedToolResult("internal_error");
     }
     if (error instanceof ApplicationNotFoundError) {
-      return failedToolResult("application_not_found");
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_not_found")
+        : failedToolResult("internal_error");
     }
     logger.error("mcp_tool_failed", { error, tool });
+    recordAuditEvent(audit, logger, tool, targetType, "error");
     return failedToolResult("internal_error");
   }
 }
 
 export function createLocalMcpServer(
   tools: LocalMcpTools,
-  logger: ApplicationLogger = noOpLogger,
+  options: LocalMcpServerOptions = {},
 ): McpServer {
+  const logger = options.logger ?? noOpLogger;
   const server = new McpServer(
     { name: "application-tracker", version: "0.1.0" },
     {
@@ -177,8 +229,12 @@ export function createLocalMcpServer(
       title: "Get tracker context",
     },
     () =>
-      executeTool("get_tracker_context", logger, () =>
-        tools.getTrackerContext(),
+      executeTool(
+        "get_tracker_context",
+        "workspace",
+        logger,
+        options.audit,
+        () => tools.getTrackerContext(),
       ),
   );
 
@@ -193,8 +249,12 @@ export function createLocalMcpServer(
       title: "Get job search summary",
     },
     () =>
-      executeTool("get_job_search_summary", logger, () =>
-        tools.getJobSearchSummary(),
+      executeTool(
+        "get_job_search_summary",
+        "job_search",
+        logger,
+        options.audit,
+        () => tools.getJobSearchSummary(),
       ),
   );
 
@@ -212,11 +272,16 @@ export function createLocalMcpServer(
       title: "List applications",
     },
     (input) =>
-      executeTool("list_applications", logger, () =>
-        tools.listApplications({
-          limit: input.limit,
-          ...(input.statusId ? { statusId: input.statusId } : {}),
-        }),
+      executeTool(
+        "list_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () =>
+          tools.listApplications({
+            limit: input.limit,
+            ...(input.statusId ? { statusId: input.statusId } : {}),
+          }),
       ),
   );
 
@@ -231,7 +296,7 @@ export function createLocalMcpServer(
       title: "Get application",
     },
     ({ applicationId }) =>
-      executeTool("get_application", logger, () =>
+      executeTool("get_application", "application", logger, options.audit, () =>
         tools.getApplication(applicationId),
       ),
   );
@@ -247,7 +312,13 @@ export function createLocalMcpServer(
       title: "Get reference data",
     },
     () =>
-      executeTool("get_reference_data", logger, () => tools.getReferenceData()),
+      executeTool(
+        "get_reference_data",
+        "reference_data",
+        logger,
+        options.audit,
+        () => tools.getReferenceData(),
+      ),
   );
 
   return server;

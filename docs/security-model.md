@@ -53,6 +53,8 @@
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
 - The initial tool set is read-only, bounded, and closed-world
+- Every accepted tool invocation records an append-only outcome event; audit
+  storage failure prevents the tool from returning workspace data
 - Stdout carries JSON-RPC only; redacted lifecycle diagnostics use stderr
 
 ### Remote MCP
