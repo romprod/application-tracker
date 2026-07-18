@@ -39,12 +39,13 @@ Migration tests must prove all of the following:
 ## Initial identity schema
 
 The first migration creates workspaces, users, local credentials, workspace
-memberships, external identities, and sessions. A session has a composite
+memberships, external identities, and sessions. The second adds the singleton
+installation state used to close first-run setup. A session has a composite
 foreign key to workspace membership, so a user cannot receive a session for a
 workspace they do not belong to. Only a token hash is stored.
 
-This schema does not create a user or a default password. The closed first-run
-administrator flow will be introduced as a separate, tested feature.
+No migration creates a user or a default password. See
+[`initial-setup.md`](initial-setup.md) for the closed administrator flow.
 
 ## Backup status
 

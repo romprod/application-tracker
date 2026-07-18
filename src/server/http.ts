@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { SetupService } from "../application/setup.js";
+import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
+import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
+import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 
@@ -12,11 +16,19 @@ if (existsSync(environmentPath)) {
 
 const config = parseRuntimeConfig(process.env);
 const database = openApplicationDatabase(config.databasePath);
+const setupService = new SetupService(
+  new SqliteSetupRepository(database),
+  new ScryptPasswordHasher(),
+  new StaticSetupTokenVerifier(config.setupToken),
+);
 const staticRoot =
   config.nodeEnv === "production"
     ? resolve(process.cwd(), "dist/client")
     : undefined;
-const app = createApp(staticRoot ? { staticRoot } : {});
+const app = createApp({
+  setupService,
+  ...(staticRoot ? { staticRoot } : {}),
+});
 
 const server = app.listen(config.port, config.host, () => {
   console.info(

@@ -46,7 +46,7 @@ Development standards are defined in
 The current foundation includes a typed configuration boundary, a sanitized
 health endpoint, a responsive application shell, a migration-backed workspace
 identity schema, automated tests, and CI. It does not yet persist job
-applications or authenticate users.
+applications or provide user login.
 
 ## Run the foundation
 
@@ -59,7 +59,9 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. The development server forwards API requests to
-the backend on port 3333.
+the backend on port 3333. Creating the first administrator currently uses the
+documented [`closed setup API`](docs/initial-setup.md); its browser screen is
+the next identity milestone.
 
 To exercise the production build locally:
 

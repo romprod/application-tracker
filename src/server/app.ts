@@ -1,10 +1,24 @@
 import compression from "compression";
-import express, { type Express } from "express";
+import express, { type ErrorRequestHandler, type Express } from "express";
 import helmet from "helmet";
 
+import type { SetupService } from "../application/setup.js";
+import { createSetupRouter } from "./setup_routes.js";
+
 export interface AppOptions {
+  setupService?: SetupService;
   staticRoot?: string;
 }
+
+const internalErrorHandler: ErrorRequestHandler = (
+  _error,
+  _request,
+  response,
+  next,
+) => {
+  void next;
+  response.status(500).json({ error: { code: "internal_error" } });
+};
 
 export function createApp(options: AppOptions = {}): Express {
   const app = express();
@@ -21,6 +35,10 @@ export function createApp(options: AppOptions = {}): Express {
     });
   });
 
+  if (options.setupService) {
+    app.use("/api/setup", createSetupRouter(options.setupService));
+  }
+
   if (options.staticRoot) {
     app.use(express.static(options.staticRoot, { index: false }));
     app.use((request, response, next) => {
@@ -32,6 +50,8 @@ export function createApp(options: AppOptions = {}): Express {
       response.sendFile("index.html", { root: options.staticRoot });
     });
   }
+
+  app.use(internalErrorHandler);
 
   return app;
 }

@@ -11,6 +11,10 @@ const runtimeEnvironmentSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3333),
+  SETUP_TOKEN: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(32).max(512).optional(),
+  ),
 });
 
 export interface RuntimeConfig {
@@ -18,6 +22,7 @@ export interface RuntimeConfig {
   host: string;
   nodeEnv: "development" | "test" | "production";
   port: number;
+  setupToken?: string;
 }
 
 export function parseRuntimeConfig(
@@ -37,5 +42,6 @@ export function parseRuntimeConfig(
     host: result.data.HOST,
     nodeEnv: result.data.NODE_ENV,
     port: result.data.PORT,
+    ...(result.data.SETUP_TOKEN ? { setupToken: result.data.SETUP_TOKEN } : {}),
   };
 }

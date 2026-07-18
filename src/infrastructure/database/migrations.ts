@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 
 import { workspaceIdentityMigration } from "./migrations/001_workspace_identity.js";
+import { installationStateMigration } from "./migrations/002_installation_state.js";
 
 export interface Migration {
   name: string;
@@ -18,6 +19,7 @@ interface AppliedMigration {
 
 export const applicationMigrations: readonly Migration[] = [
   workspaceIdentityMigration,
+  installationStateMigration,
 ];
 
 const createMigrationTable = `

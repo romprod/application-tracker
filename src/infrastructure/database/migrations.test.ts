@@ -1,7 +1,12 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
-import { migrateDatabase, type Migration } from "./migrations.js";
+import {
+  applicationMigrations,
+  migrateDatabase,
+  type Migration,
+} from "./migrations.js";
+import { workspaceIdentityMigration } from "./migrations/001_workspace_identity.js";
 
 describe("migrateDatabase", () => {
   it("applies each migration once", () => {
@@ -72,6 +77,32 @@ describe("migrateDatabase", () => {
         )
         .get();
       expect(table).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("migrates the identity schema forward from version one", () => {
+    const database = new Database(":memory:");
+
+    try {
+      migrateDatabase(database, [workspaceIdentityMigration]);
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare("SELECT version FROM schema_migrations ORDER BY version")
+          .pluck()
+          .all(),
+      ).toEqual([1, 2]);
+      expect(
+        database
+          .prepare(
+            "SELECT setup_completed_at FROM installation_state WHERE id = 1",
+          )
+          .pluck()
+          .get(),
+      ).toBeNull();
     } finally {
       database.close();
     }

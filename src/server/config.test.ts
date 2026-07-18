@@ -17,4 +17,16 @@ describe("parseRuntimeConfig", () => {
       "Invalid runtime configuration",
     );
   });
+
+  it("treats a blank setup token as unconfigured", () => {
+    expect(parseRuntimeConfig({ SETUP_TOKEN: "" })).not.toHaveProperty(
+      "setupToken",
+    );
+  });
+
+  it("rejects a setup token with insufficient entropy", () => {
+    expect(() => parseRuntimeConfig({ SETUP_TOKEN: "too-short" })).toThrow(
+      "Invalid runtime configuration: SETUP_TOKEN",
+    );
+  });
 });
