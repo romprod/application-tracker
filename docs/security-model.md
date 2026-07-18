@@ -46,6 +46,15 @@
 - Contact and related-link rows inherit application workspace scope through
   composite foreign keys; relation writes share the parent transaction
 
+### Local MCP
+
+- Stdio opens no network listener and runs only as a client-spawned child process
+- Private configuration selects one username and one workspace slug
+- Tool schemas contain no actor or workspace selector
+- Every tool call rechecks active account status and workspace membership
+- The initial tool set is read-only, bounded, and closed-world
+- Stdout carries JSON-RPC only; redacted lifecycle diagnostics use stderr
+
 ### Remote MCP
 
 - Signature algorithm, issuer, audience, expiry, scope, and subject verification

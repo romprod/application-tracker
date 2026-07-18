@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "application-tracker": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/application-tracker/dist/server/server/mcp_stdio.js"
+      ],
+      "env": {
+        "DATABASE_PATH": "/absolute/path/to/application-tracker/data/application-tracker.sqlite",
+        "MCP_LOCAL_ACTOR_USERNAME": "replace-with-local-username",
+        "MCP_LOCAL_WORKSPACE_SLUG": "default"
+      }
+    }
+  }
+}

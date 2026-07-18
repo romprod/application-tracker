@@ -1013,7 +1013,7 @@ function ListsSettingsView({
             <dd>{values?.length ?? "—"}</dd>
           </div>
           <div>
-            <dt>Active</dt>
+            <dt>Remote active</dt>
             <dd>{values ? activeCount : "—"}</dd>
           </div>
           <div>
@@ -1558,6 +1558,7 @@ function McpSettingsView({
 }) {
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
+  const localReady = status?.transports.local.state === "ready";
 
   useEffect(() => {
     let active = true;
@@ -1626,15 +1627,28 @@ function McpSettingsView({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Transport register</p>
-                <h2 id="transport-title">Closed until implemented</h2>
+                <h2 id="transport-title">
+                  {localReady
+                    ? "Local tools ready"
+                    : "Closed until implemented"}
+                </h2>
               </div>
               <span data-state={status.availability}>
                 {statusLabel(status.availability)}
               </span>
             </div>
             <p className="mcp-boundary-note">
-              The status boundary is ready. No MCP transport or tool is active
-              in this build.
+              {localReady ? (
+                <>
+                  <strong>
+                    {status.capabilities.registeredTools} read-only tools
+                    available
+                  </strong>{" "}
+                  over local stdio with an explicit actor and workspace binding.
+                </>
+              ) : (
+                "The status boundary is ready. No MCP transport or tool is active in this build."
+              )}
             </p>
             <dl className="transport-list">
               <div>
@@ -1663,14 +1677,15 @@ function McpSettingsView({
           <aside className="mcp-policy" aria-labelledby="policy-title">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Future session policy</p>
+                <p className="eyebrow">Remote session policy</p>
                 <h2 id="policy-title">Configured, not enforced</h2>
               </div>
               <span>{status.sessions.globalLimit} session ceiling</span>
             </div>
             <p>
-              These values are ready for the session registry planned in the
-              next MCP implementation stage.
+              These limits remain reserved for the remote session registry.
+              Local stdio processes rely on operating-system access and their
+              configured actor binding.
             </p>
             <dl className="policy-list">
               <div>

@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from "./auth.js";
+import { localMcpToolNames } from "./mcp.js";
 
 export interface McpSessionPolicy {
   absoluteDurationMs: number;
@@ -58,17 +59,17 @@ export class McpStatusForbiddenError extends Error {
   }
 }
 
-export class PlannedMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
+export class LocalMcpRuntimeStatusProvider implements McpRuntimeStatusProvider {
   public snapshot(workspaceId: string): McpRuntimeSnapshot {
     void workspaceId;
     return {
       activeSessions: 0,
       auditEventsAvailable: false,
-      availability: "planned",
+      availability: "available",
       initializingSessions: 0,
-      localTransportState: "unavailable",
+      localTransportState: "ready",
       oauthVerificationAvailable: false,
-      registeredTools: 0,
+      registeredTools: localMcpToolNames.length,
       remoteTransportState: "disabled",
       sessionEnforcement: "inactive",
     };
@@ -78,7 +79,7 @@ export class PlannedMcpRuntimeStatusProvider implements McpRuntimeStatusProvider
 export class McpStatusService {
   public constructor(
     private readonly policy: McpSessionPolicy,
-    private readonly provider: McpRuntimeStatusProvider = new PlannedMcpRuntimeStatusProvider(),
+    private readonly provider: McpRuntimeStatusProvider = new LocalMcpRuntimeStatusProvider(),
   ) {}
 
   public getStatus(actor: AuthenticatedActor): McpStatus {

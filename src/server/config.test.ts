@@ -82,6 +82,21 @@ describe("parseRuntimeConfig", () => {
     });
   });
 
+  it("accepts only a complete local MCP actor binding", () => {
+    expect(
+      parseRuntimeConfig({
+        MCP_LOCAL_ACTOR_USERNAME: "alex",
+        MCP_LOCAL_WORKSPACE_SLUG: "default",
+      }).mcp.local,
+    ).toEqual({ actorUsername: "alex", workspaceSlug: "default" });
+
+    expect(() =>
+      parseRuntimeConfig({ MCP_LOCAL_ACTOR_USERNAME: "alex" }),
+    ).toThrow(
+      "Invalid runtime configuration: MCP_LOCAL_ACTOR_USERNAME, MCP_LOCAL_WORKSPACE_SLUG",
+    );
+  });
+
   it("rejects contradictory MCP session limits and lifetimes", () => {
     expect(() =>
       parseRuntimeConfig({

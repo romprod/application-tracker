@@ -4,7 +4,7 @@ import type { AuthenticatedActor } from "./auth.js";
 import {
   McpStatusForbiddenError,
   McpStatusService,
-  PlannedMcpRuntimeStatusProvider,
+  LocalMcpRuntimeStatusProvider,
 } from "./mcp_status.js";
 
 const admin: AuthenticatedActor = {
@@ -23,17 +23,17 @@ const policy = {
 };
 
 describe("McpStatusService", () => {
-  it("returns an honest status while the MCP runtime is not implemented", () => {
-    const provider = new PlannedMcpRuntimeStatusProvider();
+  it("reports the available local runtime without claiming remote controls", () => {
+    const provider = new LocalMcpRuntimeStatusProvider();
     const snapshot = vi.spyOn(provider, "snapshot");
     const service = new McpStatusService(policy, provider);
 
     expect(service.getStatus(admin)).toEqual({
-      availability: "planned",
+      availability: "available",
       capabilities: {
         auditEvents: false,
         oauthVerification: false,
-        registeredTools: 0,
+        registeredTools: 5,
       },
       sessions: {
         absoluteLifetimeSeconds: 14_400,
@@ -45,7 +45,7 @@ describe("McpStatusService", () => {
         perActorLimit: 2,
       },
       transports: {
-        local: { state: "unavailable", transport: "stdio" },
+        local: { state: "ready", transport: "stdio" },
         remote: { state: "disabled", transport: "streamable_http" },
       },
     });

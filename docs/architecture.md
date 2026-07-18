@@ -53,6 +53,8 @@ Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
 The sanitized MCP status boundary and future session policy are described in
 [`mcp-status.md`](mcp-status.md).
+The local stdio transport, explicit actor binding, and read-only tools are
+described in [`local-mcp.md`](local-mcp.md).
 The API error envelope, request correlation, and redacted JSON logging contract
 are described in [`error-handling.md`](error-handling.md).
 The application ledger is described in

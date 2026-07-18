@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+function blankToUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
+
 const runtimeEnvironmentSchema = z.object({
   BACKUP_DIRECTORY: z.string().trim().min(1).default("./backups"),
   DATABASE_PATH: z
@@ -27,6 +31,26 @@ const runtimeEnvironmentSchema = z.object({
     .min(1)
     .max(100)
     .default(2),
+  MCP_LOCAL_ACTOR_USERNAME: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .trim()
+      .min(3)
+      .max(64)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+      .optional(),
+  ),
+  MCP_LOCAL_WORKSPACE_SLUG: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
+      .optional(),
+  ),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
@@ -61,6 +85,10 @@ export interface RuntimeConfig {
   databasePath: string;
   host: string;
   mcp: {
+    local?: {
+      actorUsername: string;
+      workspaceSlug: string;
+    };
     session: {
       absoluteDurationMs: number;
       globalLimit: number;
@@ -89,6 +117,15 @@ export function parseRuntimeConfig(
       .map((issue) => issue.path.join(".") || "environment")
       .join(", ");
     throw new Error(`Invalid runtime configuration: ${fields}`);
+  }
+
+  if (
+    Boolean(result.data.MCP_LOCAL_ACTOR_USERNAME) !==
+    Boolean(result.data.MCP_LOCAL_WORKSPACE_SLUG)
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: MCP_LOCAL_ACTOR_USERNAME, MCP_LOCAL_WORKSPACE_SLUG",
+    );
   }
 
   if (
@@ -122,6 +159,15 @@ export function parseRuntimeConfig(
     databasePath: result.data.DATABASE_PATH,
     host: result.data.HOST,
     mcp: {
+      ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&
+      result.data.MCP_LOCAL_WORKSPACE_SLUG
+        ? {
+            local: {
+              actorUsername: result.data.MCP_LOCAL_ACTOR_USERNAME,
+              workspaceSlug: result.data.MCP_LOCAL_WORKSPACE_SLUG,
+            },
+          }
+        : {}),
       session: {
         absoluteDurationMs: result.data.MCP_SESSION_ABSOLUTE_SECONDS * 1000,
         globalLimit: result.data.MCP_SESSION_GLOBAL_LIMIT,

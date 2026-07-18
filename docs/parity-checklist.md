@@ -40,7 +40,7 @@ tests and user documentation.
 
 ## MCP
 
-- [ ] Local stdio server with explicit workspace and actor context
+- [x] Local stdio server with explicit workspace and actor context
 - [ ] Remote HTTPS server with strict OAuth verification
 - [ ] Tool schemas, authorization, transactions, and audit events
 - [ ] Global and per-actor session limits, expiry, and cleanup

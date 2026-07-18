@@ -4,9 +4,8 @@ Application Tracker exposes an administrator-only MCP status page at
 Settings → MCP. The page reports what the current build can do without exposing
 deployment or identity details.
 
-The MCP runtime is not implemented yet. Local stdio is unavailable, remote
-Streamable HTTP is disabled, no tools are registered, and no MCP sessions can
-exist. The page states this directly.
+The build includes a local stdio transport and five read-only tools. Remote
+Streamable HTTP remains disabled. The page reports both facts directly.
 
 ## Status API
 
@@ -28,28 +27,34 @@ The response omits network addresses, hostnames, identity-provider details,
 subjects, tokens, credentials, database paths, and internal errors. Server tests
 check this disclosure contract.
 
-## Session policy
+The status marks local stdio as ready when the build contains the transport and
+tool registry. Each MCP client spawns its own process, so the website does not
+discover or count those processes. Active and initializing counts remain for
+the future remote session registry and stay at zero.
+
+Local client setup, actor binding, revocation behavior, and tool contracts are
+documented in [`local-mcp.md`](local-mcp.md).
+
+## Remote session policy
 
 The environment controls the future MCP session policy:
 
-| Variable                       | Default | Meaning                   |
-| ------------------------------ | ------: | ------------------------- |
-| `MCP_SESSION_GLOBAL_LIMIT`     |       6 | Installation-wide limit   |
-| `MCP_SESSION_PER_ACTOR_LIMIT`  |       2 | Limit for one actor       |
-| `MCP_SESSION_IDLE_SECONDS`     |     900 | Idle expiry, 15 minutes   |
-| `MCP_SESSION_ABSOLUTE_SECONDS` |   14400 | Maximum lifetime, 4 hours |
+| Variable                       | Default | Meaning                          |
+| ------------------------------ | ------: | -------------------------------- |
+| `MCP_SESSION_GLOBAL_LIMIT`     |       6 | Installation-wide remote limit   |
+| `MCP_SESSION_PER_ACTOR_LIMIT`  |       2 | Remote limit for one actor       |
+| `MCP_SESSION_IDLE_SECONDS`     |     900 | Remote idle expiry, 15 minutes   |
+| `MCP_SESSION_ABSOLUTE_SECONDS` |   14400 | Remote maximum lifetime, 4 hours |
 
 Startup rejects a per-actor limit above the global limit and an absolute
 lifetime at or below the idle lifetime.
 
-These values are configuration, not enforcement. The status reports
-`enforcement: inactive` until the MCP session registry implements race-safe
-admission, expiry, explicit close, and shutdown cleanup. The capability
-checklist keeps that implementation milestone unchecked.
+These values do not govern local child processes. The status reports
+`enforcement: inactive` until the remote registry implements race-safe
+admission, expiry, explicit close, and shutdown cleanup.
 
-## Next MCP milestone
+## Remaining MCP milestones
 
-The next stage adds a local stdio server with explicit operator-selected actor
-and workspace context. Remote HTTPS, OAuth verification, session enforcement,
-audit events, and tools remain separate later stages so each boundary can be
-tested before it opens.
+Remote HTTPS, OAuth verification, session enforcement, security audit events,
+and mutating tools remain separate stages. Until those controls land, the
+remote transport stays disabled and local tools stay read-only.

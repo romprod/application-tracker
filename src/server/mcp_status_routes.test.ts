@@ -128,11 +128,11 @@ describe("MCP status route", () => {
     const body: unknown = response.body;
     expect(body).toEqual({
       status: {
-        availability: "planned",
+        availability: "available",
         capabilities: {
           auditEvents: false,
           oauthVerification: false,
-          registeredTools: 0,
+          registeredTools: 5,
         },
         sessions: {
           absoluteLifetimeSeconds: 14_400,
@@ -144,7 +144,7 @@ describe("MCP status route", () => {
           perActorLimit: 2,
         },
         transports: {
-          local: { state: "unavailable", transport: "stdio" },
+          local: { state: "ready", transport: "stdio" },
           remote: { state: "disabled", transport: "streamable_http" },
         },
       },

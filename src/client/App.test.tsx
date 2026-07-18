@@ -177,11 +177,11 @@ const referenceValues: ReferenceValue[] = [
 ];
 
 const mcpStatus: McpStatus = {
-  availability: "planned",
+  availability: "available",
   capabilities: {
     auditEvents: false,
     oauthVerification: false,
-    registeredTools: 0,
+    registeredTools: 5,
   },
   sessions: {
     absoluteLifetimeSeconds: 14_400,
@@ -193,7 +193,7 @@ const mcpStatus: McpStatus = {
     perActorLimit: 2,
   },
   transports: {
-    local: { state: "unavailable", transport: "stdio" },
+    local: { state: "ready", transport: "stdio" },
     remote: { state: "disabled", transport: "streamable_http" },
   },
 };
@@ -897,6 +897,8 @@ describe("application shell", () => {
       await screen.findByRole("heading", { name: "MCP, without blind spots." }),
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
+    expect(screen.getByText("Local tools ready")).toBeInTheDocument();
+    expect(screen.getByText("5 read-only tools available")).toBeInTheDocument();
     expect(screen.getByText("Configured, not enforced")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
   });

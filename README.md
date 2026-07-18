@@ -57,9 +57,10 @@ erasing that timeline. Workspace administrators can configure statuses,
 sources, role types, and document types. Operator commands provide online
 SQLite backup, verification, and non-overwriting restore. API failures use
 stable error codes and server-generated request IDs; structured runtime logs
-redact credentials, content, identity, and private topology. The app does not
-yet support documents or an MCP server. Automated tests and CI cover each
-completed boundary.
+redact credentials, content, identity, and private topology. A local stdio MCP
+server exposes five read-only tools through an explicit actor and workspace
+binding. The app does not yet support documents, remote MCP, or mutating MCP
+tools. Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 
@@ -91,6 +92,8 @@ Run every local quality gate with `npm run check`.
 Database operators should follow the tested
 [`backup and restore runbook`](docs/backup-restore.md); copying a live WAL
 database file is not a valid backup procedure.
+
+Local MCP clients should follow the [stdio configuration guide](docs/local-mcp.md).
 
 ## License
 
