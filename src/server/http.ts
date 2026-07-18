@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 
 import { AuthService } from "../application/auth.js";
 import { SetupService } from "../application/setup.js";
+import { McpStatusService } from "../application/mcp_status.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
@@ -46,6 +47,7 @@ const usersService = new UserAdministrationService(
   new SqliteUsersRepository(database),
   passwordHasher,
 );
+const mcpStatusService = new McpStatusService(config.mcp.session);
 const staticRoot =
   config.nodeEnv === "production"
     ? resolve(process.cwd(), "dist/client")
@@ -56,6 +58,7 @@ const app = createApp({
     secure: config.session.cookieSecure,
   },
   authService,
+  mcpStatusService,
   setupService,
   usersService,
   ...(staticRoot ? { staticRoot } : {}),

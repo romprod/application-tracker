@@ -7,6 +7,14 @@ describe("parseRuntimeConfig", () => {
     expect(parseRuntimeConfig({})).toEqual({
       databasePath: "./data/application-tracker.sqlite",
       host: "0.0.0.0",
+      mcp: {
+        session: {
+          absoluteDurationMs: 14_400_000,
+          globalLimit: 6,
+          idleDurationMs: 900_000,
+          perActorLimit: 2,
+        },
+      },
       nodeEnv: "development",
       port: 3333,
       session: {
@@ -49,5 +57,36 @@ describe("parseRuntimeConfig", () => {
         SESSION_IDLE_SECONDS: "1800",
       }),
     ).toThrow("Invalid runtime configuration: SESSION_ABSOLUTE_SECONDS");
+  });
+
+  it("accepts an explicit MCP session policy", () => {
+    expect(
+      parseRuntimeConfig({
+        MCP_SESSION_ABSOLUTE_SECONDS: "28800",
+        MCP_SESSION_GLOBAL_LIMIT: "12",
+        MCP_SESSION_IDLE_SECONDS: "1800",
+        MCP_SESSION_PER_ACTOR_LIMIT: "3",
+      }).mcp.session,
+    ).toEqual({
+      absoluteDurationMs: 28_800_000,
+      globalLimit: 12,
+      idleDurationMs: 1_800_000,
+      perActorLimit: 3,
+    });
+  });
+
+  it("rejects contradictory MCP session limits and lifetimes", () => {
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_SESSION_GLOBAL_LIMIT: "2",
+        MCP_SESSION_PER_ACTOR_LIMIT: "3",
+      }),
+    ).toThrow("Invalid runtime configuration: MCP_SESSION_GLOBAL_LIMIT");
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_SESSION_ABSOLUTE_SECONDS: "900",
+        MCP_SESSION_IDLE_SECONDS: "900",
+      }),
+    ).toThrow("Invalid runtime configuration: MCP_SESSION_ABSOLUTE_SECONDS");
   });
 });
