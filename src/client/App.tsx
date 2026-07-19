@@ -12,6 +12,11 @@ import {
 } from "./applications_client";
 import { ApplicationWorkspace } from "./application_workspace";
 import {
+  browserDocumentsClient,
+  type DocumentsClient,
+} from "./documents_client";
+import { DocumentsWorkspace } from "./documents_workspace";
+import {
   browserMcpStatusClient,
   type McpStatus,
   type McpStatusClient,
@@ -39,6 +44,7 @@ import {
 
 type ReadyPage =
   | "applications"
+  | "documents"
   | "overview"
   | "settings-lists"
   | "settings-mcp"
@@ -61,6 +67,7 @@ type AppView =
 interface AppProps {
   applicationsClient?: ApplicationsClient;
   authClient?: AuthClient;
+  documentsClient?: DocumentsClient;
   mcpStatusClient?: McpStatusClient;
   referenceValuesClient?: ReferenceValuesClient;
   setupClient?: SetupClient;
@@ -70,6 +77,7 @@ interface AppProps {
 export function App({
   applicationsClient = browserApplicationsClient,
   authClient = browserAuthClient,
+  documentsClient = browserDocumentsClient,
   mcpStatusClient = browserMcpStatusClient,
   referenceValuesClient = browserReferenceValuesClient,
   setupClient = browserSetupClient,
@@ -231,6 +239,13 @@ export function App({
           )}
         {view.kind === "ready" && view.page === "settings-users" && (
           <UsersSettingsView navigate={navigate} usersClient={usersClient} />
+        )}
+        {view.kind === "ready" && view.page === "documents" && (
+          <DocumentsWorkspace
+            applicationsClient={applicationsClient}
+            documentsClient={documentsClient}
+            referenceValuesClient={referenceValuesClient}
+          />
         )}
         {view.kind === "ready" && view.page === "settings-lists" && (
           <ListsSettingsView
@@ -397,11 +412,15 @@ function Sidebar({
             </button>
           </li>
           <li>
-            <span className="future-navigation" aria-disabled="true">
-              <span>03</span>
+            <button
+              type="button"
+              aria-current={activePage === "documents" ? "page" : undefined}
+              className={activePage === "documents" ? "active-navigation" : ""}
+              onClick={() => onNavigate("documents")}
+            >
+              <span aria-hidden="true">03</span>
               Documents
-              <small>soon</small>
-            </span>
+            </button>
           </li>
           <li>
             <button

@@ -26,6 +26,7 @@ import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
+import type { DocumentRecord, DocumentsClient } from "./documents_client";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -181,6 +182,24 @@ const referenceValues: ReferenceValue[] = [
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
 ];
+
+const documentRecord: DocumentRecord = {
+  applications: [
+    {
+      companyName: applicationRecord.companyName,
+      id: applicationRecord.id,
+      roleTitle: applicationRecord.roleTitle,
+    },
+  ],
+  byteSize: 8,
+  createdAt: "2026-07-19T10:00:00.000Z",
+  documentType: "CV",
+  documentTypeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  mediaType: "application/pdf",
+  originalFilename: "Original CV.pdf",
+  uploadedByDisplayName: "Alex Example",
+};
 
 const mcpStatus: McpStatus = {
   availability: "available",
@@ -368,6 +387,32 @@ function createApplicationsClient(
   } satisfies ApplicationsClient;
 }
 
+function createDocumentsClient(documents: DocumentRecord[] = [documentRecord]) {
+  return {
+    listDocuments: vi
+      .fn<DocumentsClient["listDocuments"]>()
+      .mockResolvedValue({ documents, maxUploadBytes: 10_485_760 }),
+    uploadDocument: vi
+      .fn<DocumentsClient["uploadDocument"]>()
+      .mockImplementation((input) =>
+        Promise.resolve({
+          ...documentRecord,
+          applications: input.applicationIds.includes(applicationRecord.id)
+            ? [
+                {
+                  companyName: applicationRecord.companyName,
+                  id: applicationRecord.id,
+                  roleTitle: applicationRecord.roleTitle,
+                },
+              ]
+            : [],
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          originalFilename: input.file.name,
+        }),
+      ),
+  } satisfies DocumentsClient;
+}
+
 describe("application shell", () => {
   it("asks an unauthenticated user to sign in after setup", async () => {
     render(
@@ -470,6 +515,60 @@ describe("application shell", () => {
     expect(
       screen.getByRole("table", { name: "Applications" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the document library and uploads an associated original", async () => {
+    const documentsClient = createDocumentsClient();
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={documentsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    expect(
+      await screen.findByRole("heading", { name: "Documents" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Original CV.pdf")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Add a document",
+    });
+    const file = new File(["pdf-data"], "Product CV.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(within(dialog).getByLabelText("Choose file"), {
+      target: { files: [file] },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Document type"), {
+      target: { value: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", {
+        name: "Example Studio · Product Designer",
+      }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Store document" }),
+    );
+
+    await waitFor(() =>
+      expect(documentsClient.uploadDocument).toHaveBeenCalledWith({
+        applicationIds: [applicationRecord.id],
+        documentTypeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        file,
+      }),
+    );
+    expect(await screen.findByText("Product CV.pdf was stored.")).toBeVisible();
+    expect(screen.getByText("Product CV.pdf")).toBeInTheDocument();
   });
 
   it("adds an application and clears the intake form", async () => {
