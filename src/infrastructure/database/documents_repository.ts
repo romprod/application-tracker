@@ -4,11 +4,13 @@ import type Database from "better-sqlite3";
 
 import {
   DocumentContentConflictError,
+  DocumentStorageQuotaExceededError,
   InvalidDocumentReferenceError,
   type CreateDocumentRecord,
   type DocumentApplicationAssociation,
   type DocumentOriginal,
   type DocumentRecord,
+  type DocumentStoragePolicy,
   type DocumentsRepository,
 } from "../../application/documents.js";
 
@@ -21,6 +23,11 @@ interface StoredAssociation extends DocumentApplicationAssociation {
 interface StoredFileObject {
   byteSize: number;
   content: Buffer;
+}
+
+interface StoredUsage {
+  bytes: number;
+  documents: number;
 }
 
 const publicDocumentSelect = `
@@ -42,7 +49,24 @@ const publicDocumentSelect = `
     ON users.id = documents.uploaded_by_user_id`;
 
 export class SqliteDocumentsRepository implements DocumentsRepository {
-  public constructor(private readonly database: Database.Database) {}
+  public constructor(
+    private readonly database: Database.Database,
+    private readonly storagePolicy: DocumentStoragePolicy,
+  ) {
+    if (
+      !Number.isSafeInteger(storagePolicy.maxInstallationBytes) ||
+      !Number.isSafeInteger(storagePolicy.maxInstallationDocuments) ||
+      !Number.isSafeInteger(storagePolicy.maxWorkspaceBytes) ||
+      !Number.isSafeInteger(storagePolicy.maxWorkspaceDocuments) ||
+      storagePolicy.maxInstallationBytes < storagePolicy.maxWorkspaceBytes ||
+      storagePolicy.maxInstallationDocuments <
+        storagePolicy.maxWorkspaceDocuments ||
+      storagePolicy.maxWorkspaceBytes < 1 ||
+      storagePolicy.maxWorkspaceDocuments < 1
+    ) {
+      throw new Error("Invalid document storage policy");
+    }
+  }
 
   private associations(
     workspaceId: string,
@@ -126,6 +150,68 @@ export class SqliteDocumentsRepository implements DocumentsRepository {
         if (application === undefined) {
           throw new InvalidDocumentReferenceError();
         }
+      }
+
+      const existingObject = this.database
+        .prepare(
+          `SELECT byte_size AS byteSize, content
+           FROM file_objects WHERE sha256 = ?`,
+        )
+        .get(input.sha256) as StoredFileObject | undefined;
+      if (
+        existingObject &&
+        (existingObject.byteSize !== input.bytes.byteLength ||
+          !existingObject.content.equals(Buffer.from(input.bytes)))
+      ) {
+        throw new DocumentContentConflictError();
+      }
+      const workspaceUsage = this.database
+        .prepare(
+          `SELECT
+             (SELECT COALESCE(SUM(file_objects.byte_size), 0)
+                FROM file_objects
+               WHERE file_objects.sha256 IN (
+                 SELECT documents.file_sha256
+                   FROM documents
+                  WHERE documents.workspace_id = ?
+                  GROUP BY documents.file_sha256
+               )) AS bytes,
+             (SELECT COUNT(*) FROM documents WHERE workspace_id = ?) AS documents`,
+        )
+        .get(input.workspaceId, input.workspaceId) as StoredUsage;
+      const installationUsage = this.database
+        .prepare(
+          `SELECT
+             COALESCE(SUM(file_objects.byte_size), 0) AS bytes,
+             (SELECT COUNT(*) FROM documents) AS documents
+           FROM file_objects`,
+        )
+        .get() as StoredUsage;
+      const workspaceAlreadyUsesObject =
+        this.database
+          .prepare(
+            `SELECT 1 FROM documents
+             WHERE workspace_id = ? AND file_sha256 = ? LIMIT 1`,
+          )
+          .pluck()
+          .get(input.workspaceId, input.sha256) !== undefined;
+      const addedWorkspaceBytes = workspaceAlreadyUsesObject
+        ? 0
+        : input.bytes.byteLength;
+      const addedInstallationBytes = existingObject
+        ? 0
+        : input.bytes.byteLength;
+      if (
+        workspaceUsage.bytes + addedWorkspaceBytes >
+          this.storagePolicy.maxWorkspaceBytes ||
+        workspaceUsage.documents + 1 >
+          this.storagePolicy.maxWorkspaceDocuments ||
+        installationUsage.bytes + addedInstallationBytes >
+          this.storagePolicy.maxInstallationBytes ||
+        installationUsage.documents + 1 >
+          this.storagePolicy.maxInstallationDocuments
+      ) {
+        throw new DocumentStorageQuotaExceededError();
       }
 
       this.database

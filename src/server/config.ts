@@ -96,12 +96,42 @@ const runtimeEnvironmentSchema = z.object({
     .trim()
     .min(1)
     .default("./data/application-tracker.sqlite"),
+  DOCUMENT_MAX_INSTALLATION_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(1_099_511_627_776)
+    .default(2_147_483_648),
+  DOCUMENT_MAX_INSTALLATION_COUNT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(10_000),
   DOCUMENT_MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()
     .min(1024)
     .max(52_428_800)
     .default(10_485_760),
+  DOCUMENT_MAX_WORKSPACE_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(1_099_511_627_776)
+    .default(536_870_912),
+  DOCUMENT_MAX_WORKSPACE_COUNT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(2000),
+  DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(32)
+    .default(2),
   DOCUMENT_PREVIEW_MAX_INPUT_BYTES: z.coerce
     .number()
     .int()
@@ -127,6 +157,12 @@ const runtimeEnvironmentSchema = z.object({
     .max(10_000)
     .default(1500),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
+  LOGIN_MAX_CONCURRENT_VERIFICATIONS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(32)
+    .default(2),
   MCP_SESSION_ABSOLUTE_SECONDS: z.coerce
     .number()
     .int()
@@ -272,8 +308,13 @@ export interface RuntimeConfig {
   backupDirectory: string;
   databasePath: string;
   documents: {
+    maxInstallationBytes: number;
+    maxInstallationDocuments: number;
     maxUploadBytes: number;
+    maxWorkspaceBytes: number;
+    maxWorkspaceDocuments: number;
     preview: {
+      maxConcurrentWorkers: number;
       maxInputBytes: number;
       maxMemoryMb: number;
       maxOutputCharacters: number;
@@ -302,6 +343,7 @@ export interface RuntimeConfig {
     absoluteDurationMs: number;
     cookieSecure: boolean;
     idleDurationMs: number;
+    maxConcurrentVerifications: number;
     refreshIntervalMs: number;
   };
   setupToken?: string;
@@ -456,6 +498,33 @@ export function parseRuntimeConfig(
     );
   }
 
+  if (
+    result.data.DOCUMENT_MAX_WORKSPACE_BYTES <
+    result.data.DOCUMENT_MAX_UPLOAD_BYTES
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: DOCUMENT_MAX_WORKSPACE_BYTES",
+    );
+  }
+
+  if (
+    result.data.DOCUMENT_MAX_INSTALLATION_BYTES <
+    result.data.DOCUMENT_MAX_WORKSPACE_BYTES
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: DOCUMENT_MAX_INSTALLATION_BYTES",
+    );
+  }
+
+  if (
+    result.data.DOCUMENT_MAX_INSTALLATION_COUNT <
+    result.data.DOCUMENT_MAX_WORKSPACE_COUNT
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: DOCUMENT_MAX_INSTALLATION_COUNT",
+    );
+  }
+
   if (result.data.SESSION_REFRESH_SECONDS >= result.data.SESSION_IDLE_SECONDS) {
     throw new Error("Invalid runtime configuration: SESSION_REFRESH_SECONDS");
   }
@@ -480,8 +549,14 @@ export function parseRuntimeConfig(
     backupDirectory: result.data.BACKUP_DIRECTORY,
     databasePath: result.data.DATABASE_PATH,
     documents: {
+      maxInstallationBytes: result.data.DOCUMENT_MAX_INSTALLATION_BYTES,
+      maxInstallationDocuments: result.data.DOCUMENT_MAX_INSTALLATION_COUNT,
       maxUploadBytes: result.data.DOCUMENT_MAX_UPLOAD_BYTES,
+      maxWorkspaceBytes: result.data.DOCUMENT_MAX_WORKSPACE_BYTES,
+      maxWorkspaceDocuments: result.data.DOCUMENT_MAX_WORKSPACE_COUNT,
       preview: {
+        maxConcurrentWorkers:
+          result.data.DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS,
         maxInputBytes: result.data.DOCUMENT_PREVIEW_MAX_INPUT_BYTES,
         maxMemoryMb: result.data.DOCUMENT_PREVIEW_MAX_MEMORY_MB,
         maxOutputCharacters: result.data.DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS,
@@ -524,6 +599,8 @@ export function parseRuntimeConfig(
           ? result.data.NODE_ENV === "production"
           : result.data.SESSION_COOKIE_SECURE === "true",
       idleDurationMs: result.data.SESSION_IDLE_SECONDS * 1000,
+      maxConcurrentVerifications:
+        result.data.LOGIN_MAX_CONCURRENT_VERIFICATIONS,
       refreshIntervalMs: result.data.SESSION_REFRESH_SECONDS * 1000,
     },
     ...(result.data.SETUP_TOKEN ? { setupToken: result.data.SETUP_TOKEN } : {}),

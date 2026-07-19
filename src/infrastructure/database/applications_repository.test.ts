@@ -218,6 +218,49 @@ describe("SqliteApplicationsRepository", () => {
     }
   });
 
+  it("hydrates more applications than SQLite permits in one parameter list", () => {
+    const { database, repository, setup } = createRepository();
+    const statusId = referenceId(
+      database,
+      setup.workspace.id,
+      "status",
+      "Prospect",
+    );
+    const insert = database.prepare(
+      `INSERT INTO applications
+         (id, workspace_id, company_name, role_title, legacy_status,
+          status_reference_id, created_by_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'prospect', ?, ?, ?, ?)`,
+    );
+    const insertMany = database.transaction(() => {
+      for (let index = 0; index < 32_766; index += 1) {
+        insert.run(
+          `bulk-${index.toString().padStart(5, "0")}`,
+          setup.workspace.id,
+          `Company ${index}`,
+          "Role",
+          statusId,
+          setup.administrator.id,
+          createdAt,
+          createdAt,
+        );
+      }
+    });
+
+    try {
+      insertMany.immediate();
+      const applications = repository.listApplications(setup.workspace.id);
+      expect(applications).toHaveLength(32_766);
+      expect(
+        applications.every(
+          ({ contacts, links }) => contacts.length === 0 && links.length === 0,
+        ),
+      ).toBe(true);
+    } finally {
+      database.close();
+    }
+  });
+
   it("enforces next-action storage constraints below the domain boundary", () => {
     const { database, repository, setup } = createRepository();
     const record = {

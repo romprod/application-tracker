@@ -21,8 +21,13 @@ describe("parseRuntimeConfig", () => {
       backupDirectory: "./backups",
       databasePath: "./data/application-tracker.sqlite",
       documents: {
+        maxInstallationBytes: 2_147_483_648,
+        maxInstallationDocuments: 10_000,
         maxUploadBytes: 10_485_760,
+        maxWorkspaceBytes: 536_870_912,
+        maxWorkspaceDocuments: 2_000,
         preview: {
+          maxConcurrentWorkers: 2,
           maxInputBytes: 1_048_576,
           maxMemoryMb: 32,
           maxOutputCharacters: 100_000,
@@ -50,6 +55,7 @@ describe("parseRuntimeConfig", () => {
         absoluteDurationMs: 86_400_000,
         cookieSecure: false,
         idleDurationMs: 1_800_000,
+        maxConcurrentVerifications: 2,
         refreshIntervalMs: 60_000,
       },
     });
@@ -76,17 +82,24 @@ describe("parseRuntimeConfig", () => {
   it("accepts only bounded document preview worker limits", () => {
     expect(
       parseRuntimeConfig({
+        DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS: "4",
         DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "524288",
         DOCUMENT_PREVIEW_MAX_MEMORY_MB: "48",
         DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS: "50000",
         DOCUMENT_PREVIEW_TIMEOUT_MS: "2000",
       }).documents.preview,
     ).toEqual({
+      maxConcurrentWorkers: 4,
       maxInputBytes: 524_288,
       maxMemoryMb: 48,
       maxOutputCharacters: 50_000,
       timeoutMs: 2000,
     });
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS: "0" }),
+    ).toThrow(
+      "Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS",
+    );
     expect(() =>
       parseRuntimeConfig({ DOCUMENT_PREVIEW_MAX_MEMORY_MB: "8" }),
     ).toThrow("Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_MEMORY_MB");
@@ -97,6 +110,50 @@ describe("parseRuntimeConfig", () => {
       }),
     ).toThrow(
       "Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_INPUT_BYTES",
+    );
+  });
+
+  it("accepts ordered document storage quotas", () => {
+    expect(
+      parseRuntimeConfig({
+        DOCUMENT_MAX_INSTALLATION_BYTES: "8192",
+        DOCUMENT_MAX_INSTALLATION_COUNT: "20",
+        DOCUMENT_MAX_UPLOAD_BYTES: "1024",
+        DOCUMENT_MAX_WORKSPACE_BYTES: "4096",
+        DOCUMENT_MAX_WORKSPACE_COUNT: "10",
+        DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "1024",
+      }).documents,
+    ).toMatchObject({
+      maxInstallationBytes: 8192,
+      maxInstallationDocuments: 20,
+      maxUploadBytes: 1024,
+      maxWorkspaceBytes: 4096,
+      maxWorkspaceDocuments: 10,
+    });
+    expect(() =>
+      parseRuntimeConfig({
+        DOCUMENT_MAX_INSTALLATION_BYTES: "4096",
+        DOCUMENT_MAX_UPLOAD_BYTES: "8192",
+        DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "1024",
+      }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_INSTALLATION_BYTES");
+    expect(() =>
+      parseRuntimeConfig({
+        DOCUMENT_MAX_INSTALLATION_COUNT: "5",
+        DOCUMENT_MAX_WORKSPACE_COUNT: "10",
+      }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_INSTALLATION_COUNT");
+  });
+
+  it("accepts a bounded login verification limit", () => {
+    expect(
+      parseRuntimeConfig({ LOGIN_MAX_CONCURRENT_VERIFICATIONS: "4" }).session
+        .maxConcurrentVerifications,
+    ).toBe(4);
+    expect(() =>
+      parseRuntimeConfig({ LOGIN_MAX_CONCURRENT_VERIFICATIONS: "0" }),
+    ).toThrow(
+      "Invalid runtime configuration: LOGIN_MAX_CONCURRENT_VERIFICATIONS",
     );
   });
 

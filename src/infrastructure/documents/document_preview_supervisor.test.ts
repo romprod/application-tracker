@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DocumentPreviewCapacityError,
   DocumentPreviewInputLimitError,
   DocumentPreviewParseError,
   DocumentPreviewTimeoutError,
@@ -9,6 +10,7 @@ import {
 import { DocumentPreviewSupervisor } from "./document_preview_supervisor.js";
 
 const policy: DocumentPreviewPolicy = {
+  maxConcurrentWorkers: 2,
   maxInputBytes: 1024,
   maxMemoryMb: 16,
   maxOutputCharacters: 24,
@@ -16,6 +18,24 @@ const policy: DocumentPreviewPolicy = {
 };
 
 describe("DocumentPreviewSupervisor", () => {
+  it("rejects excess work before starting another preview worker", async () => {
+    const supervisor = new DocumentPreviewSupervisor(
+      { ...policy, maxConcurrentWorkers: 1, timeoutMs: 25 },
+      'const { parentPort } = require("node:worker_threads"); while (true) { parentPort.ref(); }',
+    );
+
+    const first = supervisor.generate(Buffer.from("first"), "text/plain");
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(
+      supervisor.generate(Buffer.from("second"), "text/plain"),
+    ).rejects.toBeInstanceOf(DocumentPreviewCapacityError);
+    await expect(first).rejects.toBeInstanceOf(DocumentPreviewTimeoutError);
+
+    await expect(
+      supervisor.generate(Buffer.from("third"), "text/plain"),
+    ).rejects.toBeInstanceOf(DocumentPreviewTimeoutError);
+  });
+
   it("decodes supported text in an isolated worker and bounds the output", async () => {
     const supervisor = new DocumentPreviewSupervisor(policy);
 

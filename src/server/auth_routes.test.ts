@@ -1,8 +1,11 @@
 import { parseCookie } from "cookie";
 import request from "supertest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AuthService } from "../application/auth.js";
+import {
+  AuthService,
+  LoginVerificationCapacityError,
+} from "../application/auth.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
@@ -41,6 +44,7 @@ async function createAuthApp() {
       absoluteDurationMs: 86_400_000,
       dummyPasswordHash,
       idleDurationMs: 1_800_000,
+      maxConcurrentVerifications: 2,
       refreshIntervalMs: 60_000,
     },
     () => now,
@@ -67,6 +71,29 @@ function sessionCookie(response: request.Response): string {
 }
 
 describe("authentication routes", () => {
+  it("returns a retryable limit response when password verification is full", async () => {
+    const authService = {
+      getSession: vi.fn(() => undefined),
+      login: vi.fn(() => Promise.reject(new LoginVerificationCapacityError())),
+      logout: vi.fn(),
+    } as unknown as AuthService;
+    const app = createApp({
+      authCookie: { maxAgeSeconds: 86_400, secure: false },
+      authService,
+    });
+
+    const response = await request(app).post("/api/auth/login").send({
+      password: "schema-valid password",
+      username: "alex",
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers["retry-after"]).toBe("1");
+    expect(response.body).toEqual({
+      error: { code: "login_capacity_reached" },
+    });
+  });
+
   it("returns one generic error for unknown users and wrong passwords", async () => {
     const { app } = await createAuthApp();
 

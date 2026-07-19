@@ -62,10 +62,18 @@ export interface DocumentPreviewsRepository {
 }
 
 export interface DocumentPreviewPolicy {
+  maxConcurrentWorkers: number;
   maxInputBytes: number;
   maxMemoryMb: number;
   maxOutputCharacters: number;
   timeoutMs: number;
+}
+
+export class DocumentPreviewCapacityError extends Error {
+  public constructor() {
+    super("Document preview capacity is temporarily full");
+    this.name = "DocumentPreviewCapacityError";
+  }
 }
 
 export class DocumentPreviewInputLimitError extends Error {
@@ -90,6 +98,8 @@ export class DocumentPreviewTimeoutError extends Error {
 }
 
 export class DocumentPreviewService {
+  private readonly inFlight = new Map<string, Promise<DocumentPreviewResult>>();
+
   public constructor(
     private readonly documents: DocumentsRepository,
     private readonly previews: DocumentPreviewsRepository,
@@ -109,8 +119,25 @@ export class DocumentPreviewService {
     );
     if (cached) return cached;
 
+    const key = `${actor.workspaceId}\u0000${documentId}\u0000${this.parserVersion}`;
+    const current = this.inFlight.get(key);
+    if (current) return await current;
+
+    const operation = this.generatePreview(actor.workspaceId, documentId);
+    this.inFlight.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.inFlight.get(key) === operation) this.inFlight.delete(key);
+    }
+  }
+
+  private async generatePreview(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<DocumentPreviewResult> {
     const original = this.documents.getDocumentOriginal(
-      actor.workspaceId,
+      workspaceId,
       documentId,
     );
     if (!original) throw new DocumentNotFoundError();
@@ -126,7 +153,7 @@ export class DocumentPreviewService {
       documentId,
       generatedAt: this.clock().toISOString(),
       parserVersion: this.parserVersion,
-      workspaceId: actor.workspaceId,
+      workspaceId,
     });
   }
 }

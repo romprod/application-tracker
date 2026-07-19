@@ -3,6 +3,7 @@ import { Router, type Request } from "express";
 
 import {
   InvalidCredentialsError,
+  LoginVerificationCapacityError,
   type AuthService,
 } from "../application/auth.js";
 import { loginSchema } from "../domain/auth.js";
@@ -75,6 +76,13 @@ export function createAuthRouter(
       );
       response.json(result.session);
     } catch (error) {
+      if (error instanceof LoginVerificationCapacityError) {
+        response.set("Retry-After", "1");
+        response
+          .status(429)
+          .json({ error: { code: "login_capacity_reached" } });
+        return;
+      }
       if (error instanceof InvalidCredentialsError) {
         response.status(401).json({ error: { code: "invalid_credentials" } });
         return;

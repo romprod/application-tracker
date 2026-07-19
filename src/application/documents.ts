@@ -47,6 +47,13 @@ export interface DocumentUploadPolicy {
   maxUploadBytes: number;
 }
 
+export interface DocumentStoragePolicy {
+  maxInstallationBytes: number;
+  maxInstallationDocuments: number;
+  maxWorkspaceBytes: number;
+  maxWorkspaceDocuments: number;
+}
+
 export type UploadDocumentInput = DocumentUploadMetadata & {
   bytes: Uint8Array;
 };
@@ -76,6 +83,13 @@ export class DocumentContentConflictError extends Error {
   public constructor() {
     super("Stored document content does not match its digest");
     this.name = "DocumentContentConflictError";
+  }
+}
+
+export class DocumentStorageQuotaExceededError extends Error {
+  public constructor() {
+    super("Document storage quota has been reached");
+    this.name = "DocumentStorageQuotaExceededError";
   }
 }
 

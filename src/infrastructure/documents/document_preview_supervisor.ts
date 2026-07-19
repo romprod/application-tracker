@@ -1,6 +1,7 @@
 import { Worker } from "node:worker_threads";
 
 import {
+  DocumentPreviewCapacityError,
   DocumentPreviewInputLimitError,
   DocumentPreviewParseError,
   DocumentPreviewTimeoutError,
@@ -76,10 +77,19 @@ function parseWorkerMessage(
 }
 
 export class DocumentPreviewSupervisor implements DocumentPreviewGenerator {
+  private activeWorkers = 0;
+
   public constructor(
     private readonly policy: DocumentPreviewPolicy,
     private readonly workerSource: string = previewWorkerSource,
-  ) {}
+  ) {
+    if (
+      !Number.isInteger(policy.maxConcurrentWorkers) ||
+      policy.maxConcurrentWorkers < 1
+    ) {
+      throw new Error("Invalid document preview worker policy");
+    }
+  }
 
   public async generate(
     bytes: Uint8Array,
@@ -92,56 +102,78 @@ export class DocumentPreviewSupervisor implements DocumentPreviewGenerator {
     if (bytes.byteLength > this.policy.maxInputBytes) {
       throw new DocumentPreviewInputLimitError();
     }
+    if (this.activeWorkers >= this.policy.maxConcurrentWorkers) {
+      throw new DocumentPreviewCapacityError();
+    }
 
-    const copiedBytes = Uint8Array.from(bytes);
-    return await new Promise<GeneratedDocumentPreview>((resolve, reject) => {
-      const worker = new Worker(this.workerSource, {
-        eval: true,
-        resourceLimits: {
-          maxOldGenerationSizeMb: this.policy.maxMemoryMb,
-          maxYoungGenerationSizeMb: Math.max(
-            4,
-            Math.floor(this.policy.maxMemoryMb / 4),
-          ),
-          stackSizeMb: 2,
-        },
-        workerData: {
-          bytes: copiedBytes,
-          maxOutputCharacters: this.policy.maxOutputCharacters,
-        },
-      });
-      let settled = false;
-      const finish = (operation: () => void, terminate = true): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (terminate) void worker.terminate();
-        operation();
-      };
-      const timer = setTimeout(() => {
-        finish(() => reject(new DocumentPreviewTimeoutError()));
-      }, this.policy.timeoutMs);
+    this.activeWorkers += 1;
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      this.activeWorkers -= 1;
+    };
 
-      worker.once("message", (message: unknown) => {
+    try {
+      const copiedBytes = Uint8Array.from(bytes);
+      return await new Promise<GeneratedDocumentPreview>((resolve, reject) => {
+        let worker: Worker;
         try {
-          const preview = parseWorkerMessage(
-            message,
-            normalizedMediaType,
-            this.policy.maxOutputCharacters,
-          );
-          finish(() => resolve(preview));
+          worker = new Worker(this.workerSource, {
+            eval: true,
+            resourceLimits: {
+              maxOldGenerationSizeMb: this.policy.maxMemoryMb,
+              maxYoungGenerationSizeMb: Math.max(
+                4,
+                Math.floor(this.policy.maxMemoryMb / 4),
+              ),
+              stackSizeMb: 2,
+            },
+            workerData: {
+              bytes: copiedBytes,
+              maxOutputCharacters: this.policy.maxOutputCharacters,
+            },
+          });
         } catch {
-          finish(() => reject(new DocumentPreviewParseError()));
+          reject(new DocumentPreviewParseError());
+          return;
         }
-      });
-      worker.once("error", () => {
-        finish(() => reject(new DocumentPreviewParseError()), false);
-      });
-      worker.once("exit", (code) => {
-        if (!settled && code !== 0) {
+        let settled = false;
+        const finish = (operation: () => void, terminate = true): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (terminate) void worker.terminate();
+          release();
+          operation();
+        };
+        const timer = setTimeout(() => {
+          finish(() => reject(new DocumentPreviewTimeoutError()));
+        }, this.policy.timeoutMs);
+
+        worker.once("message", (message: unknown) => {
+          try {
+            const preview = parseWorkerMessage(
+              message,
+              normalizedMediaType,
+              this.policy.maxOutputCharacters,
+            );
+            finish(() => resolve(preview));
+          } catch {
+            finish(() => reject(new DocumentPreviewParseError()));
+          }
+        });
+        worker.once("error", () => {
           finish(() => reject(new DocumentPreviewParseError()), false);
-        }
+        });
+        worker.once("exit", (code) => {
+          if (!settled && code !== 0) {
+            finish(() => reject(new DocumentPreviewParseError()), false);
+          }
+        });
       });
-    });
+    } finally {
+      release();
+    }
   }
 }

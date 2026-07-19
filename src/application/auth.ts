@@ -86,6 +86,7 @@ export interface SessionPolicy {
   absoluteDurationMs: number;
   dummyPasswordHash: string;
   idleDurationMs: number;
+  maxConcurrentVerifications: number;
   refreshIntervalMs: number;
 }
 
@@ -93,6 +94,13 @@ export class InvalidCredentialsError extends Error {
   public constructor() {
     super("The supplied credentials are invalid");
     this.name = "InvalidCredentialsError";
+  }
+}
+
+export class LoginVerificationCapacityError extends Error {
+  public constructor() {
+    super("Login verification capacity is temporarily full");
+    this.name = "LoginVerificationCapacityError";
   }
 }
 
@@ -119,54 +127,73 @@ function authenticatedActor(session: ActiveSession): AuthenticatedActor {
 }
 
 export class AuthService {
+  private activePasswordVerifications = 0;
+
   public constructor(
     private readonly repository: AuthRepository,
     private readonly passwordVerifier: PasswordVerifier,
     private readonly tokenManager: SessionTokenManager,
     private readonly policy: SessionPolicy,
     private readonly clock: () => Date = () => new Date(),
-  ) {}
+  ) {
+    if (
+      !Number.isInteger(policy.maxConcurrentVerifications) ||
+      policy.maxConcurrentVerifications < 1
+    ) {
+      throw new Error("Invalid login verification policy");
+    }
+  }
 
   public async login(
     input: LoginInput,
     replacedToken?: string,
   ): Promise<LoginResult> {
-    const now = this.clock();
-    const nowIso = now.toISOString();
-    this.repository.cleanupExpiredSessions(nowIso);
-
-    const account = this.repository.findLocalAccount(input.username);
-    const passwordMatches = await this.passwordVerifier.verify(
-      input.password,
-      account?.passwordHash ?? this.policy.dummyPasswordHash,
-    );
-    if (!account || !passwordMatches || account.status !== "active") {
-      throw new InvalidCredentialsError();
+    if (
+      this.activePasswordVerifications >= this.policy.maxConcurrentVerifications
+    ) {
+      throw new LoginVerificationCapacityError();
     }
+    this.activePasswordVerifications += 1;
+    try {
+      const now = this.clock();
+      const nowIso = now.toISOString();
+      this.repository.cleanupExpiredSessions(nowIso);
 
-    if (replacedToken) {
-      this.repository.revokeSession(
-        this.tokenManager.hash(replacedToken),
-        nowIso,
+      const account = this.repository.findLocalAccount(input.username);
+      const passwordMatches = await this.passwordVerifier.verify(
+        input.password,
+        account?.passwordHash ?? this.policy.dummyPasswordHash,
       );
+      if (!account || !passwordMatches || account.status !== "active") {
+        throw new InvalidCredentialsError();
+      }
+
+      if (replacedToken) {
+        this.repository.revokeSession(
+          this.tokenManager.hash(replacedToken),
+          nowIso,
+        );
+      }
+
+      const issued = this.tokenManager.issue();
+      this.repository.createSession({
+        absoluteExpiresAt: new Date(
+          now.getTime() + this.policy.absoluteDurationMs,
+        ).toISOString(),
+        createdAt: nowIso,
+        idleExpiresAt: new Date(
+          now.getTime() + this.policy.idleDurationMs,
+        ).toISOString(),
+        sessionId: issued.sessionId,
+        tokenHash: issued.tokenHash,
+        userId: account.userId,
+        workspaceId: account.workspaceId,
+      });
+
+      return { session: publicSession(account), token: issued.token };
+    } finally {
+      this.activePasswordVerifications -= 1;
     }
-
-    const issued = this.tokenManager.issue();
-    this.repository.createSession({
-      absoluteExpiresAt: new Date(
-        now.getTime() + this.policy.absoluteDurationMs,
-      ).toISOString(),
-      createdAt: nowIso,
-      idleExpiresAt: new Date(
-        now.getTime() + this.policy.idleDurationMs,
-      ).toISOString(),
-      sessionId: issued.sessionId,
-      tokenHash: issued.tokenHash,
-      userId: account.userId,
-      workspaceId: account.workspaceId,
-    });
-
-    return { session: publicSession(account), token: issued.token };
   }
 
   public getActor(token?: string): AuthenticatedActor | undefined {

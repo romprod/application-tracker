@@ -135,10 +135,26 @@ export class RemoteMcpHttpEndpoint {
       }),
     );
     router.use(requestGuards.rateLimit);
+    router.use((request, response, next) => {
+      if (request.method !== "POST") {
+        next();
+        return;
+      }
+      if (!request.is("application/json")) {
+        sendProtocolError(
+          response,
+          415,
+          -32_000,
+          "Content-Type must be application/json",
+        );
+        return;
+      }
+      next();
+    });
     router.use(
       express.json({
         limit: this.requestPolicy.maxRequestBytes,
-        type: "application/json",
+        type: () => true,
       }),
     );
     router.all("/", (request, response, next) => {
@@ -187,6 +203,15 @@ export class RemoteMcpHttpEndpoint {
     request: Request,
     response: Response,
   ): Promise<void> {
+    if (request.method === "POST" && Array.isArray(request.body)) {
+      sendProtocolError(
+        response,
+        400,
+        -32_600,
+        "JSON-RPC batches are not supported",
+      );
+      return;
+    }
     const actor = remoteMcpActor(response);
     const requestedSessionId = sessionId(request);
     if (

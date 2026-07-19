@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { InvalidDocumentReferenceError } from "../../application/documents.js";
+import {
+  DocumentStorageQuotaExceededError,
+  InvalidDocumentReferenceError,
+} from "../../application/documents.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteDocumentsRepository } from "./documents_repository.js";
@@ -51,12 +54,82 @@ function createRepository() {
     application,
     database,
     documentTypeId: reference("document_type", "CV"),
-    repository: new SqliteDocumentsRepository(database),
+    repository: new SqliteDocumentsRepository(database, {
+      maxInstallationBytes: 2_147_483_648,
+      maxInstallationDocuments: 10_000,
+      maxWorkspaceBytes: 536_870_912,
+      maxWorkspaceDocuments: 2_000,
+    }),
     setup,
   };
 }
 
 describe("SqliteDocumentsRepository", () => {
+  it("enforces byte and document quotas atomically while charging duplicate bytes once", () => {
+    const { database, documentTypeId, setup } = createRepository();
+    const repository = new SqliteDocumentsRepository(database, {
+      maxInstallationBytes: 10,
+      maxInstallationDocuments: 2,
+      maxWorkspaceBytes: 10,
+      maxWorkspaceDocuments: 2,
+    });
+    const firstBytes = Buffer.from("123456");
+    const input = {
+      applicationIds: [],
+      createdAt,
+      documentTypeId,
+      mediaType: "text/plain",
+      originalFilename: "notes.txt",
+      uploadedByUserId: setup.administrator.id,
+      workspaceId: setup.workspace.id,
+    };
+
+    try {
+      repository.createDocument({
+        ...input,
+        bytes: firstBytes,
+        sha256: createHash("sha256").update(firstBytes).digest("hex"),
+      });
+      repository.createDocument({
+        ...input,
+        bytes: firstBytes,
+        originalFilename: "duplicate.txt",
+        sha256: createHash("sha256").update(firstBytes).digest("hex"),
+      });
+
+      expect(
+        database
+          .prepare("SELECT sum(byte_size) FROM file_objects")
+          .pluck()
+          .get(),
+      ).toBe(6);
+      expect(
+        database.prepare("SELECT count(*) FROM documents").pluck().get(),
+      ).toBe(2);
+
+      const uniqueBytes = Buffer.from("abcde");
+      expect(() =>
+        repository.createDocument({
+          ...input,
+          bytes: uniqueBytes,
+          originalFilename: "over-quota.txt",
+          sha256: createHash("sha256").update(uniqueBytes).digest("hex"),
+        }),
+      ).toThrow(DocumentStorageQuotaExceededError);
+      expect(
+        database
+          .prepare("SELECT sum(byte_size) FROM file_objects")
+          .pluck()
+          .get(),
+      ).toBe(6);
+      expect(
+        database.prepare("SELECT count(*) FROM documents").pluck().get(),
+      ).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
   it("deduplicates bytes while retaining distinct workspace metadata", () => {
     const { application, database, documentTypeId, repository, setup } =
       createRepository();

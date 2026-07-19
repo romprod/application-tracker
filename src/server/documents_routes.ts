@@ -4,6 +4,7 @@ import multer, { MulterError } from "multer";
 import type { AuthenticatedActor } from "../application/auth.js";
 import type { EmailLinkExtractionService } from "../application/email_links.js";
 import {
+  DocumentPreviewCapacityError,
   DocumentPreviewInputLimitError,
   DocumentPreviewParseError,
   DocumentPreviewTimeoutError,
@@ -11,6 +12,7 @@ import {
 } from "../application/document_previews.js";
 import {
   DocumentNotFoundError,
+  DocumentStorageQuotaExceededError,
   InvalidDocumentContentError,
   InvalidDocumentReferenceError,
   type DocumentLibraryService,
@@ -201,6 +203,12 @@ export function createDocumentsRouter(
           ),
         });
       } catch (error) {
+        if (error instanceof DocumentStorageQuotaExceededError) {
+          response
+            .status(409)
+            .json({ error: { code: "document_storage_quota_exceeded" } });
+          return;
+        }
         if (error instanceof InvalidDocumentContentError) {
           if (request.file.buffer.byteLength > options.maxUploadBytes) {
             response
@@ -272,6 +280,13 @@ export function createDocumentsRouter(
           response
             .status(413)
             .json({ error: { code: "document_preview_too_large" } });
+          return;
+        }
+        if (error instanceof DocumentPreviewCapacityError) {
+          response.set("Retry-After", "1");
+          response
+            .status(503)
+            .json({ error: { code: "document_preview_busy" } });
           return;
         }
         if (error instanceof DocumentPreviewTimeoutError) {

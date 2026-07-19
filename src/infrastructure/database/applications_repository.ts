@@ -24,6 +24,8 @@ interface StoredApplicationRecord extends Omit<
 type StoredContact = ApplicationContact & { applicationId: string };
 type StoredLink = ApplicationLink & { applicationId: string };
 
+const relationHydrationBatchSize = 500;
+
 function publicApplicationSelect(): string {
   return `SELECT
             applications.id,
@@ -70,24 +72,40 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     const byId = new Map(
       applications.map((application) => [application.id, application]),
     );
-    const placeholders = stored.map(() => "?").join(", ");
     const applicationIds = stored.map(({ id }) => id);
-    const contacts = this.database
-      .prepare(
-        `SELECT application_id AS applicationId, name, role, email, phone
-         FROM application_contacts
-         WHERE workspace_id = ? AND application_id IN (${placeholders})
-         ORDER BY application_id, position`,
-      )
-      .all(workspaceId, ...applicationIds) as StoredContact[];
-    const links = this.database
-      .prepare(
-        `SELECT application_id AS applicationId, label, url
-         FROM application_links
-         WHERE workspace_id = ? AND application_id IN (${placeholders})
-         ORDER BY application_id, position`,
-      )
-      .all(workspaceId, ...applicationIds) as StoredLink[];
+    const contacts: StoredContact[] = [];
+    const links: StoredLink[] = [];
+    for (
+      let offset = 0;
+      offset < applicationIds.length;
+      offset += relationHydrationBatchSize
+    ) {
+      const batch = applicationIds.slice(
+        offset,
+        offset + relationHydrationBatchSize,
+      );
+      const placeholders = batch.map(() => "?").join(", ");
+      contacts.push(
+        ...(this.database
+          .prepare(
+            `SELECT application_id AS applicationId, name, role, email, phone
+             FROM application_contacts
+             WHERE workspace_id = ? AND application_id IN (${placeholders})
+             ORDER BY application_id, position`,
+          )
+          .all(workspaceId, ...batch) as StoredContact[]),
+      );
+      links.push(
+        ...(this.database
+          .prepare(
+            `SELECT application_id AS applicationId, label, url
+             FROM application_links
+             WHERE workspace_id = ? AND application_id IN (${placeholders})
+             ORDER BY application_id, position`,
+          )
+          .all(workspaceId, ...batch) as StoredLink[]),
+      );
+    }
     for (const { applicationId, ...contact } of contacts) {
       byId.get(applicationId)?.contacts.push(contact);
     }

@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
-import { DocumentPreviewService } from "../application/document_previews.js";
+import {
+  DocumentPreviewCapacityError,
+  DocumentPreviewService,
+} from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
@@ -26,6 +29,7 @@ afterEach(() => {
 async function createDocumentsApp(
   maxUploadBytes = 1024,
   maxPreviewInputBytes = 1024,
+  maxWorkspaceBytes = 536_870_912,
 ) {
   const database = openApplicationDatabase(":memory:");
   databases.push(database);
@@ -50,11 +54,17 @@ async function createDocumentsApp(
       absoluteDurationMs: 86_400_000,
       dummyPasswordHash,
       idleDurationMs: 1_800_000,
+      maxConcurrentVerifications: 2,
       refreshIntervalMs: 60_000,
     },
     () => new Date("2026-07-19T09:30:00.000Z"),
   );
-  const documentsRepository = new SqliteDocumentsRepository(database);
+  const documentsRepository = new SqliteDocumentsRepository(database, {
+    maxInstallationBytes: 2_147_483_648,
+    maxInstallationDocuments: 10_000,
+    maxWorkspaceBytes,
+    maxWorkspaceDocuments: 2_000,
+  });
   const documentsService = new DocumentLibraryService(
     documentsRepository,
     { maxUploadBytes },
@@ -105,6 +115,7 @@ async function createDocumentsApp(
         documentsRepository,
         new SqliteDocumentPreviewsRepository(database),
         new DocumentPreviewSupervisor({
+          maxConcurrentWorkers: 2,
           maxInputBytes: maxPreviewInputBytes,
           maxMemoryMb: 16,
           maxOutputCharacters: 1000,
@@ -158,6 +169,38 @@ function responseDocument(response: request.Response): Record<string, unknown> {
 }
 
 describe("document routes", () => {
+  it("returns a retryable response when preview worker capacity is full", async () => {
+    const authService = {
+      getActor: () => ({
+        authenticated: true,
+        user: { displayName: "Alex", role: "admin", username: "alex" },
+        userId: "user-1",
+        workspace: { name: "Applications" },
+        workspaceId: "workspace-1",
+      }),
+    } as unknown as AuthService;
+    const app = createApp({
+      authService,
+      documents: {
+        emailLinksService: new EmailLinkExtractionService(),
+        maxUploadBytes: 1024,
+        previewService: {
+          getPreview: () => Promise.reject(new DocumentPreviewCapacityError()),
+        } as unknown as DocumentPreviewService,
+        service: {} as DocumentLibraryService,
+      },
+    });
+
+    const response = await request(app).get(
+      "/api/documents/44444444-4444-4444-8444-444444444444/preview",
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers["retry-after"]).toBe("1");
+    expect(response.body).toEqual({
+      error: { code: "document_preview_busy" },
+    });
+  });
+
   it("requires authentication before listing or parsing uploads", async () => {
     const { app, documentTypeId } = await createDocumentsApp();
 
@@ -255,6 +298,22 @@ describe("document routes", () => {
       )
       .attach("file", Buffer.from("pdf-data"), "Product CV.pdf")
       .expect(400, { error: { code: "invalid_document_reference" } });
+  });
+
+  it("returns a stable conflict when the workspace storage quota is full", async () => {
+    const { app, documentTypeId } = await createDocumentsApp(1024, 1024, 8);
+    const cookie = await login(app);
+    const upload = (bytes: Buffer, filename: string) =>
+      sameOrigin(request(app).post("/api/documents"))
+        .set("Cookie", cookie)
+        .field("documentTypeId", documentTypeId)
+        .field("applicationIds", "[]")
+        .attach("file", bytes, { contentType: "text/plain", filename });
+
+    await upload(Buffer.from("123456"), "first.txt").expect(201);
+    await upload(Buffer.from("abcde"), "second.txt").expect(409, {
+      error: { code: "document_storage_quota_exceeded" },
+    });
   });
 
   it("returns stable errors for missing files and originals", async () => {

@@ -50,6 +50,7 @@ async function createApplicationsApp() {
       absoluteDurationMs: 86_400_000,
       dummyPasswordHash,
       idleDurationMs: 1_800_000,
+      maxConcurrentVerifications: 2,
       refreshIntervalMs: 60_000,
     },
     () => new Date("2026-07-18T12:00:00.000Z"),

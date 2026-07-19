@@ -75,6 +75,42 @@ function dependencies(cached?: ReadyDocumentPreviewRecord) {
 }
 
 describe("DocumentPreviewService", () => {
+  it("coalesces simultaneous cache misses for the same workspace document", async () => {
+    const values = dependencies();
+    let finishGeneration:
+      | ((
+          value: Awaited<ReturnType<DocumentPreviewGenerator["generate"]>>,
+        ) => void)
+      | undefined;
+    values.generate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishGeneration = resolve;
+        }),
+    );
+    const service = new DocumentPreviewService(
+      values.documents,
+      values.previews,
+      values.generator,
+      "plain-text-v1",
+      () => new Date("2026-07-19T12:00:00.000Z"),
+    );
+
+    const first = service.getPreview(actor, documentId);
+    const second = service.getPreview(actor, documentId);
+    await vi.waitFor(() => expect(values.generate).toHaveBeenCalledTimes(1));
+    finishGeneration?.({
+      mediaType: "text/plain",
+      status: "ready",
+      text: "Preview text",
+      truncated: false,
+    });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([ready, ready]);
+    expect(values.getDocumentOriginal).toHaveBeenCalledTimes(1);
+    expect(values.saveDocumentPreview).toHaveBeenCalledTimes(1);
+  });
+
   it("returns a workspace-scoped cached result without reparsing bytes", async () => {
     const values = dependencies(ready);
     const service = new DocumentPreviewService(

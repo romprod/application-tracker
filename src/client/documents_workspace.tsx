@@ -730,6 +730,9 @@ function uploadError(caught: unknown, maxUploadBytes: number): string {
     if (caught.code === "invalid_document_reference") {
       return "A selected document type or application is no longer available.";
     }
+    if (caught.code === "document_storage_quota_exceeded") {
+      return "The document storage limit has been reached. Ask an administrator to increase the configured quota.";
+    }
   }
   return "The document could not be stored. Please try again.";
 }
@@ -744,6 +747,9 @@ function previewLoadError(caught: unknown): string {
     }
     if (caught.code === "document_preview_failed") {
       return "This file could not be converted to a safe plain-text preview.";
+    }
+    if (caught.code === "document_preview_busy") {
+      return "Preview capacity is busy. Wait a moment and try again; download remains available.";
     }
   }
   return "The preview could not be loaded. Please try again.";

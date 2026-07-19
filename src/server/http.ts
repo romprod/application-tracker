@@ -53,7 +53,10 @@ async function startApplication(): Promise<void> {
     const applicationsService = new ApplicationLedgerService(
       new SqliteApplicationsRepository(database),
     );
-    const documentsRepository = new SqliteDocumentsRepository(database);
+    const documentsRepository = new SqliteDocumentsRepository(
+      database,
+      config.documents,
+    );
     const documentsService = new DocumentLibraryService(
       documentsRepository,
       config.documents,
@@ -80,6 +83,7 @@ async function startApplication(): Promise<void> {
         absoluteDurationMs: config.session.absoluteDurationMs,
         dummyPasswordHash,
         idleDurationMs: config.session.idleDurationMs,
+        maxConcurrentVerifications: config.session.maxConcurrentVerifications,
         refreshIntervalMs: config.session.refreshIntervalMs,
       },
     );
