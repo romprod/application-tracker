@@ -6,6 +6,7 @@ import { InvalidDocumentReferenceError } from "../../application/documents.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteDocumentsRepository } from "./documents_repository.js";
+import { SqliteDocumentPreviewsRepository } from "./document_previews_repository.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
 
 const createdAt = "2026-07-19T10:00:00.000Z";
@@ -186,6 +187,67 @@ describe("SqliteDocumentsRepository", () => {
 
       expect(created.originalFilename).toBe(originalFilename);
       expect(repository.listDocuments(setup.workspace.id)).toHaveLength(1);
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'documents'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("documents");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("stores bounded preview text under the document workspace", () => {
+    const { database, documentTypeId, repository, setup } = createRepository();
+    const bytes = Buffer.from("Preview text");
+
+    try {
+      const document = repository.createDocument({
+        applicationIds: [],
+        bytes,
+        createdAt,
+        documentTypeId,
+        mediaType: "text/plain",
+        originalFilename: "notes.txt",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        uploadedByUserId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+      const previews = new SqliteDocumentPreviewsRepository(database);
+      const stored = previews.saveDocumentPreview({
+        documentId: document.id,
+        generatedAt: "2026-07-19T12:00:00.000Z",
+        mediaType: "text/plain",
+        parserVersion: "plain-text-v1",
+        status: "ready",
+        text: "Text with SQL control: '); DROP TABLE documents; --",
+        truncated: false,
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(
+        previews.getDocumentPreview(
+          setup.workspace.id,
+          document.id,
+          "plain-text-v1",
+        ),
+      ).toEqual(stored);
+      expect(
+        previews.getDocumentPreview(
+          "other-workspace",
+          document.id,
+          "plain-text-v1",
+        ),
+      ).toBeUndefined();
+      expect(() =>
+        previews.saveDocumentPreview({
+          ...stored,
+          workspaceId: "other-workspace",
+        }),
+      ).toThrow();
       expect(
         database
           .prepare(
