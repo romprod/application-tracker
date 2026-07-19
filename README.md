@@ -1,93 +1,57 @@
 # Application Tracker
 
-Application Tracker is a self-hosted, local-first workspace for recording job
-applications, documents, follow-up actions, and outcomes. It provides a web
-interface and optional Model Context Protocol (MCP) integrations over local
-stdio and authenticated HTTPS.
+Application Tracker is a self-hosted workspace for recording job applications,
+documents, follow-up actions, contacts, and outcomes. It combines a responsive
+web interface with optional local and authenticated remote Model Context
+Protocol (MCP) access.
 
-> This repository is being built in public-ready stages. The foundation is
-> runnable, but it is not yet a feature-complete release.
+The application stores its data in SQLite and sends no workspace content to a
+hosted service. A fresh installation contains no account, sample data, or
+default password.
 
-## Product principles
+## Features
 
-- A fresh installation contains no sample or personal data.
-- Installation never creates a known default password.
-- Local accounts work without an external identity provider.
-- Optional OpenID Connect integrates with standards-compliant providers.
-- All application data belongs to an explicit workspace.
-- Administrative settings require an administrator role.
-- MCP clients receive the same validation and authorization as the website.
-- Document parsing runs outside the HTTP event loop with strict resource limits.
-- Public source contains no deployment identity, credentials, or private
-  infrastructure details.
-
-The product contract lives in
-[`docs/product-contract.md`](docs/product-contract.md). The architecture and
-security boundaries are documented before implementation so each feature can
-be added in a small, testable commit.
-
-## Planned capabilities
-
-- Application pipeline, events, contacts, links, notes, and due actions
-- Original document records with application associations and deduplication
-- Resource-limited plain-text previews and bounded email-link extraction
+- Dashboard metrics, searchable applications, sortable tables, detail drawers,
+  modal editing, contacts, links, due actions, and immutable history
 - Configurable statuses, sources, role types, and document types
-- Local users with administrator and member roles
-- Administrator-managed external identity linking for remote MCP
-- Optional OpenID Connect browser login
-- Settings sections for Lists, Users, and MCP status
-- Local and remote MCP tools with explicit actor context, administrator-gated
-  writes, and audit events
-- Online SQLite backup, verified restore, and migration tooling
+- Local administrator and member accounts with revocable sessions
+- Original document storage, SHA-256 deduplication, application associations,
+  bounded plain-text previews, and safe attachment downloads
+- Bounded email-link extraction without server-side network requests or stored
+  email bodies
+- Local stdio MCP and authenticated Streamable HTTP MCP with five read tools,
+  three mutation tools, explicit actor binding, website-controlled write access,
+  and immutable audit events
+- Administrator-managed MCP client IDs and one-time bearer tokens, with optional
+  strict OAuth token verification
+- Online SQLite backup, verification, non-overwriting restore, and forward
+  migrations
 
-## Repository status
+Application Tracker does not yet provide OpenID Connect browser login. Local
+password login always remains available.
 
-Development standards are defined in
-[`docs/development.md`](docs/development.md). Feature parity is tracked in
-[`docs/parity-checklist.md`](docs/parity-checklist.md).
+## Security model
 
-The current foundation includes a typed configuration boundary, a sanitized
-health endpoint, a responsive application shell, a migration-backed workspace
-identity schema, closed administrator setup, local browser login and logout,
-revocable sessions, administrator-managed local users, a Settings shell,
-an administrator-only sanitized MCP status page, and a workspace-scoped
-application workspace. The responsive interface includes a metrics dashboard,
-searchable and sortable application table, modal intake and editing, a detail
-drawer, ordered recruiter and hiring contacts, labeled related links, current
-next actions with optional due dates, and an immutable timeline for creation
-and stage changes. Application removal is workspace-scoped and audited without
-erasing that timeline. Workspace administrators can configure statuses,
-sources, role types, and document types. A document library stores exact
-originals, deduplicates their bytes by SHA-256, links them to applications, and
-serves authorized attachment downloads. It generates cached plain-text
-previews for five explicitly supported media types in isolated worker threads,
-coalesces duplicate work, and applies process-wide worker admission. Cumulative
-workspace and installation quotas bound document bytes and record counts.
-Application editors can extract likely job links from bounded pasted email
-content or a local `.eml` file, review the candidates, and add selected links;
-the server does not store the email body. Operator commands provide online
-SQLite backup, verification, and non-overwriting restore. API failures use
-stable error codes and server-generated request IDs; structured runtime logs
-redact credentials, content, identity, and private topology. A local stdio MCP
-server exposes five read tools and three application mutation tools through an
-explicit actor and workspace binding. Fresh workspaces block mutations until an
-administrator enables read-write access in Settings → MCP. Every tool outcome
-is recorded in an immutable audit ledger, and successful mutations commit with
-their audit event in one transaction. An optional Streamable HTTP endpoint
-exposes the same tools over HTTPS. Administrators create named client IDs and
-one-time bearer tokens in Settings → MCP, bind each client to an active local
-user, and rotate or revoke credentials. The database stores only token hashes.
-Each session remains bound to its exact credential, actor, and workspace.
-Optional OAuth verification can map external identities to local memberships.
-The endpoint enforces network, session, request-size, concurrency, and rate
-limits, accepts size-limited `application/json`, and rejects JSON-RPC batches
-before tool dispatch.
-The app does not yet provide OpenID Connect browser login.
-Automated tests and CI cover each completed boundary.
+- First-run setup requires an operator-generated one-time token.
+- The project never creates `admin/admin` or another known credential.
+- Passwords use salted, memory-hard scrypt hashes; random session and MCP tokens
+  are stored only as hashes.
+- Every application, document, user, and MCP operation preserves workspace and
+  role checks in shared application services.
+- Runtime secrets, databases, backups, and machine configuration remain outside
+  Git and container images.
 
-## Run the foundation
+Read the [product contract](docs/product-contract.md),
+[architecture](docs/architecture.md), and [security model](docs/security-model.md)
+for the complete boundary.
 
-Application Tracker requires Node.js 22.12 or newer.
+## Requirements
+
+- Node.js 22.12 or newer for a direct installation
+- Docker Engine with the Compose plugin for a container installation
+- A trusted HTTPS reverse proxy for Internet access
+
+## Quick start for development
 
 ```sh
 cp .env.example .env
@@ -95,33 +59,61 @@ npm ci
 npm run dev
 ```
 
-Open `http://<server-ip>:5173` from another device, replacing `<server-ip>` with
-an address assigned to the host. Both development services listen on all
-interfaces; Vite forwards API requests to the backend on port 3333. A new
-database opens the documented
-[`closed first-run setup`](docs/initial-setup.md) before exposing the application
-login screen. The installation does not create an `admin/admin` account or any
-other default credentials.
+Open `http://<server-ip>:5173`, replacing `<server-ip>` with an address assigned
+to the host. The development server and backend listen on all interfaces for
+LAN and container access. Restrict both ports with the host firewall, and never
+use Vite as a public reverse proxy.
 
-To exercise the production build locally:
+Generate a setup token with `openssl rand -hex 32`, place it in `.env`, and
+follow the [initial administrator setup](docs/initial-setup.md). Remove the token
+and restart the service after setup succeeds.
+
+Run every local quality gate with:
 
 ```sh
-npm run build
-NODE_ENV=production npm start
+npm run check
 ```
 
-Run every local quality gate with `npm run check`.
+## Deploy
 
-Database operators should follow the tested
-[`backup and restore runbook`](docs/backup-restore.md); copying a live WAL
-database file is not a valid backup procedure.
+Choose one supported path:
 
-Document operators should review the
-[storage and upload policy](docs/documents.md).
+- [Run the compiled service directly on a Linux host](docs/local-deployment.md)
+- [Build and run the hardened Docker Compose example](docs/container-deployment.md)
 
-Local MCP clients should follow the [stdio configuration guide](docs/local-mcp.md).
-Remote operators should start with the
-[authenticated HTTPS guide](docs/remote-mcp.md).
+Both guides keep data and secrets outside the checkout. The container example
+publishes port 3333 on loopback by default; LAN exposure requires an explicit
+override. Internet exposure requires HTTPS at a trusted reverse proxy.
+
+Before upgrades, create an online backup and follow the
+[backup and restore runbook](docs/backup-restore.md). Copying a live WAL database
+file is not a valid backup.
+
+## MCP
+
+Local clients should follow the [stdio guide](docs/local-mcp.md). Remote clients
+should follow the [authenticated HTTPS guide](docs/remote-mcp.md).
+
+Fresh workspaces are read-only through MCP. An administrator can enable
+**Read and write** under **Settings → MCP**. The server rechecks this policy on
+every mutation, including calls made through existing sessions.
+
+## Documentation
+
+- [Development standards](docs/development.md)
+- [Database and migrations](docs/database.md)
+- [Documents and previews](docs/documents.md)
+- [Reference lists](docs/reference-lists.md)
+- [User management](docs/user-management.md)
+- [MCP status](docs/mcp-status.md)
+- [Capability checklist](docs/parity-checklist.md)
+
+## Contributing and security
+
+Contributions are welcome through pull requests. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) before submitting code. Report suspected
+vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not a
+public issue.
 
 ## License
 

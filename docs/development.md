@@ -59,9 +59,11 @@ The required quality gates will include:
 - API integration tests for authentication, authorization, validation, and CSRF
 - MCP protocol tests for client credentials, OAuth, actors, limits, lifecycle,
   and tool policy
-- browser tests for setup, login, application workflows, and Settings
-- production build and dependency audit
-- public-content and secret scanning
+- production build and production dependency audit
+
+Before a public release, also run browser acceptance tests, container checks,
+backup and restore rehearsal, and complete reachable-history public-content
+scanning. These release checks are broader than the pull-request CI workflow.
 
 ## Dependency discipline
 
@@ -84,3 +86,9 @@ use reserved documentation domains and addresses.
 Review code against the product contract, architecture boundaries, and security
 model. A passing test suite does not justify crossing a layer boundary or
 weakening an authorization check.
+
+## Deployment guides
+
+Use [`local-deployment.md`](local-deployment.md) for a compiled Linux service or
+[`container-deployment.md`](container-deployment.md) for Docker Compose. Both
+paths use the production build and keep writable data outside the checkout.

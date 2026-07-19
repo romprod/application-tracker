@@ -1,7 +1,7 @@
 # Capability checklist
 
-This checklist defines the minimum public release. Each checked item must have
-tests and user documentation.
+This checklist tracks implemented capabilities and public-release gates. Future
+items are marked explicitly and do not block the first release.
 
 ## Foundation
 
@@ -16,7 +16,7 @@ tests and user documentation.
 - [x] Local login, logout, session rotation, expiry, and revocation
 - [x] Administrator and member workspace roles
 - [x] Administrator-managed external identity linking for remote MCP
-- [ ] Optional OpenID Connect browser login
+- [ ] Optional OpenID Connect browser login (future, not release-blocking)
 - [x] Settings navigation with Lists, Users, and MCP sections
 
 ## Application tracking
@@ -54,7 +54,8 @@ tests and user documentation.
 ## Release
 
 - [x] Responsive and keyboard-accessible interface
-- [ ] Complete local and container deployment documentation
+- [x] Complete local and container deployment documentation
 - [ ] Database migration and rollback rehearsal
-- [ ] Dependency, security, and public-content audits
-- [ ] No credentials, private topology, personal data, or private Git objects
+- [x] Dependency, security, and public-content audits
+- [x] No credentials, private topology, personal data, or private objects in
+      current source or reachable Git history

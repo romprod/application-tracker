@@ -1,0 +1,31 @@
+services:
+  application-tracker:
+    build:
+      context: .
+    image: application-tracker:local
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      BACKUP_DIRECTORY: /app/backups
+      DATABASE_PATH: /app/data/application-tracker.sqlite
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      PORT: 3333
+    ports:
+      - "${APPLICATION_TRACKER_BIND_ADDRESS:-127.0.0.1}:${APPLICATION_TRACKER_PORT:-3333}:3333"
+    volumes:
+      - application-tracker-data:/app/data
+      - application-tracker-backups:/app/backups
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  application-tracker-data:
+  application-tracker-backups:

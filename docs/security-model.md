@@ -27,7 +27,8 @@
 
 - No default password or open first-user race
 - Memory-hard, versioned password verification parameters
-- Rate limits for setup attempts and fail-fast login-verification concurrency
+- High-entropy one-time setup token and transactional first-user closure
+- Fail-fast login-verification concurrency and bounded attempt-rate admission
 - Random session tokens stored only as hashes
 - Secure, HTTP-only, same-site cookies with idle and absolute expiry
 - Session rotation after authentication and privilege changes

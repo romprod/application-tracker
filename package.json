@@ -4,6 +4,14 @@
   "private": true,
   "description": "A self-hosted workspace for tracking job applications and outcomes.",
   "license": "Elastic-2.0",
+  "homepage": "https://github.com/romprod/application-tracker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romprod/application-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/romprod/application-tracker/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"

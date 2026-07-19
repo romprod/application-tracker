@@ -35,3 +35,9 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate container configuration
+        run: |
+          cp .env.example .env
+          docker compose -f compose.example.yml config --quiet
+          docker build --tag application-tracker:ci .

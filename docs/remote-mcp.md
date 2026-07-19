@@ -23,6 +23,18 @@ query strings, fragments, insecure origins, and remote URLs on another path.
 When every network setting is valid, the server installs the endpoint and the
 administrator MCP status view reports the remote transport as ready.
 
+### Reverse proxy
+
+Terminate TLS at a trusted reverse proxy and send `/mcp` to the same backend as
+the website. Preserve the public `Host` header so the server can enforce
+`MCP_REMOTE_ALLOWED_HOSTS`. Do not log `Authorization` headers.
+
+Streamable HTTP may keep responses open. Disable response buffering for `/mcp`
+and choose proxy read and idle timeouts that exceed the configured MCP session
+idle period. The proxy must pass `GET`, `POST`, and `DELETE` and must not rewrite
+or cache MCP responses. Restrict request bodies at or below the application's
+configured maximum.
+
 ## Create a client credential
 
 Sign in as a local administrator and open **Settings → MCP**:

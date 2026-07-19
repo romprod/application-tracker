@@ -16,8 +16,11 @@ After the first release, the latest stable version will receive security fixes.
 
 ## Security expectations
 
-- Bind local services to loopback unless an operator explicitly configures a
-  protected reverse proxy.
+- The backend listens on all interfaces by default for LAN and container use.
+  Restrict the port with the host firewall. A container deployment should
+  publish it on loopback unless direct LAN access is required.
+- Terminate Internet traffic with HTTPS at a trusted reverse proxy. Preserve the
+  public `Host` header, set secure cookies, and never expose Vite publicly.
 - Keep real `.env`, `.mcp.json`, databases, backups, and uploaded documents out
   of Git.
 - Place secrets in runtime configuration or a secret store.
