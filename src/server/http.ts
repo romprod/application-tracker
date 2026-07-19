@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
+import { DocumentLibraryService } from "../application/documents.js";
 import { LocalMcpReadService } from "../application/mcp.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
@@ -24,6 +25,7 @@ import { SqliteAuthRepository } from "../infrastructure/database/auth_repository
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteRemoteMcpActorRepository } from "../infrastructure/database/mcp_oauth_actor_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
+import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
@@ -46,6 +48,10 @@ async function startApplication(): Promise<void> {
   try {
     const applicationsService = new ApplicationLedgerService(
       new SqliteApplicationsRepository(database),
+    );
+    const documentsService = new DocumentLibraryService(
+      new SqliteDocumentsRepository(database),
+      config.documents,
     );
     const passwordHasher = new ScryptPasswordHasher();
     const setupService = new SetupService(
@@ -147,6 +153,10 @@ async function startApplication(): Promise<void> {
         secure: config.session.cookieSecure,
       },
       authService,
+      documents: {
+        maxUploadBytes: config.documents.maxUploadBytes,
+        service: documentsService,
+      },
       logger,
       ...(config.mcp.remote && config.mcp.oauth
         ? {

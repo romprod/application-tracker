@@ -20,6 +20,7 @@ describe("parseRuntimeConfig", () => {
     expect(parseRuntimeConfig({})).toEqual({
       backupDirectory: "./backups",
       databasePath: "./data/application-tracker.sqlite",
+      documents: { maxUploadBytes: 10_485_760 },
       host: "0.0.0.0",
       mcp: {
         request: {
@@ -50,6 +51,18 @@ describe("parseRuntimeConfig", () => {
     expect(() => parseRuntimeConfig({ BACKUP_DIRECTORY: " " })).toThrow(
       "Invalid runtime configuration: BACKUP_DIRECTORY",
     );
+  });
+
+  it("accepts only a bounded document upload limit", () => {
+    expect(
+      parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "5242880" }).documents,
+    ).toEqual({ maxUploadBytes: 5_242_880 });
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "512" }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_UPLOAD_BYTES");
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "52428801" }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_UPLOAD_BYTES");
   });
 
   it("rejects a port outside the TCP range", () => {

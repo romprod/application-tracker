@@ -96,6 +96,12 @@ const runtimeEnvironmentSchema = z.object({
     .trim()
     .min(1)
     .default("./data/application-tracker.sqlite"),
+  DOCUMENT_MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(52_428_800)
+    .default(10_485_760),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
   MCP_SESSION_ABSOLUTE_SECONDS: z.coerce
     .number()
@@ -241,6 +247,9 @@ const runtimeEnvironmentSchema = z.object({
 export interface RuntimeConfig {
   backupDirectory: string;
   databasePath: string;
+  documents: {
+    maxUploadBytes: number;
+  };
   host: string;
   mcp: {
     local?: {
@@ -431,6 +440,7 @@ export function parseRuntimeConfig(
   return {
     backupDirectory: result.data.BACKUP_DIRECTORY,
     databasePath: result.data.DATABASE_PATH,
+    documents: { maxUploadBytes: result.data.DOCUMENT_MAX_UPLOAD_BYTES },
     host: result.data.HOST,
     mcp: {
       ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&

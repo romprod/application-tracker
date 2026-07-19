@@ -8,6 +8,7 @@ import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
 import type { UserAdministrationService } from "../application/users.js";
 import type { ReferenceValuesService } from "../application/reference_values.js";
+import type { DocumentsRouteOptions } from "./documents_routes.js";
 import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
 import { createApplicationsRouter } from "./applications_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
@@ -19,6 +20,7 @@ import {
 } from "./mcp_metadata_routes.js";
 import { createUsersRouter } from "./users_routes.js";
 import { createReferenceValuesRouter } from "./reference_values_routes.js";
+import { createDocumentsRouter } from "./documents_routes.js";
 import {
   apiNotFoundHandler,
   createApiErrorHandler,
@@ -30,6 +32,7 @@ export interface AppOptions {
   applicationsService?: ApplicationLedgerService;
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
+  documents?: DocumentsRouteOptions;
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
   mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
@@ -79,6 +82,13 @@ export function createApp(options: AppOptions = {}): Express {
         options.authService,
         options.applicationsService,
       ),
+    );
+  }
+
+  if (options.authService && options.documents) {
+    app.use(
+      "/api/documents",
+      createDocumentsRouter(options.authService, options.documents),
     );
   }
 
