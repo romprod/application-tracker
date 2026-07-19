@@ -55,7 +55,7 @@ items are marked explicitly and do not block the first release.
 
 - [x] Responsive and keyboard-accessible interface
 - [x] Complete local and container deployment documentation
-- [ ] Database migration and rollback rehearsal
+- [x] [Database migration and rollback rehearsal](migration-rollback-rehearsal-2026-07-19.md)
 - [x] Dependency, security, and public-content audits
 - [x] No credentials, private topology, personal data, or private objects in
       current source or reachable Git history
