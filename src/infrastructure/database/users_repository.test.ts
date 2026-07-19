@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { UsernameUnavailableError } from "../../application/users.js";
+import {
+  ExternalIdentityUnavailableError,
+  ManagedExternalIdentityNotFoundError,
+  UsernameUnavailableError,
+} from "../../application/users.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
 import { SqliteUsersRepository } from "./users_repository.js";
@@ -40,6 +44,7 @@ describe("SqliteUsersRepository", () => {
 
       expect(created).toMatchObject({
         displayName: "Sam Member",
+        externalIdentities: [],
         localAccount: true,
         role: "member",
         status: "active",
@@ -57,6 +62,97 @@ describe("SqliteUsersRepository", () => {
           .pluck()
           .get(created.id),
       ).not.toBe("member password");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates, lists, and deletes configured-provider identity links", () => {
+    const { database, repository, setup } = createRepository();
+    const issuer = "https://identity.example/application/o/mcp/";
+
+    try {
+      const identity = repository.createExternalIdentity({
+        createdAt,
+        issuer,
+        subject: "oauth-subject-123",
+        userId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(identity).toMatchObject({
+        createdAt,
+        subject: "oauth-subject-123",
+      });
+      expect(repository.listWorkspaceUsers(setup.workspace.id, issuer)).toEqual(
+        [
+          expect.objectContaining({
+            externalIdentities: [identity],
+            username: "alex",
+          }),
+        ],
+      );
+      expect(repository.listWorkspaceUsers(setup.workspace.id)).toEqual([
+        expect.objectContaining({ externalIdentities: [] }),
+      ]);
+
+      repository.deleteExternalIdentity({
+        identityId: identity.id,
+        issuer,
+        userId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(
+        repository.listWorkspaceUsers(setup.workspace.id, issuer)[0]
+          ?.externalIdentities,
+      ).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps identity conflicts and deletion scope opaque", () => {
+    const { database, repository, setup } = createRepository();
+    const issuer = "https://identity.example/application/o/mcp/";
+
+    try {
+      const member = repository.createLocalUser({
+        createdAt,
+        displayName: "Sam Member",
+        passwordHash:
+          "scrypt$1024$8$1$bWVtYmVyLXNhbHQ$member-hash-value-long-enough",
+        role: "member",
+        username: "sam",
+        workspaceId: setup.workspace.id,
+      });
+      const identity = repository.createExternalIdentity({
+        createdAt,
+        issuer,
+        subject: "shared-subject",
+        userId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(() =>
+        repository.createExternalIdentity({
+          createdAt,
+          issuer,
+          subject: "shared-subject",
+          userId: member.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ExternalIdentityUnavailableError);
+      expect(() =>
+        repository.deleteExternalIdentity({
+          identityId: identity.id,
+          issuer,
+          userId: member.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ManagedExternalIdentityNotFoundError);
+      expect(
+        repository.listWorkspaceUsers(setup.workspace.id, issuer)[0]
+          ?.externalIdentities,
+      ).toEqual([identity]);
     } finally {
       database.close();
     }

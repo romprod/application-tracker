@@ -1,13 +1,21 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type { PasswordHasher } from "./setup.js";
 import type {
+  CreateExternalIdentityInput,
   CreateLocalUserInput,
   UpdateUserStatusInput,
 } from "../domain/users.js";
 
+export interface ExternalIdentityLink {
+  createdAt: string;
+  id: string;
+  subject: string;
+}
+
 export interface WorkspaceUser {
   createdAt: string;
   displayName: string;
+  externalIdentities: ExternalIdentityLink[];
   id: string;
   localAccount: boolean;
   role: "admin" | "member";
@@ -35,9 +43,30 @@ export interface SetUserStatusRecord {
   workspaceId: string;
 }
 
+export interface CreateExternalIdentityRecord extends CreateExternalIdentityInput {
+  createdAt: string;
+  issuer: string;
+  userId: string;
+  workspaceId: string;
+}
+
+export interface DeleteExternalIdentityRecord {
+  identityId: string;
+  issuer: string;
+  userId: string;
+  workspaceId: string;
+}
+
 export interface UsersRepository {
+  createExternalIdentity(
+    input: CreateExternalIdentityRecord,
+  ): ExternalIdentityLink;
   createLocalUser(input: CreateLocalUserRecord): WorkspaceUser;
-  listWorkspaceUsers(workspaceId: string): WorkspaceUser[];
+  deleteExternalIdentity(input: DeleteExternalIdentityRecord): void;
+  listWorkspaceUsers(
+    workspaceId: string,
+    externalIdentityIssuer?: string,
+  ): WorkspaceUser[];
   setUserStatus(input: SetUserStatusRecord): WorkspaceUser;
 }
 
@@ -59,6 +88,20 @@ export class ManagedUserNotFoundError extends Error {
   public constructor() {
     super("The workspace user was not found");
     this.name = "ManagedUserNotFoundError";
+  }
+}
+
+export class ExternalIdentityUnavailableError extends Error {
+  public constructor() {
+    super("The external identity is unavailable");
+    this.name = "ExternalIdentityUnavailableError";
+  }
+}
+
+export class ManagedExternalIdentityNotFoundError extends Error {
+  public constructor() {
+    super("The external identity link was not found");
+    this.name = "ManagedExternalIdentityNotFoundError";
   }
 }
 
