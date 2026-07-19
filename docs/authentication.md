@@ -14,6 +14,13 @@ fail-fast gate allows two password verifications at once by default. Excess
 requests receive `429 login_capacity_reached` with `Retry-After` before scrypt
 starts; admitted unknown usernames still pay the dummy-hash verification cost.
 
+Before starting scrypt, the server also admits at most 10 password checks per
+minute for each normalized account name and direct network source. A limited
+request receives `429 login_rate_limited` with `Retry-After`. Known and unknown
+accounts use the same buckets and response, so this control does not disclose
+whether an account exists. The in-memory tracker holds at most 10,000 keys and
+resets when the process restarts.
+
 The password and setup token never appear in URLs, response bodies, database
 logs, or application logs.
 
@@ -47,11 +54,19 @@ while the form is mounted. It does not write credentials or tokens to local or
 session storage.
 
 Configure password-verification admission with
-`LOGIN_MAX_CONCURRENT_VERIFICATIONS` (range 1–32). Configure sessions with
+`LOGIN_MAX_CONCURRENT_VERIFICATIONS` (range 1–32),
+`LOGIN_RATE_LIMIT_ATTEMPTS` (range 1–1,000),
+`LOGIN_RATE_LIMIT_WINDOW_SECONDS` (range 1–3,600), and
+`LOGIN_RATE_LIMIT_MAX_KEYS` (range 100–100,000). Configure sessions with
 `SESSION_IDLE_SECONDS`,
 `SESSION_ABSOLUTE_SECONDS`, `SESSION_REFRESH_SECONDS`, and
 `SESSION_COOKIE_SECURE`. The absolute lifetime must exceed the idle lifetime,
 and the refresh interval must be shorter than the idle lifetime.
+
+The source bucket uses the direct socket address and does not trust forwarded
+client headers. A reverse proxy therefore shares one source bucket for its
+clients. Keep a proxy or edge login limit as a second layer and tune the
+application threshold for the expected login volume.
 
 ## Transport boundary
 

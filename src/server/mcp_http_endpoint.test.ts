@@ -130,6 +130,7 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
     oauth: { requiredScope: "tracker:read" },
     requestPolicy: {
       maxConcurrentRequests: 8,
+      maxConcurrentRequestsPerActor: 4,
       maxRequestBytes: 65_536,
       rateLimitRequests: 60,
       rateLimitWindowMs: 60_000,

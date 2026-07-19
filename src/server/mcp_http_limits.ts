@@ -4,6 +4,7 @@ import { remoteMcpActor } from "./mcp_http_auth.js";
 
 export interface RemoteMcpRequestPolicy {
   maxConcurrentRequests: number;
+  maxConcurrentRequestsPerActor: number;
   maxRequestBytes: number;
   rateLimitRequests: number;
   rateLimitWindowMs: number;
@@ -36,7 +37,11 @@ export function createRemoteMcpRequestGuards(
   clock: () => Date = () => new Date(),
 ): RemoteMcpRequestGuards {
   if (
-    policy.maxConcurrentRequests < 1 ||
+    !Number.isInteger(policy.maxConcurrentRequests) ||
+    policy.maxConcurrentRequests < 2 ||
+    !Number.isInteger(policy.maxConcurrentRequestsPerActor) ||
+    policy.maxConcurrentRequestsPerActor < 1 ||
+    policy.maxConcurrentRequestsPerActor >= policy.maxConcurrentRequests ||
     policy.maxRequestBytes < 1 ||
     policy.rateLimitRequests < 1 ||
     policy.rateLimitWindowMs < 1
@@ -45,6 +50,7 @@ export function createRemoteMcpRequestGuards(
   }
 
   const rateWindows = new Map<string, ActorRateWindow>();
+  const activeRequestsByActor = new Map<string, number>();
   let activeRequests = 0;
 
   const rateLimit: RequestHandler = (_request, response, next) => {
@@ -72,17 +78,30 @@ export function createRemoteMcpRequestGuards(
   };
 
   const concurrency: RequestHandler = (_request, response, next) => {
-    if (activeRequests >= policy.maxConcurrentRequests) {
+    const actorId = remoteMcpActor(response).userId;
+    const actorActiveRequests = activeRequestsByActor.get(actorId) ?? 0;
+    if (
+      activeRequests >= policy.maxConcurrentRequests ||
+      actorActiveRequests >= policy.maxConcurrentRequestsPerActor
+    ) {
       sendRequestLimit(response, 1);
       return;
     }
 
     activeRequests += 1;
+    activeRequestsByActor.set(actorId, actorActiveRequests + 1);
     let released = false;
     const release = (): void => {
       if (released) return;
       released = true;
       activeRequests -= 1;
+      const remainingActorRequests =
+        (activeRequestsByActor.get(actorId) ?? 1) - 1;
+      if (remainingActorRequests === 0) {
+        activeRequestsByActor.delete(actorId);
+      } else {
+        activeRequestsByActor.set(actorId, remainingActorRequests);
+      }
     };
     response.once("finish", release);
     response.once("close", release);

@@ -129,7 +129,6 @@ export class RemoteMcpHttpEndpoint {
     const router = Router();
     const requestGuards = createRemoteMcpRequestGuards(this.requestPolicy);
     router.use(createRemoteMcpNetworkGuard(this.network));
-    router.use(requestGuards.concurrency);
     router.use(
       createRemoteMcpBearerAuth({
         authorizer: this.authorizer,
@@ -143,6 +142,7 @@ export class RemoteMcpHttpEndpoint {
           : {}),
       }),
     );
+    router.use(requestGuards.concurrency);
     router.use(requestGuards.rateLimit);
     router.use((request, response, next) => {
       if (request.method !== "POST") {

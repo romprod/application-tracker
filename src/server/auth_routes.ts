@@ -3,6 +3,7 @@ import { Router, type Request } from "express";
 
 import {
   InvalidCredentialsError,
+  LoginAttemptRateLimitError,
   LoginVerificationCapacityError,
   type AuthService,
 } from "../application/auth.js";
@@ -69,6 +70,7 @@ export function createAuthRouter(
       const result = await authService.login(
         parsed.data,
         requestSessionToken(request),
+        request.socket.remoteAddress ?? "unknown",
       );
       response.setHeader(
         "Set-Cookie",
@@ -76,6 +78,11 @@ export function createAuthRouter(
       );
       response.json(result.session);
     } catch (error) {
+      if (error instanceof LoginAttemptRateLimitError) {
+        response.set("Retry-After", String(error.retryAfterSeconds));
+        response.status(429).json({ error: { code: "login_rate_limited" } });
+        return;
+      }
       if (error instanceof LoginVerificationCapacityError) {
         response.set("Retry-After", "1");
         response

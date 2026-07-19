@@ -23,6 +23,7 @@ describe("parseRuntimeConfig", () => {
       documents: {
         maxInstallationBytes: 2_147_483_648,
         maxInstallationDocuments: 10_000,
+        maxConcurrentUploads: 2,
         maxUploadBytes: 10_485_760,
         maxWorkspaceBytes: 536_870_912,
         maxWorkspaceDocuments: 2_000,
@@ -38,6 +39,7 @@ describe("parseRuntimeConfig", () => {
       mcp: {
         request: {
           maxConcurrentRequests: 8,
+          maxConcurrentRequestsPerActor: 4,
           maxRequestBytes: 65_536,
           rateLimitRequests: 60,
           rateLimitWindowMs: 60_000,
@@ -55,6 +57,9 @@ describe("parseRuntimeConfig", () => {
         absoluteDurationMs: 86_400_000,
         cookieSecure: false,
         idleDurationMs: 1_800_000,
+        loginAttemptLimit: 10,
+        loginAttemptMaxTrackedKeys: 10_000,
+        loginAttemptWindowMs: 60_000,
         maxConcurrentVerifications: 2,
         refreshIntervalMs: 60_000,
       },
@@ -77,6 +82,19 @@ describe("parseRuntimeConfig", () => {
     expect(() =>
       parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "52428801" }),
     ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_UPLOAD_BYTES");
+  });
+
+  it("accepts only bounded document upload concurrency", () => {
+    expect(
+      parseRuntimeConfig({ DOCUMENT_MAX_CONCURRENT_UPLOADS: "4" }).documents
+        .maxConcurrentUploads,
+    ).toBe(4);
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_MAX_CONCURRENT_UPLOADS: "0" }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_CONCURRENT_UPLOADS");
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_MAX_CONCURRENT_UPLOADS: "33" }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_CONCURRENT_UPLOADS");
   });
 
   it("accepts only bounded document preview worker limits", () => {
@@ -145,16 +163,31 @@ describe("parseRuntimeConfig", () => {
     ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_INSTALLATION_COUNT");
   });
 
-  it("accepts a bounded login verification limit", () => {
+  it("accepts bounded login verification and attempt limits", () => {
     expect(
-      parseRuntimeConfig({ LOGIN_MAX_CONCURRENT_VERIFICATIONS: "4" }).session
-        .maxConcurrentVerifications,
-    ).toBe(4);
+      parseRuntimeConfig({
+        LOGIN_MAX_CONCURRENT_VERIFICATIONS: "4",
+        LOGIN_RATE_LIMIT_ATTEMPTS: "20",
+        LOGIN_RATE_LIMIT_MAX_KEYS: "5000",
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS: "120",
+      }).session,
+    ).toMatchObject({
+      loginAttemptLimit: 20,
+      loginAttemptMaxTrackedKeys: 5000,
+      loginAttemptWindowMs: 120_000,
+      maxConcurrentVerifications: 4,
+    });
     expect(() =>
       parseRuntimeConfig({ LOGIN_MAX_CONCURRENT_VERIFICATIONS: "0" }),
     ).toThrow(
       "Invalid runtime configuration: LOGIN_MAX_CONCURRENT_VERIFICATIONS",
     );
+    expect(() =>
+      parseRuntimeConfig({ LOGIN_RATE_LIMIT_ATTEMPTS: "0" }),
+    ).toThrow("Invalid runtime configuration: LOGIN_RATE_LIMIT_ATTEMPTS");
+    expect(() =>
+      parseRuntimeConfig({ LOGIN_RATE_LIMIT_MAX_KEYS: "99" }),
+    ).toThrow("Invalid runtime configuration: LOGIN_RATE_LIMIT_MAX_KEYS");
   });
 
   it("rejects a port outside the TCP range", () => {
@@ -210,12 +243,14 @@ describe("parseRuntimeConfig", () => {
     expect(
       parseRuntimeConfig({
         MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "4",
+        MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR: "2",
         MCP_REMOTE_MAX_REQUEST_BYTES: "32768",
         MCP_REMOTE_RATE_LIMIT_REQUESTS: "30",
         MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS: "120",
       }).mcp.request,
     ).toEqual({
       maxConcurrentRequests: 4,
+      maxConcurrentRequestsPerActor: 2,
       maxRequestBytes: 32_768,
       rateLimitRequests: 30,
       rateLimitWindowMs: 120_000,
@@ -227,9 +262,17 @@ describe("parseRuntimeConfig", () => {
       parseRuntimeConfig({ MCP_REMOTE_MAX_REQUEST_BYTES: "512" }),
     ).toThrow("Invalid runtime configuration: MCP_REMOTE_MAX_REQUEST_BYTES");
     expect(() =>
-      parseRuntimeConfig({ MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "0" }),
+      parseRuntimeConfig({ MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "1" }),
     ).toThrow(
       "Invalid runtime configuration: MCP_REMOTE_MAX_CONCURRENT_REQUESTS",
+    );
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "4",
+        MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR: "4",
+      }),
+    ).toThrow(
+      "Invalid runtime configuration: MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR",
     );
     expect(() =>
       parseRuntimeConfig({ MCP_REMOTE_RATE_LIMIT_REQUESTS: "10001" }),

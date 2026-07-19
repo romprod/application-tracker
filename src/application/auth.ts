@@ -86,6 +86,9 @@ export interface SessionPolicy {
   absoluteDurationMs: number;
   dummyPasswordHash: string;
   idleDurationMs: number;
+  loginAttemptLimit?: number;
+  loginAttemptMaxTrackedKeys?: number;
+  loginAttemptWindowMs?: number;
   maxConcurrentVerifications: number;
   refreshIntervalMs: number;
 }
@@ -102,6 +105,18 @@ export class LoginVerificationCapacityError extends Error {
     super("Login verification capacity is temporarily full");
     this.name = "LoginVerificationCapacityError";
   }
+}
+
+export class LoginAttemptRateLimitError extends Error {
+  public constructor(public readonly retryAfterSeconds: number) {
+    super("Login attempts are temporarily limited");
+    this.name = "LoginAttemptRateLimitError";
+  }
+}
+
+interface LoginAttemptWindow {
+  count: number;
+  startedAtMs: number;
 }
 
 function publicSession(
@@ -128,6 +143,10 @@ function authenticatedActor(session: ActiveSession): AuthenticatedActor {
 
 export class AuthService {
   private activePasswordVerifications = 0;
+  private readonly loginAttemptLimit: number;
+  private readonly loginAttemptMaxTrackedKeys: number;
+  private readonly loginAttemptWindowMs: number;
+  private readonly loginAttemptWindows = new Map<string, LoginAttemptWindow>();
 
   public constructor(
     private readonly repository: AuthRepository,
@@ -136,26 +155,91 @@ export class AuthService {
     private readonly policy: SessionPolicy,
     private readonly clock: () => Date = () => new Date(),
   ) {
+    this.loginAttemptLimit = policy.loginAttemptLimit ?? 10;
+    this.loginAttemptMaxTrackedKeys =
+      policy.loginAttemptMaxTrackedKeys ?? 10000;
+    this.loginAttemptWindowMs = policy.loginAttemptWindowMs ?? 60_000;
     if (
       !Number.isInteger(policy.maxConcurrentVerifications) ||
-      policy.maxConcurrentVerifications < 1
+      policy.maxConcurrentVerifications < 1 ||
+      !Number.isInteger(this.loginAttemptLimit) ||
+      this.loginAttemptLimit < 1 ||
+      !Number.isInteger(this.loginAttemptMaxTrackedKeys) ||
+      this.loginAttemptMaxTrackedKeys < 2 ||
+      !Number.isInteger(this.loginAttemptWindowMs) ||
+      this.loginAttemptWindowMs < 1
     ) {
       throw new Error("Invalid login verification policy");
     }
   }
 
+  private admitLoginAttempt(
+    username: string,
+    source: string,
+    nowMs: number,
+  ): void {
+    const keys = [
+      `account:${username.trim().toLowerCase()}`,
+      `source:${source.slice(0, 128)}`,
+    ];
+    const windows = keys.map((key) => {
+      const current = this.loginAttemptWindows.get(key);
+      return !current ||
+        nowMs - current.startedAtMs >= this.loginAttemptWindowMs
+        ? { count: 0, startedAtMs: nowMs }
+        : current;
+    });
+    const retryAfterMs = windows.reduce(
+      (longest, window) =>
+        window.count >= this.loginAttemptLimit
+          ? Math.max(
+              longest,
+              window.startedAtMs + this.loginAttemptWindowMs - nowMs,
+            )
+          : longest,
+      0,
+    );
+    if (retryAfterMs > 0) {
+      throw new LoginAttemptRateLimitError(
+        Math.max(1, Math.ceil(retryAfterMs / 1000)),
+      );
+    }
+
+    keys.forEach((key, index) => {
+      if (!this.loginAttemptWindows.has(key)) {
+        while (
+          this.loginAttemptWindows.size >= this.loginAttemptMaxTrackedKeys
+        ) {
+          const oldestKey = this.loginAttemptWindows.keys().next().value;
+          if (typeof oldestKey !== "string") break;
+          this.loginAttemptWindows.delete(oldestKey);
+        }
+      } else {
+        this.loginAttemptWindows.delete(key);
+      }
+      const window = windows[index];
+      if (!window) throw new Error("Missing login attempt window");
+      this.loginAttemptWindows.set(key, {
+        count: window.count + 1,
+        startedAtMs: window.startedAtMs,
+      });
+    });
+  }
+
   public async login(
     input: LoginInput,
     replacedToken?: string,
+    attemptSource = "unknown",
   ): Promise<LoginResult> {
     if (
       this.activePasswordVerifications >= this.policy.maxConcurrentVerifications
     ) {
       throw new LoginVerificationCapacityError();
     }
+    const now = this.clock();
+    this.admitLoginAttempt(input.username, attemptSource, now.getTime());
     this.activePasswordVerifications += 1;
     try {
-      const now = this.clock();
       const nowIso = now.toISOString();
       this.repository.cleanupExpiredSessions(nowIso);
 

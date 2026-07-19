@@ -61,6 +61,12 @@ fields, four parts, bounded headers, and bounded field sizes. The upload route
 checks the browser's `Origin` before reading multipart data. Filenames cannot
 contain path separators or control characters.
 
+`DOCUMENT_MAX_CONCURRENT_UPLOADS` caps in-memory multipart parsing across the
+process. It defaults to 2 and accepts 1–32. When every slot is active, the
+server rejects another upload before reading its body with
+`503 document_upload_busy` and `Retry-After`. The maximum aggregate buffered
+file data is therefore the concurrency limit multiplied by the per-file limit.
+
 The UI lists active document types and active applications. Linking a document
 to an application is optional.
 

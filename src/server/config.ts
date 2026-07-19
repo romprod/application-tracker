@@ -108,6 +108,12 @@ const runtimeEnvironmentSchema = z.object({
     .min(1)
     .max(1_000_000)
     .default(10_000),
+  DOCUMENT_MAX_CONCURRENT_UPLOADS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(32)
+    .default(2),
   DOCUMENT_MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()
@@ -163,6 +169,24 @@ const runtimeEnvironmentSchema = z.object({
     .min(1)
     .max(32)
     .default(2),
+  LOGIN_RATE_LIMIT_ATTEMPTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(10),
+  LOGIN_RATE_LIMIT_MAX_KEYS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(100_000)
+    .default(10_000),
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3600)
+    .default(60),
   MCP_SESSION_ABSOLUTE_SECONDS: z.coerce
     .number()
     .int()
@@ -250,9 +274,15 @@ const runtimeEnvironmentSchema = z.object({
   MCP_REMOTE_MAX_CONCURRENT_REQUESTS: z.coerce
     .number()
     .int()
-    .min(1)
+    .min(2)
     .max(1000)
     .default(8),
+  MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(999)
+    .default(4),
   MCP_REMOTE_MAX_REQUEST_BYTES: z.coerce
     .number()
     .int()
@@ -310,6 +340,7 @@ export interface RuntimeConfig {
   documents: {
     maxInstallationBytes: number;
     maxInstallationDocuments: number;
+    maxConcurrentUploads: number;
     maxUploadBytes: number;
     maxWorkspaceBytes: number;
     maxWorkspaceDocuments: number;
@@ -343,6 +374,9 @@ export interface RuntimeConfig {
     absoluteDurationMs: number;
     cookieSecure: boolean;
     idleDurationMs: number;
+    loginAttemptLimit: number;
+    loginAttemptMaxTrackedKeys: number;
+    loginAttemptWindowMs: number;
     maxConcurrentVerifications: number;
     refreshIntervalMs: number;
   };
@@ -536,6 +570,15 @@ export function parseRuntimeConfig(
   }
 
   if (
+    result.data.MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR >=
+    result.data.MCP_REMOTE_MAX_CONCURRENT_REQUESTS
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR",
+    );
+  }
+
+  if (
     result.data.MCP_SESSION_ABSOLUTE_SECONDS <=
     result.data.MCP_SESSION_IDLE_SECONDS
   ) {
@@ -550,6 +593,7 @@ export function parseRuntimeConfig(
     documents: {
       maxInstallationBytes: result.data.DOCUMENT_MAX_INSTALLATION_BYTES,
       maxInstallationDocuments: result.data.DOCUMENT_MAX_INSTALLATION_COUNT,
+      maxConcurrentUploads: result.data.DOCUMENT_MAX_CONCURRENT_UPLOADS,
       maxUploadBytes: result.data.DOCUMENT_MAX_UPLOAD_BYTES,
       maxWorkspaceBytes: result.data.DOCUMENT_MAX_WORKSPACE_BYTES,
       maxWorkspaceDocuments: result.data.DOCUMENT_MAX_WORKSPACE_COUNT,
@@ -577,6 +621,8 @@ export function parseRuntimeConfig(
       ...(remote ? { remote } : {}),
       request: {
         maxConcurrentRequests: result.data.MCP_REMOTE_MAX_CONCURRENT_REQUESTS,
+        maxConcurrentRequestsPerActor:
+          result.data.MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR,
         maxRequestBytes: result.data.MCP_REMOTE_MAX_REQUEST_BYTES,
         rateLimitRequests: result.data.MCP_REMOTE_RATE_LIMIT_REQUESTS,
         rateLimitWindowMs:
@@ -598,6 +644,9 @@ export function parseRuntimeConfig(
           ? result.data.NODE_ENV === "production"
           : result.data.SESSION_COOKIE_SECURE === "true",
       idleDurationMs: result.data.SESSION_IDLE_SECONDS * 1000,
+      loginAttemptLimit: result.data.LOGIN_RATE_LIMIT_ATTEMPTS,
+      loginAttemptMaxTrackedKeys: result.data.LOGIN_RATE_LIMIT_MAX_KEYS,
+      loginAttemptWindowMs: result.data.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000,
       maxConcurrentVerifications:
         result.data.LOGIN_MAX_CONCURRENT_VERIFICATIONS,
       refreshIntervalMs: result.data.SESSION_REFRESH_SECONDS * 1000,

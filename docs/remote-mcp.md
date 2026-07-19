@@ -131,21 +131,23 @@ writes when clients no longer need mutation authority.
 
 ## Request controls
 
-The endpoint checks Host and Origin, applies the global concurrency cap, and
-then authenticates the bearer token. It applies the per-actor rate limit and
-JSON size cap before protocol handling:
+The endpoint checks Host and Origin, authenticates the bearer token, and then
+applies global and per-actor concurrency caps. It applies the per-actor rate
+limit and JSON size cap before protocol handling:
 
-| Variable                               | Default | Range           | Meaning                            |
-| -------------------------------------- | ------: | --------------- | ---------------------------------- |
-| `MCP_REMOTE_MAX_REQUEST_BYTES`         |   65536 | 1,024–1,048,576 | Maximum JSON request body          |
-| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS`   |       8 | 1–1,000         | Installation-wide in-flight limit  |
-| `MCP_REMOTE_RATE_LIMIT_REQUESTS`       |      60 | 1–10,000        | Requests allowed per actor window  |
-| `MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS` |      60 | 1–3,600         | Fixed rate-limit window in seconds |
+| Variable                                       | Default | Range           | Meaning                            |
+| ---------------------------------------------- | ------: | --------------- | ---------------------------------- |
+| `MCP_REMOTE_MAX_REQUEST_BYTES`                 |   65536 | 1,024–1,048,576 | Maximum JSON request body          |
+| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS`           |       8 | 2–1,000         | Installation-wide in-flight limit  |
+| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR` |       4 | 1–999           | In-flight limit for one actor      |
+| `MCP_REMOTE_RATE_LIMIT_REQUESTS`               |      60 | 1–10,000        | Requests allowed per actor window  |
+| `MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS`         |      60 | 1–3,600         | Fixed rate-limit window in seconds |
 
 The rate limit uses the resolved local actor ID, never an unverified subject,
 token string, or client-supplied workspace. Limited requests return `429` with
 `Retry-After`; oversized JSON returns `413`. Startup rejects values outside the
-documented safe ranges.
+documented safe ranges. The per-actor concurrency limit must remain below the
+global limit, so one actor cannot occupy every request slot.
 
 Every `POST` must use `Content-Type: application/json` (parameters such as a
 charset are allowed). Lookalike media types are rejected with `415` before body

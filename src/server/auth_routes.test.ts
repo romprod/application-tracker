@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuthService,
+  LoginAttemptRateLimitError,
   LoginVerificationCapacityError,
 } from "../application/auth.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
@@ -92,6 +93,37 @@ describe("authentication routes", () => {
     expect(response.body).toEqual({
       error: { code: "login_capacity_reached" },
     });
+  });
+
+  it("returns the login attempt window when the actor is rate limited", async () => {
+    const login = vi.fn(() =>
+      Promise.reject(new LoginAttemptRateLimitError(37)),
+    );
+    const authService = {
+      getSession: vi.fn(() => undefined),
+      login,
+      logout: vi.fn(),
+    } as unknown as AuthService;
+    const app = createApp({
+      authCookie: { maxAgeSeconds: 86_400, secure: false },
+      authService,
+    });
+
+    const response = await request(app).post("/api/auth/login").send({
+      password: "schema-valid password",
+      username: "alex",
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers["retry-after"]).toBe("37");
+    expect(response.body).toEqual({
+      error: { code: "login_rate_limited" },
+    });
+    expect(login).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      expect.any(String),
+    );
   });
 
   it("returns one generic error for unknown users and wrong passwords", async () => {

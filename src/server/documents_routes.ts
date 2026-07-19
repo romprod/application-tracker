@@ -27,6 +27,7 @@ import { requestSessionToken } from "./auth_routes.js";
 
 export interface DocumentsRouteOptions {
   emailLinksService: EmailLinkExtractionService;
+  maxConcurrentUploads?: number;
   maxUploadBytes: number;
   previewService: DocumentPreviewService;
   service: DocumentLibraryService;
@@ -116,11 +117,38 @@ function uploadParser(maxUploadBytes: number): RequestHandler {
   };
 }
 
+function uploadAdmission(maxConcurrentUploads: number): RequestHandler {
+  if (!Number.isInteger(maxConcurrentUploads) || maxConcurrentUploads < 1) {
+    throw new Error("Invalid document upload concurrency policy");
+  }
+
+  let activeUploads = 0;
+  return (_request, response, next) => {
+    if (activeUploads >= maxConcurrentUploads) {
+      response.set({ "Cache-Control": "no-store", "Retry-After": "1" });
+      response.status(503).json({ error: { code: "document_upload_busy" } });
+      return;
+    }
+
+    activeUploads += 1;
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      activeUploads -= 1;
+    };
+    response.once("finish", release);
+    response.once("close", release);
+    next();
+  };
+}
+
 export function createDocumentsRouter(
   authService: AuthService,
   options: DocumentsRouteOptions,
 ): Router {
   const router = Router();
+  const admitUpload = uploadAdmission(options.maxConcurrentUploads ?? 1);
 
   router.use((_request, response, next) => {
     response.set("Cache-Control", "no-store");
@@ -169,6 +197,7 @@ export function createDocumentsRouter(
 
   router.post(
     "/",
+    admitUpload,
     uploadParser(options.maxUploadBytes),
     (request, response, next) => {
       const fields = requestFields(request);

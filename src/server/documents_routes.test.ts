@@ -30,6 +30,7 @@ async function createDocumentsApp(
   maxUploadBytes = 1024,
   maxPreviewInputBytes = 1024,
   maxWorkspaceBytes = 536_870_912,
+  maxConcurrentUploads = 2,
 ) {
   const database = openApplicationDatabase(":memory:");
   databases.push(database);
@@ -110,6 +111,7 @@ async function createDocumentsApp(
     authService,
     documents: {
       emailLinksService: new EmailLinkExtractionService(),
+      maxConcurrentUploads,
       maxUploadBytes,
       previewService: new DocumentPreviewService(
         documentsRepository,
@@ -168,7 +170,102 @@ function responseDocument(response: request.Response): Record<string, unknown> {
   return body.document as Record<string, unknown>;
 }
 
+async function holdIncompleteUpload(
+  port: number,
+  cookie: string,
+  documentTypeId: string,
+): Promise<net.Socket> {
+  const boundary = "bounded-test-upload";
+  const prefix = Buffer.from(
+    `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="documentTypeId"\r\n\r\n' +
+      `${documentTypeId}\r\n` +
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="applicationIds"\r\n\r\n' +
+      "[]\r\n" +
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="held.txt"\r\n' +
+      "Content-Type: text/plain\r\n\r\n",
+  );
+  const socket = net.createConnection({ host: "127.0.0.1", port });
+  await once(socket, "connect");
+  socket.write(
+    "POST /api/documents HTTP/1.1\r\n" +
+      `Host: 127.0.0.1:${String(port)}\r\n` +
+      `Origin: http://127.0.0.1:${String(port)}\r\n` +
+      `Cookie: ${cookie.split(";", 1)[0] ?? cookie}\r\n` +
+      `Content-Type: multipart/form-data; boundary=${boundary}\r\n` +
+      `Content-Length: ${String(prefix.byteLength + 513)}\r\n` +
+      "Connection: keep-alive\r\n\r\n",
+  );
+  socket.write(prefix);
+  socket.write(Buffer.alloc(512, 0x41));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return socket;
+}
+
 describe("document routes", () => {
+  it("rejects a second upload before buffering it when capacity is full", async () => {
+    const { app, documentTypeId } = await createDocumentsApp(
+      1024,
+      1024,
+      536_870_912,
+      1,
+    );
+    const cookie = await login(app);
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+    const held = await holdIncompleteUpload(port, cookie, documentTypeId);
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${String(port)}/api/documents`,
+        {
+          body: (() => {
+            const form = new FormData();
+            form.set("documentTypeId", documentTypeId);
+            form.set("applicationIds", "[]");
+            form.set(
+              "file",
+              new Blob(["second upload"], { type: "text/plain" }),
+              "second.txt",
+            );
+            return form;
+          })(),
+          headers: {
+            Cookie: cookie.split(";", 1)[0] ?? cookie,
+            Origin: `http://127.0.0.1:${String(port)}`,
+          },
+          method: "POST",
+        },
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("retry-after")).toBe("1");
+      expect(await response.json()).toEqual({
+        error: { code: "document_upload_busy" },
+      });
+
+      const heldClosed = once(held, "close");
+      held.destroy();
+      await heldClosed;
+      await sameOrigin(request(app).post("/api/documents"))
+        .set("Cookie", cookie)
+        .field("documentTypeId", documentTypeId)
+        .field("applicationIds", "[]")
+        .attach("file", Buffer.from("released upload"), {
+          contentType: "text/plain",
+          filename: "released.txt",
+        })
+        .expect(201);
+    } finally {
+      held.destroy();
+      server.close();
+      await once(server, "close");
+    }
+  });
+
   it("returns a retryable response when preview worker capacity is full", async () => {
     const authService = {
       getActor: () => ({
@@ -461,3 +558,6 @@ describe("document routes", () => {
       .expect(400, { error: { code: "validation_error" } });
   });
 });
+import { once } from "node:events";
+import net from "node:net";
+import type { AddressInfo } from "node:net";

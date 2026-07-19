@@ -1,17 +1,19 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "../application/auth.js";
 import { createRemoteMcpRequestGuards } from "./mcp_http_limits.js";
 
-const actor: AuthenticatedActor = {
-  authenticated: true,
-  user: { displayName: "Alex", role: "admin", username: "alex" },
-  userId: "user-1",
-  workspace: { name: "Applications" },
-  workspaceId: "workspace-1",
-};
+function actor(actorId: string): AuthenticatedActor {
+  return {
+    authenticated: true,
+    user: { displayName: actorId, role: "admin", username: actorId },
+    userId: actorId,
+    workspace: { name: "Applications" },
+    workspaceId: "workspace-1",
+  };
+}
 
 function actorApp(
   guards: ReturnType<typeof createRemoteMcpRequestGuards>,
@@ -20,9 +22,10 @@ function actorApp(
   },
 ) {
   const app = express();
-  app.use((_request, response, next) => {
+  app.use((request, response, next) => {
+    const actorId = request.get("X-Test-Actor") ?? "user-1";
     response.locals.remoteMcpPrincipal = {
-      actor,
+      actor: actor(actorId),
       principalId: "client:test",
       workspaceSlug: "default",
     };
@@ -35,7 +38,8 @@ function actorApp(
 }
 
 const policy = {
-  maxConcurrentRequests: 1,
+  maxConcurrentRequests: 2,
+  maxConcurrentRequestsPerActor: 1,
   maxRequestBytes: 65_536,
   rateLimitRequests: 2,
   rateLimitWindowMs: 60_000,
@@ -88,17 +92,56 @@ describe("remote MCP request guard", () => {
 
     const first = request(app)
       .get("/")
+      .set("X-Test-Actor", "actor-a")
       .then((response) => response);
     await enteredPromise;
-    await request(app).get("/").expect(429);
+    await request(app).get("/").set("X-Test-Actor", "actor-a").expect(429);
+    await request(app).get("/").set("X-Test-Actor", "actor-b").expect(204);
     release?.();
     expect((await first).status).toBe(204);
-    await request(app).get("/").expect(204);
+    await request(app).get("/").set("X-Test-Actor", "actor-a").expect(204);
+  });
+
+  it("retains the installation-wide concurrency cap across actors", async () => {
+    const releases: Array<() => void> = [];
+    let entered = 0;
+    const app = actorApp(
+      createRemoteMcpRequestGuards({
+        ...policy,
+        rateLimitRequests: 10,
+      }),
+      async (_request, response) => {
+        entered += 1;
+        await new Promise<void>((resolve) => releases.push(resolve));
+        response.sendStatus(204);
+      },
+    );
+
+    const first = request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-a")
+      .then((response) => response);
+    const second = request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-b")
+      .then((response) => response);
+    await vi.waitFor(() => expect(entered).toBe(2));
+
+    await request(app).get("/").set("X-Test-Actor", "actor-c").expect(429);
+    releases.splice(0).forEach((release) => release());
+    expect((await first).status).toBe(204);
+    expect((await second).status).toBe(204);
   });
 
   it("rejects an invalid policy at construction", () => {
     expect(() =>
       createRemoteMcpRequestGuards({ ...policy, maxConcurrentRequests: 0 }),
+    ).toThrow("Invalid remote MCP request policy");
+    expect(() =>
+      createRemoteMcpRequestGuards({
+        ...policy,
+        maxConcurrentRequestsPerActor: policy.maxConcurrentRequests,
+      }),
     ).toThrow("Invalid remote MCP request policy");
   });
 });

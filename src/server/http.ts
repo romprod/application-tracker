@@ -89,6 +89,9 @@ async function startApplication(): Promise<void> {
         absoluteDurationMs: config.session.absoluteDurationMs,
         dummyPasswordHash,
         idleDurationMs: config.session.idleDurationMs,
+        loginAttemptLimit: config.session.loginAttemptLimit,
+        loginAttemptMaxTrackedKeys: config.session.loginAttemptMaxTrackedKeys,
+        loginAttemptWindowMs: config.session.loginAttemptWindowMs,
         maxConcurrentVerifications: config.session.maxConcurrentVerifications,
         refreshIntervalMs: config.session.refreshIntervalMs,
       },
@@ -192,6 +195,7 @@ async function startApplication(): Promise<void> {
       authService,
       documents: {
         emailLinksService: new EmailLinkExtractionService(),
+        maxConcurrentUploads: config.documents.maxConcurrentUploads,
         maxUploadBytes: config.documents.maxUploadBytes,
         previewService: documentPreviewService,
         service: documentsService,
