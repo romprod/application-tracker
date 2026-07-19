@@ -1,5 +1,5 @@
 import compression from "compression";
-import express, { type Express } from "express";
+import express, { type Express, type Router } from "express";
 import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
@@ -33,6 +33,7 @@ export interface AppOptions {
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
   mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
+  remoteMcpRouter?: Router;
   referenceValuesService?: ReferenceValuesService;
   setupService?: SetupService;
   staticRoot?: string;
@@ -65,6 +66,10 @@ export function createApp(options: AppOptions = {}): Express {
         options.mcpProtectedResourceMetadata,
       ),
     );
+  }
+
+  if (options.remoteMcpRouter) {
+    app.use("/mcp", options.remoteMcpRouter);
   }
 
   if (options.authService && options.applicationsService) {

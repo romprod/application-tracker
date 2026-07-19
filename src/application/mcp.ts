@@ -25,6 +25,11 @@ export interface LocalMcpActorRepository {
   ): AuthenticatedActor | undefined;
 }
 
+export interface McpActorProvider {
+  getActor(): AuthenticatedActor;
+  getWorkspaceSlug(): string;
+}
+
 export interface McpApplicationsReader {
   listApplicationEvents(
     actor: AuthenticatedActor,
@@ -150,7 +155,7 @@ function applicationSummary(
 
 export class LocalMcpReadService implements LocalMcpTools {
   public constructor(
-    private readonly actorProvider: LocalMcpActorProvider,
+    private readonly actorProvider: McpActorProvider,
     private readonly applications: McpApplicationsReader,
     private readonly referenceValues: McpReferenceValuesReader,
     private readonly clock: () => Date = () => new Date(),

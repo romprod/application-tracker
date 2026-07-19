@@ -98,4 +98,14 @@ describe("McpStatusService", () => {
       true,
     );
   });
+
+  it("reports the remote transport ready only when its endpoint is available", () => {
+    const provider = new ApplicationMcpRuntimeStatusProvider(
+      undefined,
+      undefined,
+      { isAvailable: () => true },
+    );
+
+    expect(provider.snapshot("workspace-1").remoteTransportState).toBe("ready");
+  });
 });

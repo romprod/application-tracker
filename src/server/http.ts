@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
+import { LocalMcpReadService } from "../application/mcp.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
   McpStatusService,
@@ -29,6 +30,8 @@ import { SqliteUsersRepository } from "../infrastructure/database/users_reposito
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
+import { RemoteMcpHttpEndpoint } from "./mcp_http_endpoint.js";
+import { createReadOnlyMcpServer } from "./mcp_server.js";
 import { McpSessionRuntime } from "./mcp_session_runtime.js";
 
 const logger = createJsonLogger();
@@ -91,11 +94,42 @@ async function startApplication(): Promise<void> {
       ),
       logger,
     );
+    const remoteMcpEndpoint =
+      config.mcp.remote && config.mcp.oauth && remoteMcpAuthorization
+        ? new RemoteMcpHttpEndpoint({
+            authorizer: remoteMcpAuthorization,
+            createServer: (actorProvider, actor) =>
+              createReadOnlyMcpServer(
+                new LocalMcpReadService(
+                  actorProvider,
+                  applicationsService,
+                  referenceValuesService,
+                ),
+                {
+                  audit: {
+                    actorUserId: actor.userId,
+                    recorder: mcpAuditService,
+                    transport: "remote_http",
+                    workspaceId: actor.workspaceId,
+                  },
+                  instructions:
+                    "This authenticated remote server provides read-only access to the actor's Application Tracker workspace. Call get_tracker_context before using workspace data.",
+                  logger,
+                },
+              ),
+            logger,
+            network: config.mcp.remote,
+            requiredScope: config.mcp.oauth.requiredScope,
+            sessions: mcpSessionRegistry,
+            workspaceSlug: config.mcp.oauth.workspaceSlug,
+          })
+        : undefined;
     const mcpStatusService = new McpStatusService(
       config.mcp.session,
       new ApplicationMcpRuntimeStatusProvider(
         mcpSessionRegistry,
         remoteMcpAuthorization,
+        remoteMcpEndpoint,
       ),
       mcpAuditService,
     );
@@ -121,6 +155,9 @@ async function startApplication(): Promise<void> {
           }
         : {}),
       mcpStatusService,
+      ...(remoteMcpEndpoint
+        ? { remoteMcpRouter: remoteMcpEndpoint.router() }
+        : {}),
       referenceValuesService,
       setupService,
       usersService,

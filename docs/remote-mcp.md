@@ -1,7 +1,7 @@
 # Remote MCP
 
 Remote Model Context Protocol access uses one authenticated Streamable HTTP
-endpoint. A fresh installation exposes no remote MCP route.
+endpoint at `/mcp`. A fresh installation exposes no remote MCP route.
 
 ## Network configuration
 
@@ -21,8 +21,8 @@ Origin values contain only an HTTPS scheme and authority.
 
 Startup rejects partial settings, duplicate entries, embedded credentials,
 query strings, fragments, insecure origins, and remote URLs on another path.
-These checks prepare the network boundary; they do not enable the MCP endpoint
-on their own.
+When every network and OAuth setting is valid, the server installs the endpoint
+and the administrator MCP status view reports the remote transport as ready.
 
 ## Authorization discovery
 
@@ -51,3 +51,16 @@ OAuth challenges include the protected-resource metadata URL and exact required
 scope. They omit error descriptions, identity details, and verifier failures.
 The server passes only the resolved local actor to downstream handlers and does
 not retain or echo the bearer token.
+
+## Session and tool behavior
+
+Clients initialize a stateful MCP session and send its opaque `MCP-Session-Id`
+on subsequent `GET`, `POST`, and `DELETE` requests. Each session is bound to the
+resolved user and workspace; another authenticated actor receives the same
+not-found response as an unknown session. Session admission, idle expiry,
+absolute expiry, and shutdown cleanup use the limits shown in the administrator
+MCP status view.
+
+The remote endpoint exposes the same five read-only tools as the local stdio
+server. Every tool call records the actor, workspace, result, target type, and
+`remote_http` transport. The endpoint never accepts an application mutation.

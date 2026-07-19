@@ -12,6 +12,7 @@ import type {
   McpAuditRecorder,
   McpAuditResult,
   McpAuditTargetType,
+  McpAuditTransport,
 } from "../application/mcp_audit.js";
 import { applicationIdSchema } from "../domain/applications.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
@@ -141,19 +142,26 @@ function failedToolResult(code: string): CallToolResult {
   };
 }
 
-interface LocalMcpAuditOptions {
+interface McpServerAuditOptions {
   actorUserId: string;
   recorder: McpAuditRecorder;
+  transport: McpAuditTransport;
   workspaceId: string;
 }
 
+interface ReadOnlyMcpServerOptions {
+  audit?: McpServerAuditOptions;
+  instructions: string;
+  logger?: ApplicationLogger;
+}
+
 interface LocalMcpServerOptions {
-  audit?: LocalMcpAuditOptions;
+  audit?: Omit<McpServerAuditOptions, "transport">;
   logger?: ApplicationLogger;
 }
 
 function recordAuditEvent(
-  audit: LocalMcpAuditOptions | undefined,
+  audit: McpServerAuditOptions | undefined,
   logger: ApplicationLogger,
   tool: McpAuditAction,
   targetType: McpAuditTargetType,
@@ -166,7 +174,7 @@ function recordAuditEvent(
       actorUserId: audit.actorUserId,
       result,
       targetType,
-      transport: "local_stdio",
+      transport: audit.transport,
       workspaceId: audit.workspaceId,
     });
     return true;
@@ -180,7 +188,7 @@ function executeTool(
   tool: McpAuditAction,
   targetType: McpAuditTargetType,
   logger: ApplicationLogger,
-  audit: LocalMcpAuditOptions | undefined,
+  audit: McpServerAuditOptions | undefined,
   operation: () => object,
 ): CallToolResult {
   try {
@@ -205,16 +213,15 @@ function executeTool(
   }
 }
 
-export function createLocalMcpServer(
+export function createReadOnlyMcpServer(
   tools: LocalMcpTools,
-  options: LocalMcpServerOptions = {},
+  options: ReadOnlyMcpServerOptions,
 ): McpServer {
   const logger = options.logger ?? noOpLogger;
   const server = new McpServer(
     { name: "application-tracker", version: "0.1.0" },
     {
-      instructions:
-        "This local server is bound to one operator-selected actor and workspace. All tools are read-only. Call get_tracker_context before using workspace data.",
+      instructions: options.instructions,
     },
   );
 
@@ -322,4 +329,18 @@ export function createLocalMcpServer(
   );
 
   return server;
+}
+
+export function createLocalMcpServer(
+  tools: LocalMcpTools,
+  options: LocalMcpServerOptions = {},
+): McpServer {
+  return createReadOnlyMcpServer(tools, {
+    ...(options.audit
+      ? { audit: { ...options.audit, transport: "local_stdio" } }
+      : {}),
+    instructions:
+      "This local server is bound to one operator-selected actor and workspace. All tools are read-only. Call get_tracker_context before using workspace data.",
+    ...(options.logger ? { logger: options.logger } : {}),
+  });
 }

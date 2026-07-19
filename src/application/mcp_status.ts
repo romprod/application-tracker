@@ -31,6 +31,10 @@ export interface McpOAuthAuthorizationProvider {
   authorize(token: string): Promise<AuthenticatedActor>;
 }
 
+export interface McpRemoteTransportCapability {
+  isAvailable(): boolean;
+}
+
 export interface McpStatus {
   availability: McpRuntimeSnapshot["availability"];
   capabilities: {
@@ -73,6 +77,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       sessionCounts: () => ({ active: 0, initializing: 0 }),
     },
     private readonly oauthAuthorization?: McpOAuthAuthorizationProvider,
+    private readonly remoteTransport?: McpRemoteTransportCapability,
   ) {}
 
   public snapshot(workspaceId: string): McpRuntimeSnapshot {
@@ -85,7 +90,9 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       localTransportState: "ready",
       oauthVerificationAvailable: this.oauthAuthorization !== undefined,
       registeredTools: localMcpToolNames.length,
-      remoteTransportState: "disabled",
+      remoteTransportState: this.remoteTransport?.isAvailable()
+        ? "ready"
+        : "disabled",
       sessionEnforcement: "active",
     };
   }
