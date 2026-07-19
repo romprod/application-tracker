@@ -111,7 +111,15 @@ digest. Workspace-owned `documents` rows retain the original filename, media
 type, active document-type reference, uploader, and creation time.
 `application_documents` links a document to active applications in the same
 workspace. An immediate transaction stores bytes, metadata, and associations
-together. See [`documents.md`](documents.md).
+together. The same transaction checks cumulative workspace and installation
+byte and document-count quotas before inserting any row. See
+[`documents.md`](documents.md).
+
+The twelfth migration adds workspace-scoped, parser-versioned document preview
+records. Each row stores bounded plain text, its media type, truncation state,
+and generation time. A composite foreign key ties the cache entry to its
+document and removes it when the document is deleted. See
+[`documents.md`](documents.md).
 
 ## Backup and restore
 

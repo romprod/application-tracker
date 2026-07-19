@@ -26,7 +26,7 @@
 
 - No default password or open first-user race
 - Memory-hard, versioned password verification parameters
-- Rate limits for setup and login attempts
+- Rate limits for setup attempts and fail-fast login-verification concurrency
 - Random session tokens stored only as hashes
 - Secure, HTTP-only, same-site cookies with idle and absolute expiry
 - Session rotation after authentication and privilege changes
@@ -65,6 +65,7 @@
 - Per-actor and global session limits
 - Idle timeout, absolute lifetime, explicit close, and shutdown cleanup
 - Request size, concurrency, and rate limits
+- One size-limited `application/json` parser and single-message JSON-RPC policy
 - Sanitized status that omits tokens, subjects, hostnames, and internal errors
 
 The server can verify signed JWT access tokens against a configured HTTPS JWKS,
@@ -80,8 +81,10 @@ resource metadata, checks the Host and optional Origin, verifies the bearer
 token, resolves an active local membership, and then admits a session.
 Initializing reservations consume capacity before asynchronous setup begins.
 The request boundary caps JSON size, global concurrent work, and requests per
-resolved actor. Sessions use idle and absolute expiry and remain bound to their
-original actor and workspace.
+resolved actor. It rejects unsupported media types and JSON-RPC batches before
+protocol dispatch so envelope accounting and tool accounting cannot diverge.
+Sessions use idle and absolute expiry and remain bound to their original actor
+and workspace.
 
 The administrator-only MCP status endpoint reports protocol readiness, remote
 registry counts, and policy values. It never reports addresses, identity
@@ -93,14 +96,23 @@ claims, secret material, database paths, or internal errors. See
 - Session and workspace authorization for metadata and original bytes
 - Same-host origin checks before multipart parsing
 - One bounded file, bounded metadata fields, and a configurable size limit
+- Transactional workspace and installation byte and document-count quotas
 - Server-calculated SHA-256 digests and transactional deduplication
 - Attachment-only downloads with sandbox and `nosniff` headers
 - Original download independent from preview support
+- Exact allowlist of plain-text preview media types
+- Preview input, output, memory, stack, and wall-clock limits
+- Same-key preview coalescing and process-wide worker admission
+- Preview parsing in disposable worker threads outside the HTTP event loop
+- Parser-versioned, workspace-scoped plain-text preview cache
+- Bounded, no-network email-link extraction with explicit user selection
 
-Preview workers remain future work. Before the server parses a document, that
-boundary must add archive-entry, nesting, compression-ratio, decoded-output,
-wall-clock, and memory limits. Parsers must run outside the HTTP event loop and
-terminate when a limit expires.
+The preview worker decodes only five explicitly supported plain-text media
+types. It rejects binary-looking output and returns text that the browser
+renders without HTML interpretation. The supervisor terminates the worker on
+completion, invalid output, runtime failure, or timeout. PDF, Office, archive,
+HTML rendering, archive-entry traversal, decompression, and attachment parsing
+remain outside this boundary.
 
 ### Data and operations
 

@@ -106,3 +106,9 @@ The rate limit uses the resolved local actor ID, never an unverified subject,
 token string, or client-supplied workspace. Limited requests return `429` with
 `Retry-After`; oversized JSON returns `413`. Startup rejects values outside the
 documented safe ranges.
+
+Every `POST` must use `Content-Type: application/json` (parameters such as a
+charset are allowed). Lookalike media types are rejected with `415` before body
+parsing, and every accepted body passes through the configured size-limited
+parser. The product accepts one JSON-RPC message per HTTP request; arrays are
+rejected with `400` before session transport, tool execution, or audit writes.

@@ -30,8 +30,8 @@ flowchart LR
   MCPStdio --> UseCases
   UseCases --> Repositories["Repository interfaces"]
   Repositories --> SQLite[("SQLite")]
-  UseCases -. future .-> PreviewQueue["Preview supervisor"]
-  PreviewQueue -. future .-> Worker["Resource-limited parser worker"]
+  UseCases --> PreviewQueue["Preview supervisor"]
+  PreviewQueue --> Worker["Resource-limited parser worker"]
 ```
 
 ## Database contract
@@ -70,7 +70,8 @@ The schema separates:
 - workspaces, users, credentials, memberships, sessions, and external identities
 - applications, ordered contacts and links, audited deletion state, immutable
   creation or stage-transition events, and workspace reference values
-- file objects, document metadata, and application-document associations
+- file objects, document metadata, application-document associations, and
+  parser-versioned plain-text preview caches
 - administrative settings and security audit events
 
 Every query that returns workspace data accepts a workspace identifier. Dynamic

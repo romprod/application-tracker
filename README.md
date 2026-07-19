@@ -17,7 +17,7 @@ stdio and authenticated HTTPS.
 - All application data belongs to an explicit workspace.
 - Administrative settings require an administrator role.
 - MCP clients receive the same validation and authorization as the website.
-- Any future document parsing must run behind strict resource limits.
+- Document parsing runs outside the HTTP event loop with strict resource limits.
 - Public source contains no deployment identity, credentials, or private
   infrastructure details.
 
@@ -30,6 +30,7 @@ be added in a small, testable commit.
 
 - Application pipeline, events, contacts, links, notes, and due actions
 - Original document records with application associations and deduplication
+- Resource-limited plain-text previews and bounded email-link extraction
 - Configurable statuses, sources, role types, and document types
 - Local users with administrator and member roles
 - Administrator-managed external identity linking for remote MCP
@@ -57,7 +58,13 @@ and stage changes. Application removal is workspace-scoped and audited without
 erasing that timeline. Workspace administrators can configure statuses,
 sources, role types, and document types. A document library stores exact
 originals, deduplicates their bytes by SHA-256, links them to applications, and
-serves authorized attachment downloads. Operator commands provide online
+serves authorized attachment downloads. It generates cached plain-text
+previews for five explicitly supported media types in isolated worker threads,
+coalesces duplicate work, and applies process-wide worker admission. Cumulative
+workspace and installation quotas bound document bytes and record counts.
+Application editors can extract likely job links from bounded pasted email
+content or a local `.eml` file, review the candidates, and add selected links;
+the server does not store the email body. Operator commands provide online
 SQLite backup, verification, and non-overwriting restore. API failures use
 stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
@@ -67,12 +74,13 @@ An optional Streamable HTTP endpoint exposes the same tools over HTTPS. It
 validates OAuth tokens, maps external identities to active local memberships,
 binds each session to its actor and workspace, and enforces network, session,
 request-size, concurrency, and rate limits. The endpoint stays absent until the
-operator supplies every remote and OAuth setting. Administrators link an exact
+operator supplies every remote and OAuth setting, accepts only size-limited
+`application/json`, and rejects JSON-RPC batches before tool dispatch.
+Administrators link an exact
 provider subject to an existing local user from Settings → Users; removing the
 link immediately prevents that identity from resolving for new remote requests.
-The app does not yet provide document previews, email-link extraction, OpenID
-Connect browser login, or mutating MCP tools. Automated tests and CI cover each
-completed boundary.
+The app does not yet provide OpenID Connect browser login or mutating MCP tools.
+Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 
