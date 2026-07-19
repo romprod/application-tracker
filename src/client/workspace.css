@@ -1402,6 +1402,13 @@
   gap: 4px;
 }
 
+.tracker-repeater-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .tracker-repeater-heading strong {
   font-size: 12px;
 }
@@ -1432,6 +1439,150 @@
 
 .tracker-repeater-remove:hover {
   text-decoration: underline;
+}
+
+.tracker-email-import {
+  padding: 20px;
+  background: #e9ede5;
+  border: 1px solid #cbd4c9;
+  border-left: 3px solid var(--tracker-green-light);
+}
+
+.tracker-email-import-heading,
+.tracker-email-import-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tracker-email-import-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.tracker-email-import-heading strong,
+.tracker-email-candidates > strong {
+  color: var(--tracker-ink);
+  font-size: 12px;
+}
+
+.tracker-email-import-heading small {
+  color: var(--tracker-ink-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.tracker-email-import-heading > button {
+  color: var(--tracker-ink-soft);
+  font-size: 22px;
+  background: transparent;
+  border: 0;
+}
+
+.tracker-email-import .field {
+  padding-bottom: 14px;
+  border: 0;
+}
+
+.tracker-email-import .field > span {
+  margin-bottom: 9px;
+  color: var(--tracker-ink-soft);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tracker-email-import-controls {
+  align-items: center;
+}
+
+.tracker-email-import-controls > label {
+  position: relative;
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 13px;
+  color: var(--tracker-green);
+  font-size: 10px;
+  font-weight: 720;
+  background: #fffdf7;
+  border: 1px solid var(--tracker-line);
+  cursor: pointer;
+}
+
+.tracker-email-import-controls input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.tracker-email-import-controls > span {
+  flex: 1;
+  overflow: hidden;
+  color: var(--tracker-ink-soft);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tracker-email-import .form-error {
+  margin-top: 14px;
+}
+
+.tracker-email-candidates {
+  display: grid;
+  gap: 8px;
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid #cbd4c9;
+}
+
+.tracker-email-candidates > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fffdf7;
+  border: 1px solid var(--tracker-line);
+}
+
+.tracker-email-candidates input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--tracker-green);
+}
+
+.tracker-email-candidates label > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tracker-email-candidates label strong,
+.tracker-email-candidates label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tracker-email-candidates label strong {
+  color: var(--tracker-green);
+  font-size: 10px;
+}
+
+.tracker-email-candidates label small {
+  color: var(--tracker-ink-soft);
+  font-size: 8px;
+}
+
+.tracker-email-candidates > .tracker-button {
+  justify-self: end;
+  margin-top: 4px;
 }
 
 .tracker-modal .field label {
@@ -2158,6 +2309,22 @@
 
   .tracker-repeater-heading .tracker-button {
     align-self: flex-start;
+  }
+
+  .tracker-repeater-actions,
+  .tracker-repeater-actions .tracker-button,
+  .tracker-email-import-controls {
+    width: 100%;
+  }
+
+  .tracker-email-import-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tracker-email-import-controls > label,
+  .tracker-email-import-controls .tracker-button {
+    justify-content: center;
   }
 
   .tracker-modal-header,

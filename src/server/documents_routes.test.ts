@@ -5,6 +5,7 @@ import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
+import { EmailLinkExtractionService } from "../application/email_links.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
@@ -98,6 +99,7 @@ async function createDocumentsApp(
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
     documents: {
+      emailLinksService: new EmailLinkExtractionService(),
       maxUploadBytes,
       previewService: new DocumentPreviewService(
         documentsRepository,
@@ -364,6 +366,39 @@ describe("document routes", () => {
     await request(app)
       .get("/api/documents/not-a-document/preview")
       .set("Cookie", cookie)
+      .expect(400, { error: { code: "validation_error" } });
+  });
+
+  it("extracts bounded job links only for authenticated same-origin requests", async () => {
+    const { app } = await createDocumentsApp();
+    const cookie = await login(app);
+    const content = [
+      "Apply: https://boards.greenhouse.io/example/jobs/123",
+      "Ignore: https://example.com/unsubscribe",
+    ].join("\n");
+
+    await sameOrigin(request(app).post("/api/documents/email-links/extract"))
+      .set("Cookie", cookie)
+      .send({ content })
+      .expect(200, {
+        links: [
+          {
+            host: "boards.greenhouse.io",
+            url: "https://boards.greenhouse.io/example/jobs/123",
+          },
+        ],
+      });
+    await request(app)
+      .post("/api/documents/email-links/extract")
+      .set("Cookie", cookie)
+      .send({ content })
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await sameOrigin(request(app).post("/api/documents/email-links/extract"))
+      .send({ content })
+      .expect(401, { error: { code: "authentication_required" } });
+    await sameOrigin(request(app).post("/api/documents/email-links/extract"))
+      .set("Cookie", cookie)
+      .send({ content: "x".repeat(200_001) })
       .expect(400, { error: { code: "validation_error" } });
   });
 });

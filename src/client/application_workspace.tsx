@@ -25,9 +25,11 @@ import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
+import type { EmailLinksClient } from "./email_links_client";
 
 export function ApplicationWorkspace({
   applicationsClient,
+  emailLinksClient,
   error,
   navigate,
   notice: initialNotice,
@@ -36,6 +38,7 @@ export function ApplicationWorkspace({
   session,
 }: {
   applicationsClient: ApplicationsClient;
+  emailLinksClient: EmailLinksClient;
   error?: string;
   navigate: (page: "applications" | "overview") => void;
   notice?: string;
@@ -281,6 +284,7 @@ export function ApplicationWorkspace({
         <ApplicationDialog
           key={`${formMode}-${editingApplication?.id ?? "new"}`}
           application={editingApplication}
+          emailLinksClient={emailLinksClient}
           error={formError}
           mode={formMode}
           onClose={closeForm}

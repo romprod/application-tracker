@@ -2,6 +2,7 @@ import { Router, type Request, type RequestHandler } from "express";
 import multer, { MulterError } from "multer";
 
 import type { AuthenticatedActor } from "../application/auth.js";
+import type { EmailLinkExtractionService } from "../application/email_links.js";
 import {
   DocumentPreviewInputLimitError,
   DocumentPreviewParseError,
@@ -19,9 +20,11 @@ import {
   documentIdSchema,
   documentUploadMetadataSchema,
 } from "../domain/documents.js";
+import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { requestSessionToken } from "./auth_routes.js";
 
 export interface DocumentsRouteOptions {
+  emailLinksService: EmailLinkExtractionService;
   maxUploadBytes: number;
   previewService: DocumentPreviewService;
   service: DocumentLibraryService;
@@ -151,6 +154,15 @@ export function createDocumentsRouter(
       documents: options.service.listDocuments(authenticatedActor(response)),
       maxUploadBytes: options.maxUploadBytes,
     });
+  });
+
+  router.post("/email-links/extract", (request, response) => {
+    const parsed = emailLinkExtractionInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    response.json({ links: options.emailLinksService.extract(parsed.data) });
   });
 
   router.post(

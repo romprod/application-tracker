@@ -6,6 +6,7 @@ import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
+import { EmailLinkExtractionService } from "../application/email_links.js";
 import { LocalMcpReadService } from "../application/mcp.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
@@ -163,6 +164,7 @@ async function startApplication(): Promise<void> {
       },
       authService,
       documents: {
+        emailLinksService: new EmailLinkExtractionService(),
         maxUploadBytes: config.documents.maxUploadBytes,
         previewService: documentPreviewService,
         service: documentsService,

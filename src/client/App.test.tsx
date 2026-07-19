@@ -27,6 +27,7 @@ import type {
   ReferenceValuesClient,
 } from "./reference_values_client";
 import type { DocumentRecord, DocumentsClient } from "./documents_client";
+import type { EmailLinksClient } from "./email_links_client";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -424,6 +425,19 @@ function createDocumentsClient(documents: DocumentRecord[] = [documentRecord]) {
   } satisfies DocumentsClient;
 }
 
+function createEmailLinksClient() {
+  return {
+    extractJobLinks: vi
+      .fn<EmailLinksClient["extractJobLinks"]>()
+      .mockResolvedValue([
+        {
+          host: "boards.greenhouse.io",
+          url: "https://boards.greenhouse.io/example/jobs/123",
+        },
+      ]),
+  } satisfies EmailLinksClient;
+}
+
 describe("application shell", () => {
   it("asks an unauthenticated user to sign in after setup", async () => {
     render(
@@ -787,6 +801,60 @@ describe("application shell", () => {
         roleTitle: "Product Designer",
         statusId: "77777777-7777-4777-8777-777777777777",
       }),
+    );
+  });
+
+  it("imports selected job links from bounded email content", async () => {
+    const emailLinksClient = createEmailLinksClient();
+    render(
+      <App
+        applicationsClient={createApplicationsClient([])}
+        authClient={createAuthClient(authenticatedSession)}
+        emailLinksClient={emailLinksClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    await screen.findByRole("option", { name: "Prospect" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Log application" })[0]!,
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Log an application",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Import from email" }),
+    );
+    fireEvent.change(within(dialog).getByLabelText("Email content"), {
+      target: {
+        value: "Apply at https://boards.greenhouse.io/example/jobs/123 today.",
+      },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Scan email" }));
+
+    expect(
+      await within(dialog).findByRole("checkbox", {
+        name: /boards\.greenhouse\.io/,
+      }),
+    ).toBeChecked();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add selected links" }),
+    );
+    expect(
+      within(dialog).getByLabelText("Additional link 1 label"),
+    ).toHaveValue("Job posting · boards.greenhouse.io");
+    expect(within(dialog).getByLabelText("Additional link 1 URL")).toHaveValue(
+      "https://boards.greenhouse.io/example/jobs/123",
+    );
+    expect(emailLinksClient.extractJobLinks).toHaveBeenCalledWith(
+      "Apply at https://boards.greenhouse.io/example/jobs/123 today.",
     );
   });
 

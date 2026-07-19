@@ -17,6 +17,10 @@ import {
 } from "./documents_client";
 import { DocumentsWorkspace } from "./documents_workspace";
 import {
+  browserEmailLinksClient,
+  type EmailLinksClient,
+} from "./email_links_client";
+import {
   browserMcpStatusClient,
   type McpStatus,
   type McpStatusClient,
@@ -68,6 +72,7 @@ interface AppProps {
   applicationsClient?: ApplicationsClient;
   authClient?: AuthClient;
   documentsClient?: DocumentsClient;
+  emailLinksClient?: EmailLinksClient;
   mcpStatusClient?: McpStatusClient;
   referenceValuesClient?: ReferenceValuesClient;
   setupClient?: SetupClient;
@@ -78,6 +83,7 @@ export function App({
   applicationsClient = browserApplicationsClient,
   authClient = browserAuthClient,
   documentsClient = browserDocumentsClient,
+  emailLinksClient = browserEmailLinksClient,
   mcpStatusClient = browserMcpStatusClient,
   referenceValuesClient = browserReferenceValuesClient,
   setupClient = browserSetupClient,
@@ -229,6 +235,7 @@ export function App({
           (view.page === "overview" || view.page === "applications") && (
             <ApplicationWorkspace
               applicationsClient={applicationsClient}
+              emailLinksClient={emailLinksClient}
               page={view.page}
               referenceValuesClient={referenceValuesClient}
               session={view.session}

@@ -20,6 +20,11 @@ import {
 } from "./application_table";
 import { dueLabel } from "./application_next_action";
 import type { ReferenceValue } from "./reference_values_client";
+import {
+  EmailLinksClientError,
+  type EmailLinkCandidate,
+  type EmailLinksClient,
+} from "./email_links_client";
 
 export interface ApplicationFormState {
   appliedOn: string;
@@ -540,6 +545,7 @@ export function DeleteApplicationDialog({
 
 export function ApplicationDialog({
   application,
+  emailLinksClient,
   error,
   mode,
   onClose,
@@ -548,6 +554,7 @@ export function ApplicationDialog({
   submitting,
 }: {
   application: ApplicationRecord | undefined;
+  emailLinksClient: EmailLinksClient;
   error: string | undefined;
   mode: "create" | "edit";
   onClose: () => void;
@@ -560,6 +567,15 @@ export function ApplicationDialog({
       ? applicationForm(application)
       : emptyApplicationForm(referenceValues),
   );
+  const [emailImportOpen, setEmailImportOpen] = useState(false);
+  const [emailContent, setEmailContent] = useState("");
+  const [emailFilename, setEmailFilename] = useState<string>();
+  const [emailCandidates, setEmailCandidates] = useState<EmailLinkCandidate[]>(
+    [],
+  );
+  const [selectedEmailLinks, setSelectedEmailLinks] = useState<string[]>([]);
+  const [emailImportError, setEmailImportError] = useState<string>();
+  const [scanningEmail, setScanningEmail] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, "#application-company");
   const title = mode === "create" ? "Log an application" : "Edit application";
@@ -604,6 +620,64 @@ export function ApplicationDialog({
         linkIndex === index ? { ...link, [field]: value } : link,
       ),
     }));
+  }
+
+  function scanEmail() {
+    if (emailContent.length === 0) {
+      setEmailImportError("Paste email content or choose a small .eml file.");
+      return;
+    }
+    if (emailContent.length > 200_000) {
+      setEmailImportError("Email content must be 200,000 characters or less.");
+      return;
+    }
+    setScanningEmail(true);
+    setEmailImportError(undefined);
+    setEmailCandidates([]);
+    setSelectedEmailLinks([]);
+    void emailLinksClient
+      .extractJobLinks(emailContent)
+      .then((links) => {
+        setEmailCandidates(links);
+        setSelectedEmailLinks(links.map(({ url }) => url));
+        if (links.length === 0) {
+          setEmailImportError("No likely job links were found in that email.");
+        }
+        setScanningEmail(false);
+      })
+      .catch((caught: unknown) => {
+        setEmailImportError(
+          caught instanceof EmailLinksClientError &&
+            caught.code === "validation_error"
+            ? "Email content must be between 1 and 200,000 characters."
+            : "The email could not be scanned. Please try again.",
+        );
+        setScanningEmail(false);
+      });
+  }
+
+  function addSelectedEmailLinks() {
+    const existing = new Set(form.links.map(({ url }) => url));
+    const available = Math.max(0, 10 - form.links.length);
+    const additions = emailCandidates
+      .filter(
+        ({ url }) => selectedEmailLinks.includes(url) && !existing.has(url),
+      )
+      .slice(0, available)
+      .map(({ host, url }) => ({
+        label: `Job posting · ${host}`.slice(0, 80),
+        url,
+      }));
+    setForm((current) => ({
+      ...current,
+      links: [...current.links, ...additions],
+    }));
+    setEmailImportOpen(false);
+    setEmailContent("");
+    setEmailFilename(undefined);
+    setEmailCandidates([]);
+    setSelectedEmailLinks([]);
+    setEmailImportError(undefined);
   }
 
   return (
@@ -907,20 +981,151 @@ export function ApplicationDialog({
                   <strong>Additional links</strong>
                   <small>Interview details, profiles, or hiring portals</small>
                 </div>
-                <button
-                  className="tracker-button tracker-button-quiet"
-                  disabled={form.links.length >= 10}
-                  onClick={() =>
-                    setForm((current) => ({
-                      ...current,
-                      links: [...current.links, { label: "", url: "" }],
-                    }))
-                  }
-                  type="button"
-                >
-                  Add additional link
-                </button>
+                <div className="tracker-repeater-actions">
+                  <button
+                    className="tracker-button tracker-button-quiet"
+                    disabled={form.links.length >= 10}
+                    onClick={() => {
+                      setEmailImportOpen((current) => !current);
+                      setEmailImportError(undefined);
+                    }}
+                    type="button"
+                  >
+                    Import from email
+                  </button>
+                  <button
+                    className="tracker-button tracker-button-quiet"
+                    disabled={form.links.length >= 10}
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        links: [...current.links, { label: "", url: "" }],
+                      }))
+                    }
+                    type="button"
+                  >
+                    Add additional link
+                  </button>
+                </div>
               </div>
+              {emailImportOpen && (
+                <div className="tracker-email-import">
+                  <div className="tracker-email-import-heading">
+                    <div>
+                      <strong>Find job links in an email</strong>
+                      <small>
+                        The message is scanned only for likely job URLs and is
+                        never stored.
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Close email link importer"
+                      onClick={() => setEmailImportOpen(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <label className="field tracker-form-wide">
+                    <span>Email content</span>
+                    <textarea
+                      maxLength={200_000}
+                      rows={5}
+                      value={emailContent}
+                      onChange={(event) => {
+                        setEmailContent(event.target.value);
+                        setEmailFilename(undefined);
+                        setEmailImportError(undefined);
+                      }}
+                    />
+                  </label>
+                  <div className="tracker-email-import-controls">
+                    <label>
+                      Choose .eml file
+                      <input
+                        accept=".eml,message/rfc822,text/plain"
+                        type="file"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 200_000) {
+                            setEmailImportError(
+                              "Choose an .eml file no larger than 200 KB.",
+                            );
+                            return;
+                          }
+                          void file
+                            .text()
+                            .then((content) => {
+                              if (content.length > 200_000) {
+                                setEmailImportError(
+                                  "Decoded email content must be 200,000 characters or less.",
+                                );
+                                return;
+                              }
+                              setEmailContent(content);
+                              setEmailFilename(file.name);
+                              setEmailImportError(undefined);
+                            })
+                            .catch(() => {
+                              setEmailImportError(
+                                "The .eml file could not be read.",
+                              );
+                            });
+                        }}
+                      />
+                    </label>
+                    {emailFilename && <span>{emailFilename}</span>}
+                    <button
+                      className="tracker-button tracker-button-primary"
+                      disabled={scanningEmail}
+                      type="button"
+                      onClick={scanEmail}
+                    >
+                      {scanningEmail ? "Scanning…" : "Scan email"}
+                    </button>
+                  </div>
+                  {emailImportError && (
+                    <p className="form-error" role="alert">
+                      {emailImportError}
+                    </p>
+                  )}
+                  {emailCandidates.length > 0 && (
+                    <div className="tracker-email-candidates">
+                      <strong>Choose links to add</strong>
+                      {emailCandidates.map((candidate) => (
+                        <label key={candidate.url}>
+                          <input
+                            type="checkbox"
+                            checked={selectedEmailLinks.includes(candidate.url)}
+                            onChange={() =>
+                              setSelectedEmailLinks((current) =>
+                                current.includes(candidate.url)
+                                  ? current.filter(
+                                      (url) => url !== candidate.url,
+                                    )
+                                  : [...current, candidate.url],
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{candidate.host}</strong>
+                            <small>{candidate.url}</small>
+                          </span>
+                        </label>
+                      ))}
+                      <button
+                        className="tracker-button tracker-button-primary"
+                        disabled={selectedEmailLinks.length === 0}
+                        type="button"
+                        onClick={addSelectedEmailLinks}
+                      >
+                        Add selected links
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {form.links.map((link, index) => (
                 <div className="tracker-repeater-item" key={index}>
                   <div className="tracker-form-grid">
