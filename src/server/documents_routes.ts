@@ -3,6 +3,12 @@ import multer, { MulterError } from "multer";
 
 import type { AuthenticatedActor } from "../application/auth.js";
 import {
+  DocumentPreviewInputLimitError,
+  DocumentPreviewParseError,
+  DocumentPreviewTimeoutError,
+  type DocumentPreviewService,
+} from "../application/document_previews.js";
+import {
   DocumentNotFoundError,
   InvalidDocumentContentError,
   InvalidDocumentReferenceError,
@@ -17,6 +23,7 @@ import { requestSessionToken } from "./auth_routes.js";
 
 export interface DocumentsRouteOptions {
   maxUploadBytes: number;
+  previewService: DocumentPreviewService;
   service: DocumentLibraryService;
 }
 
@@ -233,6 +240,42 @@ export function createDocumentsRouter(
       }
       next(error);
     }
+  });
+
+  router.get("/:documentId/preview", (request, response, next) => {
+    const parsedId = documentIdSchema.safeParse(request.params.documentId);
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    void options.previewService
+      .getPreview(authenticatedActor(response), parsedId.data)
+      .then((preview) => response.json({ preview }))
+      .catch((error: unknown) => {
+        if (error instanceof DocumentNotFoundError) {
+          response.status(404).json({ error: { code: "document_not_found" } });
+          return;
+        }
+        if (error instanceof DocumentPreviewInputLimitError) {
+          response
+            .status(413)
+            .json({ error: { code: "document_preview_too_large" } });
+          return;
+        }
+        if (error instanceof DocumentPreviewTimeoutError) {
+          response
+            .status(504)
+            .json({ error: { code: "document_preview_timeout" } });
+          return;
+        }
+        if (error instanceof DocumentPreviewParseError) {
+          response
+            .status(422)
+            .json({ error: { code: "document_preview_failed" } });
+          return;
+        }
+        next(error);
+      });
   });
 
   return router;

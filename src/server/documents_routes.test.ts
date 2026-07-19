@@ -4,12 +4,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
+import { DocumentPreviewService } from "../application/document_previews.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
+import { SqliteDocumentPreviewsRepository } from "../infrastructure/database/document_previews_repository.js";
+import { DocumentPreviewSupervisor } from "../infrastructure/documents/document_preview_supervisor.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { createApp } from "./app.js";
 
@@ -19,7 +22,10 @@ afterEach(() => {
   for (const database of databases.splice(0)) database.close();
 });
 
-async function createDocumentsApp(maxUploadBytes = 1024) {
+async function createDocumentsApp(
+  maxUploadBytes = 1024,
+  maxPreviewInputBytes = 1024,
+) {
   const database = openApplicationDatabase(":memory:");
   databases.push(database);
   const hasher = new ScryptPasswordHasher({
@@ -47,8 +53,9 @@ async function createDocumentsApp(maxUploadBytes = 1024) {
     },
     () => new Date("2026-07-19T09:30:00.000Z"),
   );
+  const documentsRepository = new SqliteDocumentsRepository(database);
   const documentsService = new DocumentLibraryService(
-    new SqliteDocumentsRepository(database),
+    documentsRepository,
     { maxUploadBytes },
     () => new Date("2026-07-19T10:00:00.000Z"),
   );
@@ -90,7 +97,22 @@ async function createDocumentsApp(maxUploadBytes = 1024) {
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
-    documents: { maxUploadBytes, service: documentsService },
+    documents: {
+      maxUploadBytes,
+      previewService: new DocumentPreviewService(
+        documentsRepository,
+        new SqliteDocumentPreviewsRepository(database),
+        new DocumentPreviewSupervisor({
+          maxInputBytes: maxPreviewInputBytes,
+          maxMemoryMb: 16,
+          maxOutputCharacters: 1000,
+          timeoutMs: 500,
+        }),
+        "plain-text-v1",
+        () => new Date("2026-07-19T10:05:00.000Z"),
+      ),
+      service: documentsService,
+    },
   });
   return { app, application, documentTypeId };
 }
@@ -246,5 +268,102 @@ describe("document routes", () => {
       .get("/api/documents/44444444-4444-4444-8444-444444444444/download")
       .set("Cookie", cookie)
       .expect(404, { error: { code: "document_not_found" } });
+  });
+
+  it("generates, caches, and returns an authorized plain-text preview", async () => {
+    const { app, documentTypeId } = await createDocumentsApp();
+    const cookie = await login(app);
+    const uploaded = await sameOrigin(request(app).post("/api/documents"))
+      .set("Cookie", cookie)
+      .field("documentTypeId", documentTypeId)
+      .field("applicationIds", "[]")
+      .attach("file", Buffer.from("First line\r\nSecond line"), {
+        contentType: "text/plain",
+        filename: "notes.txt",
+      })
+      .expect(201);
+    const documentId = responseDocument(uploaded).id;
+    if (typeof documentId !== "string") throw new Error("Missing document ID");
+
+    const expected = {
+      preview: {
+        documentId,
+        generatedAt: "2026-07-19T10:05:00.000Z",
+        mediaType: "text/plain",
+        parserVersion: "plain-text-v1",
+        status: "ready",
+        text: "First line\nSecond line",
+        truncated: false,
+      },
+    };
+    await request(app)
+      .get(`/api/documents/${documentId}/preview`)
+      .set("Cookie", cookie)
+      .expect(200, expected);
+    await request(app)
+      .get(`/api/documents/${documentId}/preview`)
+      .set("Cookie", cookie)
+      .expect(200, expected);
+  });
+
+  it("reports unsupported, oversized, malformed, and unauthenticated previews", async () => {
+    const { app, documentTypeId } = await createDocumentsApp(1024, 8);
+    const cookie = await login(app);
+    const upload = async (
+      bytes: Buffer,
+      contentType: string,
+      filename: string,
+    ) => {
+      const response = await sameOrigin(request(app).post("/api/documents"))
+        .set("Cookie", cookie)
+        .field("documentTypeId", documentTypeId)
+        .field("applicationIds", "[]")
+        .attach("file", bytes, { contentType, filename })
+        .expect(201);
+      const id = responseDocument(response).id;
+      if (typeof id !== "string") throw new Error("Missing document ID");
+      return id;
+    };
+    const pdfId = await upload(
+      Buffer.from("pdf-data"),
+      "application/pdf",
+      "cv.pdf",
+    );
+    const largeId = await upload(
+      Buffer.from("ninebytes"),
+      "text/plain",
+      "large.txt",
+    );
+    const binaryId = await upload(
+      Buffer.from([0, 1, 2, 3]),
+      "text/plain",
+      "binary.txt",
+    );
+
+    await request(app)
+      .get(`/api/documents/${pdfId}/preview`)
+      .set("Cookie", cookie)
+      .expect(200, {
+        preview: {
+          documentId: pdfId,
+          mediaType: "application/pdf",
+          status: "unsupported",
+        },
+      });
+    await request(app)
+      .get(`/api/documents/${largeId}/preview`)
+      .set("Cookie", cookie)
+      .expect(413, { error: { code: "document_preview_too_large" } });
+    await request(app)
+      .get(`/api/documents/${binaryId}/preview`)
+      .set("Cookie", cookie)
+      .expect(422, { error: { code: "document_preview_failed" } });
+    await request(app)
+      .get(`/api/documents/${pdfId}/preview`)
+      .expect(401, { error: { code: "authentication_required" } });
+    await request(app)
+      .get("/api/documents/not-a-document/preview")
+      .set("Cookie", cookie)
+      .expect(400, { error: { code: "validation_error" } });
   });
 });

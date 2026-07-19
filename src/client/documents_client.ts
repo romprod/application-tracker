@@ -27,7 +27,26 @@ export interface UploadDocumentInput {
   file: File;
 }
 
+export interface ReadyDocumentPreview {
+  documentId: string;
+  generatedAt: string;
+  mediaType: string;
+  parserVersion: string;
+  status: "ready";
+  text: string;
+  truncated: boolean;
+}
+
+export interface UnsupportedDocumentPreview {
+  documentId: string;
+  mediaType: string;
+  status: "unsupported";
+}
+
+export type DocumentPreview = ReadyDocumentPreview | UnsupportedDocumentPreview;
+
 export interface DocumentsClient {
+  getDocumentPreview(documentId: string): Promise<DocumentPreview>;
   listDocuments(): Promise<DocumentDirectory>;
   uploadDocument(input: UploadDocumentInput): Promise<DocumentRecord>;
 }
@@ -117,6 +136,43 @@ function parseDocument(value: unknown): DocumentRecord {
   };
 }
 
+function parsePreview(value: unknown): DocumentPreview {
+  if (
+    !isRecord(value) ||
+    !isId(value.documentId) ||
+    !isBoundedText(value.mediaType, 127)
+  ) {
+    throw new DocumentsClientError("invalid_response");
+  }
+  if (value.status === "unsupported") {
+    return {
+      documentId: value.documentId,
+      mediaType: value.mediaType,
+      status: "unsupported",
+    };
+  }
+  if (
+    value.status !== "ready" ||
+    !isBoundedText(value.generatedAt, 40) ||
+    Number.isNaN(Date.parse(value.generatedAt)) ||
+    !isBoundedText(value.parserVersion, 64) ||
+    typeof value.text !== "string" ||
+    value.text.length > 1_000_000 ||
+    typeof value.truncated !== "boolean"
+  ) {
+    throw new DocumentsClientError("invalid_response");
+  }
+  return {
+    documentId: value.documentId,
+    generatedAt: value.generatedAt,
+    mediaType: value.mediaType,
+    parserVersion: value.parserVersion,
+    status: "ready",
+    text: value.text,
+    truncated: value.truncated,
+  };
+}
+
 async function readResponse(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -143,6 +199,20 @@ async function successfulBody(response: Response): Promise<unknown> {
 }
 
 export const browserDocumentsClient: DocumentsClient = {
+  async getDocumentPreview(documentId) {
+    const response = await fetch(
+      `/api/documents/${encodeURIComponent(documentId)}/preview`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body)) throw new DocumentsClientError("invalid_response");
+    return parsePreview(body.preview);
+  },
+
   async listDocuments() {
     const response = await fetch("/api/documents", {
       cache: "no-store",

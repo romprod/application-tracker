@@ -12,6 +12,7 @@ import type {
 } from "./applications_client";
 import {
   DocumentsClientError,
+  type DocumentPreview,
   type DocumentRecord,
   type DocumentsClient,
 } from "./documents_client";
@@ -37,6 +38,10 @@ export function DocumentsWorkspace({
   const [supportingDataError, setSupportingDataError] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const [previewTarget, setPreviewTarget] = useState<DocumentRecord>();
+  const [preview, setPreview] = useState<DocumentPreview>();
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -87,6 +92,23 @@ export function DocumentsWorkspace({
     setUploadOpen(true);
   }
 
+  function openPreview(document: DocumentRecord) {
+    setPreviewTarget(document);
+    setPreview(undefined);
+    setPreviewError(undefined);
+    setPreviewLoading(true);
+    void documentsClient
+      .getDocumentPreview(document.id)
+      .then((loaded) => {
+        setPreview(loaded);
+        setPreviewLoading(false);
+      })
+      .catch((caught: unknown) => {
+        setPreviewError(previewLoadError(caught));
+        setPreviewLoading(false);
+      });
+  }
+
   return (
     <main id="main-content" tabIndex={-1} className="workspace-main">
       {notice && (
@@ -123,9 +145,27 @@ export function DocumentsWorkspace({
           <p className="tracker-loading">Opening your document library…</p>
         )}
         {documents && (
-          <DocumentLibrary documents={documents} onUpload={openUpload} />
+          <DocumentLibrary
+            documents={documents}
+            onPreview={openPreview}
+            onUpload={openUpload}
+          />
         )}
       </div>
+      {previewTarget && (
+        <DocumentPreviewDialog
+          document={previewTarget}
+          error={previewError}
+          loading={previewLoading}
+          onClose={() => {
+            setPreviewTarget(undefined);
+            setPreview(undefined);
+            setPreviewError(undefined);
+            setPreviewLoading(false);
+          }}
+          preview={preview}
+        />
+      )}
       {uploadOpen && applications && referenceValues && maxUploadBytes && (
         <UploadDocumentDialog
           applications={applications}
@@ -152,9 +192,11 @@ export function DocumentsWorkspace({
 
 function DocumentLibrary({
   documents,
+  onPreview,
   onUpload,
 }: {
   documents: DocumentRecord[];
+  onPreview: (document: DocumentRecord) => void;
   onUpload: () => void;
 }) {
   const totalBytes = documents.reduce(
@@ -267,13 +309,23 @@ function DocumentLibrary({
                       <small>by {document.uploadedByDisplayName}</small>
                     </td>
                     <td>
-                      <a
-                        className="document-download"
-                        href={`/api/documents/${encodeURIComponent(document.id)}/download`}
-                      >
-                        Download
-                        <span aria-hidden="true">↓</span>
-                      </a>
+                      <div className="document-actions">
+                        <button
+                          className="document-preview-button"
+                          type="button"
+                          aria-label={`Preview ${document.originalFilename}`}
+                          onClick={() => onPreview(document)}
+                        >
+                          Preview
+                        </button>
+                        <a
+                          className="document-download"
+                          href={`/api/documents/${encodeURIComponent(document.id)}/download`}
+                        >
+                          Download
+                          <span aria-hidden="true">↓</span>
+                        </a>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -283,6 +335,118 @@ function DocumentLibrary({
         </div>
       )}
     </>
+  );
+}
+
+function DocumentPreviewDialog({
+  document,
+  error,
+  loading,
+  onClose,
+  preview,
+}: {
+  document: DocumentRecord;
+  error: string | undefined;
+  loading: boolean;
+  onClose: () => void;
+  preview: DocumentPreview | undefined;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previousFocus =
+      globalThis.document.activeElement instanceof HTMLElement
+        ? globalThis.document.activeElement
+        : undefined;
+    closeRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, []);
+
+  return (
+    <div
+      className="tracker-modal-backdrop document-preview-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="tracker-modal document-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="document-preview-title"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
+      >
+        <header className="tracker-modal-header">
+          <div>
+            <span className="eyebrow">Plain-text preview</span>
+            <h2 id="document-preview-title">
+              Preview {document.originalFilename}
+            </h2>
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            aria-label="Close document preview"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+        <div className="document-preview-content">
+          {loading && <p className="tracker-loading">Preparing preview…</p>}
+          {error && (
+            <p className="tracker-load-error" role="alert">
+              {error}
+            </p>
+          )}
+          {preview?.status === "unsupported" && (
+            <div className="document-preview-unavailable">
+              <span aria-hidden="true">▱</span>
+              <h3>Preview unavailable for this format.</h3>
+              <p>
+                The original remains available through the authorized download
+                action.
+              </p>
+            </div>
+          )}
+          {preview?.status === "ready" && (
+            <>
+              <div className="document-preview-meta">
+                <span>{preview.mediaType}</span>
+                {preview.truncated && <strong>Preview truncated safely</strong>}
+              </div>
+              <pre>{preview.text}</pre>
+            </>
+          )}
+        </div>
+        <footer className="tracker-modal-footer">
+          <p>Preview text is generated inside a resource-limited worker.</p>
+          <div>
+            <a
+              className="tracker-button tracker-button-quiet"
+              href={`/api/documents/${encodeURIComponent(document.id)}/download`}
+            >
+              Download original
+            </a>
+            <button
+              className="tracker-button tracker-button-primary"
+              type="button"
+              onClick={onClose}
+            >
+              Done
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -568,6 +732,21 @@ function uploadError(caught: unknown, maxUploadBytes: number): string {
     }
   }
   return "The document could not be stored. Please try again.";
+}
+
+function previewLoadError(caught: unknown): string {
+  if (caught instanceof DocumentsClientError) {
+    if (caught.code === "document_preview_too_large") {
+      return "This original is larger than the configured preview limit. Download remains available.";
+    }
+    if (caught.code === "document_preview_timeout") {
+      return "Preview generation exceeded its time limit. Download remains available.";
+    }
+    if (caught.code === "document_preview_failed") {
+      return "This file could not be converted to a safe plain-text preview.";
+    }
+  }
+  return "The preview could not be loaded. Please try again.";
 }
 
 function fileMonogram(filename: string): string {

@@ -389,6 +389,17 @@ function createApplicationsClient(
 
 function createDocumentsClient(documents: DocumentRecord[] = [documentRecord]) {
   return {
+    getDocumentPreview: vi
+      .fn<DocumentsClient["getDocumentPreview"]>()
+      .mockResolvedValue({
+        documentId: documentRecord.id,
+        generatedAt: "2026-07-19T10:05:00.000Z",
+        mediaType: "text/plain",
+        parserVersion: "plain-text-v1",
+        status: "ready",
+        text: "Synthetic preview text",
+        truncated: false,
+      }),
     listDocuments: vi
       .fn<DocumentsClient["listDocuments"]>()
       .mockResolvedValue({ documents, maxUploadBytes: 10_485_760 }),
@@ -569,6 +580,35 @@ describe("application shell", () => {
     );
     expect(await screen.findByText("Product CV.pdf was stored.")).toBeVisible();
     expect(screen.getByText("Product CV.pdf")).toBeInTheDocument();
+  });
+
+  it("opens an authorized plain-text document preview", async () => {
+    const documentsClient = createDocumentsClient();
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={documentsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Preview Original CV.pdf" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Preview Original CV.pdf",
+    });
+    expect(within(dialog).getByText("Synthetic preview text")).toBeVisible();
+    expect(documentsClient.getDocumentPreview).toHaveBeenCalledWith(
+      documentRecord.id,
+    );
   });
 
   it("adds an application and clears the intake form", async () => {

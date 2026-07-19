@@ -1667,6 +1667,26 @@
   text-decoration: none;
 }
 
+.document-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.document-preview-button {
+  padding: 0;
+  color: var(--tracker-green);
+  font-size: 10px;
+  font-weight: 750;
+  background: transparent;
+  border: 0;
+}
+
+.document-preview-button:hover {
+  text-decoration: underline;
+}
+
 .document-download:hover {
   text-decoration: underline;
 }
@@ -1677,6 +1697,80 @@
 
 .document-upload-modal {
   width: min(760px, 100%);
+}
+
+.document-preview-modal {
+  width: min(980px, 100%);
+}
+
+.document-preview-content {
+  min-height: 360px;
+  padding: 26px 30px 32px;
+  border-bottom: 1px solid var(--tracker-line);
+}
+
+.document-preview-content .tracker-loading,
+.document-preview-content .tracker-load-error {
+  margin-top: 0;
+}
+
+.document-preview-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 11px;
+  color: #858b87;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.document-preview-meta strong {
+  color: var(--tracker-coral-dark);
+}
+
+.document-preview-content pre {
+  max-height: min(560px, 58vh);
+  padding: 25px;
+  margin: 0;
+  overflow: auto;
+  color: var(--tracker-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: linear-gradient(rgb(24 60 55 / 3%) 1px, transparent 1px), #fffdf7;
+  background-size: 100% 21px;
+  border: 1px solid var(--tracker-line);
+}
+
+.document-preview-unavailable {
+  display: grid;
+  min-height: 300px;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.document-preview-unavailable > span {
+  color: var(--tracker-coral);
+  font-size: 38px;
+}
+
+.document-preview-unavailable h3 {
+  margin: 12px 0 5px;
+  font-size: 27px;
+}
+
+.document-preview-unavailable p {
+  max-width: 420px;
+  margin: 0;
+  color: var(--tracker-ink-soft);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .document-file-picker {
@@ -2006,6 +2100,15 @@
   .document-upload-error {
     margin-right: 20px;
     margin-left: 20px;
+  }
+
+  .document-preview-content {
+    min-height: 280px;
+    padding: 20px;
+  }
+
+  .document-preview-content pre {
+    padding: 18px;
   }
 
   .tracker-filter-field {

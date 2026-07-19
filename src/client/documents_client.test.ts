@@ -114,4 +114,36 @@ describe("browserDocumentsClient", () => {
       new DocumentsClientError("invalid_response"),
     );
   });
+
+  it("loads and validates a document preview", async () => {
+    const preview = {
+      documentId: document.id,
+      generatedAt: "2026-07-19T10:05:00.000Z",
+      mediaType: "text/plain",
+      parserVersion: "plain-text-v1",
+      status: "ready",
+      text: "Preview text",
+      truncated: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ preview }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(
+      browserDocumentsClient.getDocumentPreview(document.id),
+    ).resolves.toEqual(preview);
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/documents/${document.id}/preview`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+  });
 });
