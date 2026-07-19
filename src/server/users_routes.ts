@@ -7,6 +7,9 @@ import {
 
 import {
   CannotDisableCurrentUserError,
+  ExternalIdentityProviderUnavailableError,
+  ExternalIdentityUnavailableError,
+  ManagedExternalIdentityNotFoundError,
   ManagedUserNotFoundError,
   UserAdministrationForbiddenError,
   UsernameUnavailableError,
@@ -14,6 +17,8 @@ import {
 } from "../application/users.js";
 import type { AuthService, AuthenticatedActor } from "../application/auth.js";
 import {
+  createExternalIdentitySchema,
+  externalIdentityIdSchema,
   createLocalUserSchema,
   updateUserStatusSchema,
   userIdSchema,
@@ -54,6 +59,24 @@ function handleKnownError(
   }
   if (error instanceof UsernameUnavailableError) {
     response.status(409).json({ error: { code: "username_unavailable" } });
+    return;
+  }
+  if (error instanceof ExternalIdentityProviderUnavailableError) {
+    response
+      .status(409)
+      .json({ error: { code: "external_identity_provider_unavailable" } });
+    return;
+  }
+  if (error instanceof ExternalIdentityUnavailableError) {
+    response
+      .status(409)
+      .json({ error: { code: "external_identity_unavailable" } });
+    return;
+  }
+  if (error instanceof ManagedExternalIdentityNotFoundError) {
+    response
+      .status(404)
+      .json({ error: { code: "external_identity_not_found" } });
     return;
   }
   if (error instanceof CannotDisableCurrentUserError) {
@@ -97,7 +120,7 @@ export function createUsersRouter(
     const actor = authenticatedActor(request, response, authService);
     if (!actor) return;
     try {
-      response.json({ users: usersService.listUsers(actor) });
+      response.json(usersService.getDirectory(actor));
     } catch (error) {
       handleKnownError(error, response, next);
     }
@@ -139,6 +162,53 @@ export function createUsersRouter(
       handleKnownError(error, response, next);
     }
   });
+
+  router.post("/:userId/external-identities", (request, response, next) => {
+    const actor = authenticatedActor(request, response, authService);
+    if (!actor) return;
+    const parsedId = userIdSchema.safeParse(request.params.userId);
+    const parsedBody = createExternalIdentitySchema.safeParse(request.body);
+    if (!parsedId.success || !parsedBody.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      const user = usersService.linkExternalIdentity(
+        actor,
+        parsedId.data,
+        parsedBody.data,
+      );
+      response.status(201).json({ user });
+    } catch (error) {
+      handleKnownError(error, response, next);
+    }
+  });
+
+  router.delete(
+    "/:userId/external-identities/:identityId",
+    (request, response, next) => {
+      const actor = authenticatedActor(request, response, authService);
+      if (!actor) return;
+      const parsedUserId = userIdSchema.safeParse(request.params.userId);
+      const parsedIdentityId = externalIdentityIdSchema.safeParse(
+        request.params.identityId,
+      );
+      if (!parsedUserId.success || !parsedIdentityId.success) {
+        response.status(400).json({ error: { code: "validation_error" } });
+        return;
+      }
+      try {
+        const user = usersService.unlinkExternalIdentity(
+          actor,
+          parsedUserId.data,
+          parsedIdentityId.data,
+        );
+        response.json({ user });
+      } catch (error) {
+        handleKnownError(error, response, next);
+      }
+    },
+  );
 
   return router;
 }

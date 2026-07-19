@@ -27,6 +27,11 @@ export interface ManagedUser extends WorkspaceUser {
   isCurrentUser: boolean;
 }
 
+export interface ManagedUserDirectory {
+  externalIdentityProviderConfigured: boolean;
+  users: ManagedUser[];
+}
+
 export interface CreateLocalUserRecord {
   createdAt: string;
   displayName: string;
@@ -98,6 +103,13 @@ export class ExternalIdentityUnavailableError extends Error {
   }
 }
 
+export class ExternalIdentityProviderUnavailableError extends Error {
+  public constructor() {
+    super("External identity linking is not configured");
+    this.name = "ExternalIdentityProviderUnavailableError";
+  }
+}
+
 export class ManagedExternalIdentityNotFoundError extends Error {
   public constructor() {
     super("The external identity link was not found");
@@ -127,13 +139,18 @@ export class UserAdministrationService {
     private readonly repository: UsersRepository,
     private readonly passwordHasher: PasswordHasher,
     private readonly clock: () => Date = () => new Date(),
+    private readonly externalIdentityIssuer?: string,
   ) {}
 
-  public listUsers(actor: AuthenticatedActor): ManagedUser[] {
+  public getDirectory(actor: AuthenticatedActor): ManagedUserDirectory {
     requireAdministrator(actor);
-    return this.repository
-      .listWorkspaceUsers(actor.workspaceId)
-      .map((user) => forActor(user, actor));
+    return {
+      externalIdentityProviderConfigured:
+        this.externalIdentityIssuer !== undefined,
+      users: this.repository
+        .listWorkspaceUsers(actor.workspaceId, this.externalIdentityIssuer)
+        .map((user) => forActor(user, actor)),
+    };
   }
 
   public async createLocalUser(
@@ -162,12 +179,63 @@ export class UserAdministrationService {
     if (userId === actor.userId && input.status === "disabled") {
       throw new CannotDisableCurrentUserError();
     }
-    const user = this.repository.setUserStatus({
+    this.repository.setUserStatus({
       changedAt: this.clock().toISOString(),
       status: input.status,
       userId,
       workspaceId: actor.workspaceId,
     });
+    return this.findManagedUser(actor, userId);
+  }
+
+  public linkExternalIdentity(
+    actor: AuthenticatedActor,
+    userId: string,
+    input: CreateExternalIdentityInput,
+  ): ManagedUser {
+    requireAdministrator(actor);
+    const issuer = this.requireExternalIdentityIssuer();
+    this.repository.createExternalIdentity({
+      createdAt: this.clock().toISOString(),
+      issuer,
+      subject: input.subject,
+      userId,
+      workspaceId: actor.workspaceId,
+    });
+    return this.findManagedUser(actor, userId);
+  }
+
+  public unlinkExternalIdentity(
+    actor: AuthenticatedActor,
+    userId: string,
+    identityId: string,
+  ): ManagedUser {
+    requireAdministrator(actor);
+    const issuer = this.requireExternalIdentityIssuer();
+    this.repository.deleteExternalIdentity({
+      identityId,
+      issuer,
+      userId,
+      workspaceId: actor.workspaceId,
+    });
+    return this.findManagedUser(actor, userId);
+  }
+
+  private findManagedUser(
+    actor: AuthenticatedActor,
+    userId: string,
+  ): ManagedUser {
+    const user = this.repository
+      .listWorkspaceUsers(actor.workspaceId, this.externalIdentityIssuer)
+      .find(({ id }) => id === userId);
+    if (!user) throw new ManagedUserNotFoundError();
     return forActor(user, actor);
+  }
+
+  private requireExternalIdentityIssuer(): string {
+    if (!this.externalIdentityIssuer) {
+      throw new ExternalIdentityProviderUnavailableError();
+    }
+    return this.externalIdentityIssuer;
   }
 }

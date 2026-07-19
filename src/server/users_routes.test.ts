@@ -17,7 +17,7 @@ afterEach(() => {
   for (const database of databases.splice(0)) database.close();
 });
 
-async function createUsersApp() {
+async function createUsersApp(externalIdentityIssuer?: string) {
   const database = openApplicationDatabase(":memory:");
   databases.push(database);
   const hasher = new ScryptPasswordHasher({
@@ -49,6 +49,7 @@ async function createUsersApp() {
     new SqliteUsersRepository(database),
     hasher,
     () => new Date("2026-01-01T00:10:00.000Z"),
+    externalIdentityIssuer,
   );
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
@@ -157,6 +158,14 @@ describe("user administration routes", () => {
       .get("/api/settings/users")
       .set("Cookie", memberCookie)
       .expect(403, { error: { code: "forbidden" } });
+    await sameOrigin(
+      request(app).post(
+        `/api/settings/users/${createdUserId(created)}/external-identities`,
+      ),
+    )
+      .set("Cookie", memberCookie)
+      .send({ subject: "member-subject" })
+      .expect(403, { error: { code: "forbidden" } });
     expect(createdUser(created)).toMatchObject({
       displayName: "Sam Member",
       isCurrentUser: false,
@@ -187,6 +196,7 @@ describe("user administration routes", () => {
 
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.body).toEqual({
+      externalIdentityProviderConfigured: false,
       users: [
         expect.objectContaining({
           isCurrentUser: true,
@@ -212,6 +222,128 @@ describe("user administration routes", () => {
         .pluck()
         .get("sam"),
     ).not.toBe("member password phrase");
+  });
+
+  it("links and unlinks the configured provider subject for a workspace user", async () => {
+    const issuer = "https://identity.example/application/o/mcp/";
+    const { app, database } = await createUsersApp(issuer);
+    const adminCookie = await login(
+      app,
+      "alex",
+      "correct horse battery staple",
+    );
+    const created = await sameOrigin(request(app).post("/api/settings/users"))
+      .set("Cookie", adminCookie)
+      .send({
+        displayName: "Sam Member",
+        password: "member password phrase",
+        role: "member",
+        username: "sam",
+      })
+      .expect(201);
+    const userId = createdUserId(created);
+
+    const linked = await sameOrigin(
+      request(app).post(`/api/settings/users/${userId}/external-identities`),
+    )
+      .set("Cookie", adminCookie)
+      .send({ subject: "oauth-subject-123" })
+      .expect(201);
+    const linkedUser = createdUser(linked);
+    expect(linkedUser.externalIdentities).toEqual([
+      expect.objectContaining({
+        createdAt: "2026-01-01T00:10:00.000Z",
+        subject: "oauth-subject-123",
+      }),
+    ]);
+    expect(JSON.stringify(linked.body)).not.toContain(issuer);
+    expect(
+      database
+        .prepare("SELECT issuer FROM external_identities WHERE user_id = ?")
+        .pluck()
+        .get(userId),
+    ).toBe(issuer);
+
+    const identity = linkedUser.externalIdentities;
+    if (!Array.isArray(identity)) throw new Error("Expected identity links");
+    const identityId = (identity[0] as { id?: unknown } | undefined)?.id;
+    if (typeof identityId !== "string") {
+      throw new Error("Expected an identity identifier");
+    }
+    const unlinked = await sameOrigin(
+      request(app).delete(
+        `/api/settings/users/${userId}/external-identities/${identityId}`,
+      ),
+    )
+      .set("Cookie", adminCookie)
+      .expect(200);
+    expect(createdUser(unlinked).externalIdentities).toEqual([]);
+  });
+
+  it("fails closed when identity linking is unconfigured or conflicts", async () => {
+    const unconfigured = await createUsersApp();
+    const unconfiguredCookie = await login(
+      unconfigured.app,
+      "alex",
+      "correct horse battery staple",
+    );
+    await sameOrigin(
+      request(unconfigured.app).post(
+        `/api/settings/users/${unconfigured.setup.administrator.id}/external-identities`,
+      ),
+    )
+      .set("Cookie", unconfiguredCookie)
+      .send({ subject: "oauth-subject-123" })
+      .expect(409, {
+        error: { code: "external_identity_provider_unavailable" },
+      });
+
+    const issuer = "https://identity.example/application/o/mcp/";
+    const configured = await createUsersApp(issuer);
+    const configuredCookie = await login(
+      configured.app,
+      "alex",
+      "correct horse battery staple",
+    );
+    const first = await sameOrigin(
+      request(configured.app).post(
+        `/api/settings/users/${configured.setup.administrator.id}/external-identities`,
+      ),
+    )
+      .set("Cookie", configuredCookie)
+      .send({ subject: "shared-subject" })
+      .expect(201);
+    const secondUser = await sameOrigin(
+      request(configured.app).post("/api/settings/users"),
+    )
+      .set("Cookie", configuredCookie)
+      .send({
+        displayName: "Sam Member",
+        password: "member password phrase",
+        role: "member",
+        username: "sam",
+      })
+      .expect(201);
+    await sameOrigin(
+      request(configured.app).post(
+        `/api/settings/users/${createdUserId(secondUser)}/external-identities`,
+      ),
+    )
+      .set("Cookie", configuredCookie)
+      .send({ subject: "shared-subject" })
+      .expect(409, { error: { code: "external_identity_unavailable" } });
+
+    const firstIdentity = createdUser(first).externalIdentities;
+    if (!Array.isArray(firstIdentity)) throw new Error("Expected identity");
+    const identityId = (firstIdentity[0] as { id?: unknown } | undefined)?.id;
+    if (typeof identityId !== "string") throw new Error("Expected identity");
+    await sameOrigin(
+      request(configured.app).delete(
+        `/api/settings/users/${createdUserId(secondUser)}/external-identities/${identityId}`,
+      ),
+    )
+      .set("Cookie", configuredCookie)
+      .expect(404, { error: { code: "external_identity_not_found" } });
   });
 
   it("rejects duplicate usernames and disabling the current account", async () => {

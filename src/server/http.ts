@@ -70,6 +70,8 @@ async function startApplication(): Promise<void> {
     const usersService = new UserAdministrationService(
       new SqliteUsersRepository(database),
       passwordHasher,
+      undefined,
+      config.mcp.oauth?.issuer,
     );
     const referenceValuesService = new ReferenceValuesService(
       new SqliteReferenceValuesRepository(database),
