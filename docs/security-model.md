@@ -52,9 +52,16 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- The initial tool set is read-only, bounded, and closed-world
+- Five read tools and three application mutation tools are bounded and
+  closed-world; fresh workspaces block all mutations
+- Only a website administrator can enable the workspace-wide read-write policy
+- Every mutation rechecks the persisted policy, including existing sessions
+- Deletion requires explicit tool confirmation and uses the ledger's audited
+  soft-delete path
 - Every accepted tool invocation records an append-only outcome event; audit
   storage failure prevents the tool from returning workspace data
+- Successful mutations and their audit events share one immediate transaction,
+  so an audit failure rolls the application change back
 - Stdout carries JSON-RPC only; redacted lifecycle diagnostics use stderr
 
 ### Remote MCP

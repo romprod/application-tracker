@@ -45,8 +45,8 @@ tests and user documentation.
 - [x] Remote HTTPS server with supported external-identity linking
 - [x] Remote HTTP metadata, challenges, allowlists, and request limits
 - [x] Strict OAuth token verification and local membership mapping prerequisite
-- [x] Read-only tool schemas, per-call authorization, and audit events
-- [ ] Mutating tool approval, transactions, and rollback tests
+- [x] Read tool schemas, per-call authorization, and audit events
+- [x] Website-controlled mutation approval, atomic audits, and rollback tests
 - [x] Global and per-actor session limits, expiry, and cleanup
 - [x] Administrator-only sanitized MCP status
 

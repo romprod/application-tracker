@@ -1,5 +1,6 @@
 import type { AuthenticatedActor } from "./auth.js";
-import { localMcpToolNames } from "./mcp.js";
+import { applicationMcpToolNames } from "./mcp.js";
+import type { McpAccessMode } from "./mcp_access.js";
 import {
   emptyMcpAuditReader,
   type McpAuditEvent,
@@ -36,6 +37,9 @@ export interface McpRemoteTransportCapability {
 }
 
 export interface McpStatus {
+  access: {
+    mode: McpAccessMode;
+  };
   availability: McpRuntimeSnapshot["availability"];
   capabilities: {
     auditEvents: boolean;
@@ -64,6 +68,21 @@ export interface McpStatus {
   };
 }
 
+export interface McpAccessSettingsProvider {
+  getAdministratorAccessMode(actor: AuthenticatedActor): McpAccessMode;
+  setAdministratorAccessMode(
+    actor: AuthenticatedActor,
+    accessMode: McpAccessMode,
+  ): void;
+}
+
+const defaultReadOnlyAccessSettings: McpAccessSettingsProvider = {
+  getAdministratorAccessMode: () => "read_only",
+  setAdministratorAccessMode: () => {
+    throw new Error("MCP access settings are unavailable");
+  },
+};
+
 export class McpStatusForbiddenError extends Error {
   public constructor() {
     super("Administrator access is required");
@@ -89,7 +108,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       initializingSessions: sessions.initializing,
       localTransportState: "ready",
       oauthVerificationAvailable: this.oauthAuthorization !== undefined,
-      registeredTools: localMcpToolNames.length,
+      registeredTools: applicationMcpToolNames.length,
       remoteTransportState: this.remoteTransport?.isAvailable()
         ? "ready"
         : "disabled",
@@ -103,13 +122,17 @@ export class McpStatusService {
     private readonly policy: McpSessionPolicy,
     private readonly provider: McpRuntimeStatusProvider = new ApplicationMcpRuntimeStatusProvider(),
     private readonly auditReader: McpAuditReader = emptyMcpAuditReader,
+    private readonly accessSettings: McpAccessSettingsProvider = defaultReadOnlyAccessSettings,
   ) {}
 
   public getStatus(actor: AuthenticatedActor): McpStatus {
-    if (actor.user.role !== "admin") throw new McpStatusForbiddenError();
+    this.requireAdministrator(actor);
 
     const runtime = this.provider.snapshot(actor.workspaceId);
     return {
+      access: {
+        mode: this.accessSettings.getAdministratorAccessMode(actor),
+      },
       availability: runtime.availability,
       capabilities: {
         auditEvents: runtime.auditEventsAvailable,
@@ -134,5 +157,18 @@ export class McpStatusService {
         },
       },
     };
+  }
+
+  public setAccessMode(
+    actor: AuthenticatedActor,
+    accessMode: McpAccessMode,
+  ): McpStatus {
+    this.requireAdministrator(actor);
+    this.accessSettings.setAdministratorAccessMode(actor, accessMode);
+    return this.getStatus(actor);
+  }
+
+  private requireAdministrator(actor: AuthenticatedActor): void {
+    if (actor.user.role !== "admin") throw new McpStatusForbiddenError();
   }
 }

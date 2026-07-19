@@ -1,7 +1,7 @@
 # Local MCP
 
-Application Tracker provides a read-only Model Context Protocol server over
-stdio. An MCP client starts the process on the same host as the SQLite database
+Application Tracker provides a Model Context Protocol server over stdio. An MCP
+client starts the process on the same host as the SQLite database
 and communicates through stdin and stdout. The transport opens no network port.
 
 ## Security boundary
@@ -48,9 +48,17 @@ safer in client configuration. The server fails closed when either actor value
 is missing, the database cannot be verified, or the selected account is not an
 active workspace member.
 
+## Access mode
+
+Fresh and migrated workspaces default to **Read only**. An administrator can
+select **Read and write** in Settings → MCP. The server reads this database
+policy before every mutation, so an existing process observes changes
+immediately. Switching back to read-only blocks the next write without
+restarting the client.
+
 ## Tools
 
-The local server registers five read-only tools:
+The local server registers eight tools:
 
 | Tool                     | Result                                             |
 | ------------------------ | -------------------------------------------------- |
@@ -59,20 +67,26 @@ The local server registers five read-only tools:
 | `list_applications`      | Up to 100 summaries, optionally filtered by status |
 | `get_application`        | One full record and its immutable stage events     |
 | `get_reference_data`     | Statuses, sources, role types, and document types  |
+| `create_application`     | Create one validated workspace application         |
+| `update_application`     | Update selected fields on one application          |
+| `delete_application`     | Confirmed, audited soft deletion                   |
 
 Tools return JSON text and structured content. Expected failures use stable
 codes such as `actor_unavailable` and `application_not_found`; unexpected
-failures return `internal_error` without exception details. Every tool is
-annotated as read-only, non-destructive, idempotent, and closed-world.
+failures return `internal_error` without exception details. Read tools are
+annotated as read-only, non-destructive, idempotent, and closed-world. Mutation
+tools are annotated as non-read-only and non-idempotent; deletion is also
+destructive and requires `confirm=true`.
 
 Each accepted tool invocation appends an immutable audit event with its actor,
 workspace, action, target type, result, transport, and timestamp. The event
 stores no tool arguments, application content, credentials, or protocol
 payloads. If the event cannot be stored, the tool returns `internal_error`
 without returning workspace data. Settings → MCP shows the 20 most recent
-events to administrators.
+events to administrators. A successful mutation and its audit event share one
+immediate SQLite transaction. If the audit insert fails, the application change
+rolls back and the tool returns `internal_error`.
 
-The local transport does not add create, update, or delete tools. Deployments
-that need authenticated remote access can configure the separate Streamable
-HTTP endpoint described in [`remote-mcp.md`](remote-mcp.md). Both transports
-expose the same read-only tool contracts.
+Deployments that need authenticated remote access can configure the separate
+Streamable HTTP endpoint described in [`remote-mcp.md`](remote-mcp.md). Both
+transports expose the same tool contracts and workspace access policy.

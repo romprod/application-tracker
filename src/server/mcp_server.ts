@@ -2,11 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { ApplicationNotFoundError } from "../application/applications.js";
+import {
+  ApplicationNotFoundError,
+  InvalidApplicationReferenceError,
+} from "../application/applications.js";
 import {
   LocalMcpActorUnavailableError,
-  type LocalMcpTools,
+  type McpApplicationTools,
 } from "../application/mcp.js";
+import { McpWriteAccessDisabledError } from "../application/mcp_access.js";
 import type {
   McpAuditAction,
   McpAuditRecorder,
@@ -14,7 +18,11 @@ import type {
   McpAuditTargetType,
   McpAuditTransport,
 } from "../application/mcp_audit.js";
-import { applicationIdSchema } from "../domain/applications.js";
+import {
+  applicationIdSchema,
+  createApplicationSchema,
+  updateApplicationSchema,
+} from "../domain/applications.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
@@ -24,6 +32,16 @@ const readOnlyAnnotations = {
   openWorldHint: false,
   readOnlyHint: true,
 } as const;
+const writeAnnotations = {
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+  readOnlyHint: false,
+} as const;
+const deleteAnnotations = {
+  ...writeAnnotations,
+  destructiveHint: true,
+} as const;
 
 const emptyInputSchema = z.strictObject({});
 const actorSchema = z.strictObject({
@@ -32,7 +50,7 @@ const actorSchema = z.strictObject({
   username: z.string(),
 });
 const trackerContextSchema = z.strictObject({
-  access: z.literal("read_only"),
+  access: z.enum(["read_only", "read_write"]),
   actor: actorSchema,
   workspace: z.strictObject({ name: z.string(), slug: z.string() }),
 });
@@ -127,6 +145,10 @@ const referenceValueSchema = z.strictObject({
 const referenceDataSchema = z.strictObject({
   values: z.array(referenceValueSchema),
 });
+const deleteApplicationResultSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  deleted: z.literal(true),
+});
 
 function successfulToolResult(value: object): CallToolResult {
   return {
@@ -145,11 +167,12 @@ function failedToolResult(code: string): CallToolResult {
 interface McpServerAuditOptions {
   actorUserId: string;
   recorder: McpAuditRecorder;
+  runAtomically: <Result>(operation: () => Result) => Result;
   transport: McpAuditTransport;
   workspaceId: string;
 }
 
-interface ReadOnlyMcpServerOptions {
+interface ApplicationMcpServerOptions {
   audit?: McpServerAuditOptions;
   instructions: string;
   logger?: ApplicationLogger;
@@ -159,6 +182,8 @@ interface LocalMcpServerOptions {
   audit?: Omit<McpServerAuditOptions, "transport">;
   logger?: ApplicationLogger;
 }
+
+class McpWriteAuditFailedError extends Error {}
 
 function recordAuditEvent(
   audit: McpServerAuditOptions | undefined,
@@ -213,9 +238,60 @@ function executeTool(
   }
 }
 
-export function createReadOnlyMcpServer(
-  tools: LocalMcpTools,
-  options: ReadOnlyMcpServerOptions,
+function executeWriteTool(
+  tool: McpAuditAction,
+  logger: ApplicationLogger,
+  audit: McpServerAuditOptions | undefined,
+  operation: () => object,
+): CallToolResult {
+  if (!audit) {
+    logger.error("mcp_write_audit_unavailable", { tool });
+    return failedToolResult("internal_error");
+  }
+  try {
+    const value = audit.runAtomically(() => {
+      const result = operation();
+      if (!recordAuditEvent(audit, logger, tool, "application", "success")) {
+        throw new McpWriteAuditFailedError();
+      }
+      return result;
+    });
+    return successfulToolResult(value);
+  } catch (error) {
+    if (error instanceof McpWriteAuditFailedError) {
+      return failedToolResult("internal_error");
+    }
+    if (
+      error instanceof LocalMcpActorUnavailableError ||
+      error instanceof McpWriteAccessDisabledError
+    ) {
+      return recordAuditEvent(audit, logger, tool, "application", "denied")
+        ? failedToolResult(
+            error instanceof McpWriteAccessDisabledError
+              ? "write_access_disabled"
+              : "actor_unavailable",
+          )
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, "application", "not_found")
+        ? failedToolResult("application_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof InvalidApplicationReferenceError) {
+      return recordAuditEvent(audit, logger, tool, "application", "error")
+        ? failedToolResult("invalid_application_reference")
+        : failedToolResult("internal_error");
+    }
+    logger.error("mcp_tool_failed", { error, tool });
+    recordAuditEvent(audit, logger, tool, "application", "error");
+    return failedToolResult("internal_error");
+  }
+}
+
+export function createApplicationMcpServer(
+  tools: McpApplicationTools,
+  options: ApplicationMcpServerOptions,
 ): McpServer {
   const logger = options.logger ?? noOpLogger;
   const server = new McpServer(
@@ -230,7 +306,7 @@ export function createReadOnlyMcpServer(
     {
       annotations: readOnlyAnnotations,
       description:
-        "Confirm the actor, workspace, role, and read-only access bound to this process.",
+        "Confirm the actor, workspace, role, and current read-only or read-write access bound to this session.",
       inputSchema: emptyInputSchema,
       outputSchema: trackerContextSchema,
       title: "Get tracker context",
@@ -328,19 +404,73 @@ export function createReadOnlyMcpServer(
       ),
   );
 
+  server.registerTool(
+    "create_application",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Create an application in the bound workspace when an administrator has enabled MCP write access. Call get_reference_data first and use stable reference IDs.",
+      inputSchema: createApplicationSchema,
+      outputSchema: applicationRecordSchema,
+      title: "Create application",
+    },
+    (input) =>
+      executeWriteTool("create_application", logger, options.audit, () =>
+        tools.createApplication(input),
+      ),
+  );
+
+  server.registerTool(
+    "update_application",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Update selected application fields in the bound workspace when MCP write access is enabled. Omitted fields remain unchanged; null clears nullable fields.",
+      inputSchema: z.strictObject({
+        applicationId: applicationIdSchema,
+        update: updateApplicationSchema,
+      }),
+      outputSchema: applicationRecordSchema,
+      title: "Update application",
+    },
+    ({ applicationId, update }) =>
+      executeWriteTool("update_application", logger, options.audit, () =>
+        tools.updateApplication(applicationId, update),
+      ),
+  );
+
+  server.registerTool(
+    "delete_application",
+    {
+      annotations: deleteAnnotations,
+      description:
+        "Soft-delete an application from the bound workspace when MCP write access is enabled. Pass confirm=true only after the user has explicitly approved this destructive action.",
+      inputSchema: z.strictObject({
+        applicationId: applicationIdSchema,
+        confirm: z.literal(true),
+      }),
+      outputSchema: deleteApplicationResultSchema,
+      title: "Delete application",
+    },
+    ({ applicationId }) =>
+      executeWriteTool("delete_application", logger, options.audit, () =>
+        tools.deleteApplication(applicationId),
+      ),
+  );
+
   return server;
 }
 
 export function createLocalMcpServer(
-  tools: LocalMcpTools,
+  tools: McpApplicationTools,
   options: LocalMcpServerOptions = {},
 ): McpServer {
-  return createReadOnlyMcpServer(tools, {
+  return createApplicationMcpServer(tools, {
     ...(options.audit
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor and workspace. All tools are read-only. Call get_tracker_context before using workspace data.",
+      "This local server is bound to one operator-selected actor and workspace. Call get_tracker_context before using workspace data. Mutation tools work only while a website administrator has enabled MCP write access, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

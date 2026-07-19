@@ -5,14 +5,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import {
+  ApplicationMcpService,
   LocalMcpActorProvider,
-  LocalMcpReadService,
 } from "../application/mcp.js";
+import { McpAccessService } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_repository.js";
+import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { parseRuntimeConfig } from "./config.js";
@@ -44,10 +46,11 @@ async function startLocalMcpServer(): Promise<void> {
       },
     );
     const initialActor = actorProvider.getActor();
-    const tools = new LocalMcpReadService(
+    const tools = new ApplicationMcpService(
       actorProvider,
       new ApplicationLedgerService(new SqliteApplicationsRepository(database)),
       new ReferenceValuesService(new SqliteReferenceValuesRepository(database)),
+      new McpAccessService(new SqliteMcpAccessRepository(database)),
     );
     const auditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),
@@ -56,6 +59,8 @@ async function startLocalMcpServer(): Promise<void> {
       audit: {
         actorUserId: initialActor.userId,
         recorder: auditService,
+        runAtomically: (operation) =>
+          database.transaction(operation).immediate(),
         workspaceId: initialActor.workspaceId,
       },
       logger,

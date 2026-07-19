@@ -7,7 +7,8 @@ import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
-import { LocalMcpReadService } from "../application/mcp.js";
+import { ApplicationMcpService } from "../application/mcp.js";
+import { McpAccessService } from "../application/mcp_access.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
   McpStatusService,
@@ -25,6 +26,7 @@ import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_ver
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
+import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteRemoteMcpActorRepository } from "../infrastructure/database/mcp_oauth_actor_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
@@ -37,7 +39,7 @@ import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
 import { RemoteMcpHttpEndpoint } from "./mcp_http_endpoint.js";
-import { createReadOnlyMcpServer } from "./mcp_server.js";
+import { createApplicationMcpServer } from "./mcp_server.js";
 import { McpSessionRuntime } from "./mcp_session_runtime.js";
 
 const logger = createJsonLogger();
@@ -99,6 +101,9 @@ async function startApplication(): Promise<void> {
     const mcpAuditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),
     );
+    const mcpAccessService = new McpAccessService(
+      new SqliteMcpAccessRepository(database),
+    );
     const mcpSessionRegistry = new RemoteMcpSessionRegistry(config.mcp.session);
     const remoteMcpAuthorization = config.mcp.oauth
       ? new RemoteMcpAuthorizationService(
@@ -121,21 +126,24 @@ async function startApplication(): Promise<void> {
         ? new RemoteMcpHttpEndpoint({
             authorizer: remoteMcpAuthorization,
             createServer: (actorProvider, actor) =>
-              createReadOnlyMcpServer(
-                new LocalMcpReadService(
+              createApplicationMcpServer(
+                new ApplicationMcpService(
                   actorProvider,
                   applicationsService,
                   referenceValuesService,
+                  mcpAccessService,
                 ),
                 {
                   audit: {
                     actorUserId: actor.userId,
                     recorder: mcpAuditService,
+                    runAtomically: (operation) =>
+                      database.transaction(operation).immediate(),
                     transport: "remote_http",
                     workspaceId: actor.workspaceId,
                   },
                   instructions:
-                    "This authenticated remote server provides read-only access to the actor's Application Tracker workspace. Call get_tracker_context before using workspace data.",
+                    "This authenticated remote server is bound to the actor's Application Tracker workspace. Call get_tracker_context before using workspace data. Mutation tools work only while a website administrator has enabled MCP write access, and delete_application also requires explicit confirmation.",
                   logger,
                 },
               ),
@@ -155,6 +163,7 @@ async function startApplication(): Promise<void> {
         remoteMcpEndpoint,
       ),
       mcpAuditService,
+      mcpAccessService,
     );
     const staticRoot =
       config.nodeEnv === "production"

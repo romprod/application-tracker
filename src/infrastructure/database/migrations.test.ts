@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       expect(
         database
           .prepare(
@@ -294,6 +294,15 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBe("document_previews");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name = 'mcp_workspace_settings'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("mcp_workspace_settings");
     } finally {
       database.close();
     }
@@ -561,6 +570,72 @@ describe("migrateDatabase", () => {
           )
           .get(applicationId),
       ).toEqual({ fromStatus: null, toStatus: "Applied" });
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves read audit events while adding write actions", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 12));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES ('workspace-audit', 'Audit', 'audit', ?)`,
+        )
+        .run("2026-07-19T10:00:00.000Z");
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES ('user-audit', 'audit-user', 'Audit User', 'active', ?, ?)`,
+        )
+        .run("2026-07-19T10:00:00.000Z", "2026-07-19T10:00:00.000Z");
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES ('workspace-audit', 'user-audit', 'admin', ?)`,
+        )
+        .run("2026-07-19T10:00:00.000Z");
+      database
+        .prepare(
+          `INSERT INTO mcp_audit_events
+             (id, workspace_id, actor_user_id, transport, action, target_type,
+              result, occurred_at)
+           VALUES (
+             'audit-event-1', 'workspace-audit', 'user-audit', 'local_stdio',
+             'get_tracker_context', 'workspace', 'success', ?
+           )`,
+        )
+        .run("2026-07-19T11:00:00.000Z");
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            "SELECT action, result FROM mcp_audit_events WHERE id = 'audit-event-1'",
+          )
+          .get(),
+      ).toEqual({ action: "get_tracker_context", result: "success" });
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO mcp_audit_events
+               (id, workspace_id, actor_user_id, transport, action,
+                target_type, result, occurred_at)
+             VALUES (
+               'audit-event-2', 'workspace-audit', 'user-audit',
+               'local_stdio', 'create_application', 'application', 'success', ?
+             )`,
+          )
+          .run("2026-07-19T12:00:00.000Z"),
+      ).not.toThrow();
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();

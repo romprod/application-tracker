@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationNotFoundError } from "../application/applications.js";
 import {
+  applicationMcpToolNames,
   LocalMcpActorUnavailableError,
-  type LocalMcpTools,
-  localMcpToolNames,
+  type McpApplicationTools,
 } from "../application/mcp.js";
+import { McpWriteAccessDisabledError } from "../application/mcp_access.js";
 import type { McpAuditRecorder } from "../application/mcp_audit.js";
 import type { ApplicationLogger } from "./logging.js";
 import { createLocalMcpServer } from "./mcp_server.js";
@@ -20,8 +21,10 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(async (server) => server.close()));
 });
 
-function fakeTools(): LocalMcpTools {
+function fakeTools(): McpApplicationTools {
   return {
+    createApplication: vi.fn(),
+    deleteApplication: vi.fn(),
     getApplication: vi.fn(() => {
       throw new ApplicationNotFoundError();
     }),
@@ -50,11 +53,12 @@ function fakeTools(): LocalMcpTools {
       returned: 0,
       total: 0,
     })),
+    updateApplication: vi.fn(),
   };
 }
 
 describe("local MCP server", () => {
-  it("registers bounded read-only tools without actor selection arguments", async () => {
+  it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
     const listApplications = vi.spyOn(tools, "listApplications");
     const record = vi.fn();
@@ -63,6 +67,7 @@ describe("local MCP server", () => {
       audit: {
         actorUserId: "actor-user-1",
         recorder,
+        runAtomically: (operation) => operation(),
         workspaceId: "workspace-1",
       },
     });
@@ -75,14 +80,29 @@ describe("local MCP server", () => {
     await client.connect(clientTransport);
 
     const listed = await client.listTools();
-    expect(listed.tools.map(({ name }) => name)).toEqual(localMcpToolNames);
-    for (const tool of listed.tools) {
+    expect(listed.tools.map(({ name }) => name)).toEqual(
+      applicationMcpToolNames,
+    );
+    for (const tool of listed.tools.slice(0, 5)) {
       expect(tool.annotations).toMatchObject({
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false,
         readOnlyHint: true,
       });
+    }
+    for (const tool of listed.tools.slice(5)) {
+      expect(tool.annotations).toMatchObject({
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      });
+    }
+    expect(
+      listed.tools.find(({ name }) => name === "delete_application")
+        ?.annotations,
+    ).toMatchObject({ destructiveHint: true });
+    for (const tool of listed.tools) {
       expect(tool.inputSchema.properties).not.toHaveProperty("actor");
       expect(tool.inputSchema.properties).not.toHaveProperty("workspace");
       expect(tool.inputSchema.properties).not.toHaveProperty("username");
@@ -159,6 +179,7 @@ describe("local MCP server", () => {
       audit: {
         actorUserId: "actor-user-1",
         recorder,
+        runAtomically: (operation) => operation(),
         workspaceId: "workspace-1",
       },
     });
@@ -198,6 +219,7 @@ describe("local MCP server", () => {
             throw new Error("synthetic database failure");
           },
         },
+        runAtomically: (operation) => operation(),
         workspaceId: "workspace-1",
       },
       logger,
@@ -224,5 +246,53 @@ describe("local MCP server", () => {
     expect(event).toBe("mcp_audit_failed");
     expect(context?.tool).toBe("get_tracker_context");
     expect(context?.error).toBeInstanceOf(Error);
+  });
+
+  it("blocks writes while read-only and audits the denied attempt", async () => {
+    const tools = fakeTools();
+    tools.createApplication = vi.fn(() => {
+      throw new McpWriteAccessDisabledError();
+    });
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {
+        companyName: "Example Company",
+        roleTitle: "Engineer",
+        statusId: "11111111-1111-4111-8111-111111111111",
+      },
+      name: "create_application",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      {
+        text: '{"error":{"code":"write_access_disabled"}}',
+        type: "text",
+      },
+    ]);
+    expect(record).toHaveBeenCalledWith({
+      action: "create_application",
+      actorUserId: "actor-user-1",
+      result: "denied",
+      targetType: "application",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
   });
 });

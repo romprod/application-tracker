@@ -203,11 +203,12 @@ const documentRecord: DocumentRecord = {
 };
 
 const mcpStatus: McpStatus = {
+  access: { mode: "read_only" },
   availability: "available",
   capabilities: {
     auditEvents: true,
     oauthVerification: false,
-    registeredTools: 5,
+    registeredTools: 8,
   },
   recentAuditEvents: [
     {
@@ -313,6 +314,11 @@ function createUsersClient(
 function createMcpStatusClient(status: McpStatus = mcpStatus) {
   return {
     getStatus: vi.fn<McpStatusClient["getStatus"]>().mockResolvedValue(status),
+    setAccessMode: vi
+      .fn<McpStatusClient["setAccessMode"]>()
+      .mockImplementation((accessMode) =>
+        Promise.resolve({ ...status, access: { mode: accessMode } }),
+      ),
   } satisfies McpStatusClient;
 }
 
@@ -1159,7 +1165,11 @@ describe("application shell", () => {
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
-    expect(screen.getByText("5 read-only tools available")).toBeInTheDocument();
+    expect(screen.getByText("8 tools registered")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Read only/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     expect(screen.getByText("Registry ready")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
     expect(
@@ -1173,6 +1183,34 @@ describe("application shell", () => {
         screen.getByRole("list", { name: "MCP security controls" }),
       ).getByText("Active"),
     ).toBeInTheDocument();
+  });
+
+  it("lets an administrator enable MCP writes from Settings", async () => {
+    const mcpStatusClient = createMcpStatusClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(
+      await screen.findByRole("radio", { name: /Read and write/ }),
+    );
+
+    await waitFor(() =>
+      expect(mcpStatusClient.setAccessMode).toHaveBeenCalledWith("read_write"),
+    );
+    expect(
+      screen.getByRole("radio", { name: /Read and write/ }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/Write access is active/)).toBeInTheDocument();
   });
 
   it("reports authenticated remote MCP when runtime configuration enables it", async () => {

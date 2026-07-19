@@ -1,4 +1,7 @@
 export interface McpStatus {
+  access: {
+    mode: "read_only" | "read_write";
+  };
   availability: "available" | "degraded" | "planned";
   capabilities: {
     auditEvents: boolean;
@@ -33,7 +36,10 @@ export interface McpAuditEvent {
     | "get_job_search_summary"
     | "get_reference_data"
     | "get_tracker_context"
-    | "list_applications";
+    | "list_applications"
+    | "create_application"
+    | "update_application"
+    | "delete_application";
   actor: {
     displayName: string;
     username: string;
@@ -51,6 +57,7 @@ export interface McpAuditEvent {
 
 export interface McpStatusClient {
   getStatus(): Promise<McpStatus>;
+  setAccessMode(accessMode: "read_only" | "read_write"): Promise<McpStatus>;
 }
 
 export class McpStatusClientError extends Error {
@@ -75,7 +82,10 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "get_job_search_summary" &&
       value.action !== "get_reference_data" &&
       value.action !== "get_tracker_context" &&
-      value.action !== "list_applications") ||
+      value.action !== "list_applications" &&
+      value.action !== "create_application" &&
+      value.action !== "update_application" &&
+      value.action !== "delete_application") ||
     !isRecord(value.actor) ||
     typeof value.actor.displayName !== "string" ||
     typeof value.actor.username !== "string" ||
@@ -110,6 +120,8 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
 function parseStatus(value: unknown): McpStatus {
   if (
     !isRecord(value) ||
+    !isRecord(value.access) ||
+    (value.access.mode !== "read_only" && value.access.mode !== "read_write") ||
     (value.availability !== "available" &&
       value.availability !== "degraded" &&
       value.availability !== "planned") ||
@@ -143,6 +155,7 @@ function parseStatus(value: unknown): McpStatus {
   }
 
   return {
+    access: { mode: value.access.mode },
     availability: value.availability,
     capabilities: {
       auditEvents: value.capabilities.auditEvents,
@@ -186,6 +199,21 @@ export const browserMcpStatusClient: McpStatusClient = {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
+    });
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
+    return parseStatus(body.status);
+  },
+  async setAccessMode(accessMode) {
+    const response = await fetch("/api/settings/mcp", {
+      body: JSON.stringify({ accessMode }),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
     });
     const body = await responseBody(response);
     if (!response.ok) throw new McpStatusClientError("request_failed");

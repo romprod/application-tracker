@@ -1789,6 +1789,8 @@ function McpSettingsView({
 }) {
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
+  const [accessError, setAccessError] = useState(false);
+  const [savingAccess, setSavingAccess] = useState(false);
   const localReady = status?.transports.local.state === "ready";
   const remoteReady = status?.transports.remote.state === "ready";
   const registryReady = status?.sessions.enforcement === "active";
@@ -1807,6 +1809,17 @@ function McpSettingsView({
       active = false;
     };
   }, [mcpStatusClient]);
+
+  function setAccessMode(accessMode: "read_only" | "read_write") {
+    if (!status || status.access.mode === accessMode || savingAccess) return;
+    setAccessError(false);
+    setSavingAccess(true);
+    void mcpStatusClient
+      .setAccessMode(accessMode)
+      .then(setStatus)
+      .catch(() => setAccessError(true))
+      .finally(() => setSavingAccess(false));
+  }
 
   return (
     <main id="main-content" tabIndex={-1} className="settings-main">
@@ -1828,8 +1841,10 @@ function McpSettingsView({
             </dd>
           </div>
           <div>
-            <dt>Active</dt>
-            <dd>{status?.sessions.active ?? "—"}</dd>
+            <dt>Access</dt>
+            <dd className="status-word">
+              {status ? statusLabel(status.access.mode) : "—"}
+            </dd>
           </div>
           <div>
             <dt>Tools</dt>
@@ -1856,6 +1871,57 @@ function McpSettingsView({
 
       {status && (
         <div className="mcp-workspace">
+          <section className="mcp-access" aria-labelledby="mcp-access-title">
+            <div>
+              <p className="eyebrow">Workspace authority</p>
+              <h2 id="mcp-access-title">Choose what MCP clients can change.</h2>
+              <p>
+                This policy applies immediately to local and remote MCP
+                sessions. It never changes website permissions or the actor and
+                workspace bound to a client.
+              </p>
+            </div>
+            <div>
+              <div
+                className="mcp-access-options"
+                role="radiogroup"
+                aria-label="MCP access mode"
+              >
+                <button
+                  aria-checked={status.access.mode === "read_only"}
+                  disabled={savingAccess}
+                  onClick={() => setAccessMode("read_only")}
+                  role="radio"
+                  type="button"
+                >
+                  <strong>Read only</strong>
+                  <span>Inspect workspace data; block every mutation.</span>
+                </button>
+                <button
+                  aria-checked={status.access.mode === "read_write"}
+                  disabled={savingAccess}
+                  onClick={() => setAccessMode("read_write")}
+                  role="radio"
+                  type="button"
+                >
+                  <strong>Read and write</strong>
+                  <span>Create, update, and soft-delete applications.</span>
+                </button>
+              </div>
+              <p className="mcp-access-note" data-mode={status.access.mode}>
+                {status.access.mode === "read_write"
+                  ? "Write access is active. MCP clients can change shared workspace records until an administrator switches this back."
+                  : "Safe default active. Write tools remain discoverable but return write_access_disabled without changing data."}
+              </p>
+              {accessError && (
+                <p className="mcp-access-error" role="alert">
+                  MCP access could not be changed. The previous policy remains
+                  active.
+                </p>
+              )}
+            </div>
+          </section>
+
           <section className="mcp-ledger" aria-labelledby="transport-title">
             <div className="panel-heading">
               <div>
@@ -1874,13 +1940,15 @@ function McpSettingsView({
               {localReady ? (
                 <>
                   <strong>
-                    {status.capabilities.registeredTools} read-only tools
-                    available
+                    {status.capabilities.registeredTools} tools registered
                   </strong>{" "}
                   over local stdio
                   {remoteReady
                     ? " and authenticated Streamable HTTP."
-                    : " with an explicit actor and workspace binding."}
+                    : " with an explicit actor and workspace binding."}{" "}
+                  {status.access.mode === "read_write"
+                    ? "Workspace mutations are enabled."
+                    : "Workspace mutations are blocked."}
                 </>
               ) : (
                 "The status boundary is ready. No MCP transport or tool is active in this build."

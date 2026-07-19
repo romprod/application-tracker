@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApplicationRecord } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import {
+  ApplicationMcpService,
   LocalMcpActorProvider,
   LocalMcpActorUnavailableError,
-  LocalMcpReadService,
 } from "./mcp.js";
+import { McpWriteAccessDisabledError } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
 
 const actor: AuthenticatedActor = {
@@ -67,7 +68,7 @@ const references: ReferenceValue[] = [
   },
 ];
 
-describe("LocalMcpReadService", () => {
+describe("ApplicationMcpService", () => {
   it("binds every call to the configured active actor and workspace", () => {
     const repository = {
       findActiveActor: vi.fn().mockReturnValue(actor),
@@ -92,7 +93,9 @@ describe("LocalMcpReadService", () => {
         statusIsTerminal: true,
       }),
     ];
-    const applicationReader = {
+    const applicationService = {
+      createApplication: vi.fn(),
+      deleteApplication: vi.fn(),
       listApplicationEvents: vi.fn().mockReturnValue([
         {
           actorDisplayName: "Alex Example",
@@ -104,17 +107,24 @@ describe("LocalMcpReadService", () => {
         },
       ]),
       listApplications: vi.fn().mockReturnValue(applications),
+      updateApplication: vi.fn(),
     };
     const referenceReader = {
       listReferenceValues: vi.fn().mockReturnValue(references),
     };
-    const service = new LocalMcpReadService(
+    const service = new ApplicationMcpService(
       new LocalMcpActorProvider(repository, {
         username: "alex",
         workspaceSlug: "default",
       }),
-      applicationReader,
+      applicationService,
       referenceReader,
+      {
+        getAccessMode: vi.fn(() => "read_only"),
+        requireWriteAccess: vi.fn(() => {
+          throw new McpWriteAccessDisabledError();
+        }),
+      },
       () => new Date("2026-01-10T12:00:00.000Z"),
     );
 
@@ -171,7 +181,7 @@ describe("LocalMcpReadService", () => {
       username: "alex",
       workspaceSlug: "default",
     });
-    expect(applicationReader.listApplications).toHaveBeenCalledWith(actor);
+    expect(applicationService.listApplications).toHaveBeenCalledWith(actor);
     expect(referenceReader.listReferenceValues).toHaveBeenCalledWith(actor);
   });
 
@@ -182,21 +192,96 @@ describe("LocalMcpReadService", () => {
         .mockReturnValueOnce(actor)
         .mockReturnValue(undefined),
     };
-    const service = new LocalMcpReadService(
+    const service = new ApplicationMcpService(
       new LocalMcpActorProvider(repository, {
         username: "alex",
         workspaceSlug: "default",
       }),
       {
+        createApplication: vi.fn(),
+        deleteApplication: vi.fn(),
         listApplicationEvents: vi.fn(),
         listApplications: vi.fn().mockReturnValue([]),
+        updateApplication: vi.fn(),
       },
       { listReferenceValues: vi.fn().mockReturnValue([]) },
+      {
+        getAccessMode: vi.fn(() => "read_only"),
+        requireWriteAccess: vi.fn(),
+      },
     );
 
     expect(service.getTrackerContext().actor.username).toBe("alex");
     expect(() => service.getTrackerContext()).toThrow(
       LocalMcpActorUnavailableError,
+    );
+  });
+
+  it("rechecks the workspace access mode before every mutation", () => {
+    let accessMode: "read_only" | "read_write" = "read_only";
+    const created = application({
+      id: "application-created",
+      statusId: "status-open",
+    });
+    const updated = { ...created, companyName: "Updated Company" };
+    const applications = {
+      createApplication: vi.fn(() => created),
+      deleteApplication: vi.fn(),
+      listApplicationEvents: vi.fn(),
+      listApplications: vi.fn().mockReturnValue([]),
+      updateApplication: vi.fn(() => updated),
+    };
+    const service = new ApplicationMcpService(
+      new LocalMcpActorProvider(
+        { findActiveActor: vi.fn(() => actor) },
+        { username: "alex", workspaceSlug: "default" },
+      ),
+      applications,
+      { listReferenceValues: vi.fn().mockReturnValue([]) },
+      {
+        getAccessMode: () => accessMode,
+        requireWriteAccess: () => {
+          if (accessMode !== "read_write") {
+            throw new McpWriteAccessDisabledError();
+          }
+        },
+      },
+    );
+    const createInput = {
+      companyName: "Example Company",
+      roleTitle: "Engineer",
+      statusId: "11111111-1111-4111-8111-111111111111",
+    };
+
+    expect(() => service.createApplication(createInput)).toThrow(
+      McpWriteAccessDisabledError,
+    );
+    expect(applications.createApplication).not.toHaveBeenCalled();
+
+    accessMode = "read_write";
+    expect(service.getTrackerContext().access).toBe("read_write");
+    expect(service.createApplication(createInput)).toBe(created);
+    expect(
+      service.updateApplication("application-created", {
+        companyName: "Updated Company",
+      }),
+    ).toBe(updated);
+    expect(service.deleteApplication("application-created")).toEqual({
+      applicationId: "application-created",
+      deleted: true,
+    });
+    expect(applications.createApplication).toHaveBeenCalledWith(
+      actor,
+      createInput,
+    );
+    expect(applications.updateApplication).toHaveBeenCalledWith(
+      actor,
+      "application-created",
+      { companyName: "Updated Company" },
+    );
+    expect(applications.deleteApplication).toHaveBeenCalledWith(
+      actor,
+      "application-created",
     );
   });
 });

@@ -85,9 +85,17 @@ not-found response as an unknown session. Session admission, idle expiry,
 absolute expiry, and shutdown cleanup use the limits shown in the administrator
 MCP status view.
 
-The remote endpoint exposes the same five read-only tools as the local stdio
-server. Every tool call records the actor, workspace, result, target type, and
-`remote_http` transport. The endpoint never accepts an application mutation.
+The remote endpoint exposes the same five read tools and three application
+mutation tools as local stdio. Fresh workspaces block mutations; an
+administrator must enable **Read and write** in Settings → MCP. The policy is
+checked on every call, including existing sessions. Every tool call records the
+actor, workspace, result, target type, and `remote_http` transport. Successful
+mutations and their audit rows commit atomically.
+
+Enabling writes applies to every remote identity that resolves to an active
+member of the workspace and presents the configured required OAuth scope. The
+browser setting does not change token verification, identity links, or session
+binding. Disable writes when clients no longer need mutation authority.
 
 ## Request controls
 

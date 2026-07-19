@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { localMcpToolNames } from "./mcp.js";
+import type { applicationMcpToolNames } from "./mcp.js";
 
-export type McpAuditAction = (typeof localMcpToolNames)[number];
+export type McpAuditAction = (typeof applicationMcpToolNames)[number];
 export type McpAuditResult = "denied" | "error" | "not_found" | "success";
 export type McpAuditTargetType =
   | "application"

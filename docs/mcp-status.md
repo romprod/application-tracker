@@ -5,8 +5,9 @@ Settings → MCP. The page reports what the current build can do without exposin
 deployment or identity-provider details.
 
 The build includes local stdio and optional remote Streamable HTTP transports
-for five read-only tools. The page reports whether runtime configuration has
-enabled each transport.
+for five read tools and three application mutation tools. The page reports
+whether runtime configuration has enabled each transport and whether the
+workspace policy currently permits mutations.
 
 ## Status API
 
@@ -14,9 +15,16 @@ enabled each transport.
 returns `Cache-Control: no-store`. Unauthenticated requests receive `401`;
 members receive `403`.
 
+`PATCH /api/settings/mcp` accepts `{"accessMode":"read_only"}` or
+`{"accessMode":"read_write"}` from an active administrator with a matching
+same-host `Origin`. Fresh and migrated workspaces default to `read_only`.
+Changing the policy takes effect on the next local or remote tool invocation;
+MCP processes and sessions do not need to restart.
+
 The response contains only:
 
 - overall runtime availability;
+- current workspace access mode;
 - local and remote transport states;
 - active and initializing session counts;
 - configured global and per-actor session limits;
@@ -105,8 +113,15 @@ When OAuth is configured, administrators can link an exact provider subject to
 an existing local user from **Settings → Users**. The server fixes the issuer to
 `MCP_OAUTH_ISSUER`; the browser never receives or selects it.
 
-## Remaining MCP milestones
+## Workspace write policy
 
-Remote access, including administrator-managed external identity linking, is
-implemented for the five read-only tools. Separately approved mutating tools
-remain a future milestone.
+The three mutation tools are always discoverable so connected clients retain a
+stable tool registry. In `read_only` mode they fail with
+`write_access_disabled` before changing application data. In `read_write` mode
+active workspace members may create and update applications. Soft deletion also
+requires `confirm=true` and is advertised as destructive to the MCP client.
+
+The setting is workspace-wide. Enabling it immediately grants the same mutation
+tools to every authorized local or remote MCP actor in that workspace. Disable
+it when write access is no longer needed. Tool arguments can never select an
+actor or workspace.

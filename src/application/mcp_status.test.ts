@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "./auth.js";
+import type { McpAccessMode } from "./mcp_access.js";
 import type { McpAuditReader } from "./mcp_audit.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
   McpStatusForbiddenError,
   McpStatusService,
 } from "./mcp_status.js";
+import type { McpAccessSettingsProvider } from "./mcp_status.js";
 
 const admin: AuthenticatedActor = {
   authenticated: true,
@@ -44,11 +46,12 @@ describe("McpStatusService", () => {
     const service = new McpStatusService(policy, provider, auditReader);
 
     expect(service.getStatus(admin)).toEqual({
+      access: { mode: "read_only" },
       availability: "available",
       capabilities: {
         auditEvents: true,
         oauthVerification: false,
-        registeredTools: 5,
+        registeredTools: 8,
       },
       recentAuditEvents: [
         {
@@ -87,6 +90,26 @@ describe("McpStatusService", () => {
     };
 
     expect(() => service.getStatus(member)).toThrow(McpStatusForbiddenError);
+  });
+
+  it("updates the administrator-controlled access mode", () => {
+    let mode: McpAccessMode = "read_only";
+    const accessSettings: McpAccessSettingsProvider = {
+      getAdministratorAccessMode: () => mode,
+      setAdministratorAccessMode: (_actor, accessMode) => {
+        mode = accessMode;
+      },
+    };
+    const service = new McpStatusService(
+      policy,
+      undefined,
+      undefined,
+      accessSettings,
+    );
+
+    expect(service.setAccessMode(admin, "read_write").access.mode).toBe(
+      "read_write",
+    );
   });
 
   it("reports OAuth verification only when an authorization service exists", () => {

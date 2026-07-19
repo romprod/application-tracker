@@ -36,7 +36,8 @@ be added in a small, testable commit.
 - Administrator-managed external identity linking for remote MCP
 - Optional OpenID Connect browser login
 - Settings sections for Lists, Users, and MCP status
-- Local and remote MCP tools with explicit actor context and audit events
+- Local and remote MCP tools with explicit actor context, administrator-gated
+  writes, and audit events
 - Online SQLite backup, verified restore, and migration tooling
 
 ## Repository status
@@ -68,9 +69,12 @@ the server does not store the email body. Operator commands provide online
 SQLite backup, verification, and non-overwriting restore. API failures use
 stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
-server exposes five read-only tools through an explicit actor and workspace
-binding and records each accepted tool outcome in an immutable audit ledger.
-An optional Streamable HTTP endpoint exposes the same tools over HTTPS. It
+server exposes five read tools and three application mutation tools through an
+explicit actor and workspace binding. Fresh workspaces block mutations until an
+administrator enables read-write access in Settings → MCP. Every tool outcome
+is recorded in an immutable audit ledger, and successful mutations commit with
+their audit event in one transaction. An optional Streamable HTTP endpoint
+exposes the same tools over HTTPS. It
 validates OAuth tokens, maps external identities to active local memberships,
 binds each session to its actor and workspace, and enforces network, session,
 request-size, concurrency, and rate limits. The endpoint stays absent until the
@@ -79,7 +83,7 @@ operator supplies every remote and OAuth setting, accepts only size-limited
 Administrators link an exact
 provider subject to an existing local user from Settings → Users; removing the
 link immediately prevents that identity from resolving for new remote requests.
-The app does not yet provide OpenID Connect browser login or mutating MCP tools.
+The app does not yet provide OpenID Connect browser login.
 Automated tests and CI cover each completed boundary.
 
 ## Run the foundation

@@ -2,12 +2,12 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "../application/auth.js";
-import type { LocalMcpTools } from "../application/mcp.js";
+import type { McpApplicationTools } from "../application/mcp.js";
 import type { NewMcpAuditEvent } from "../application/mcp_audit.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { createApp } from "./app.js";
 import { RemoteMcpHttpEndpoint } from "./mcp_http_endpoint.js";
-import { createReadOnlyMcpServer } from "./mcp_server.js";
+import { createApplicationMcpServer } from "./mcp_server.js";
 
 const actor: AuthenticatedActor = {
   authenticated: true,
@@ -72,7 +72,13 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
         Promise.resolve(token === "other.jwt.value" ? otherActor : actor),
     },
     createServer: (actorProvider, authenticatedActor) => {
-      const tools: LocalMcpTools = {
+      const tools: McpApplicationTools = {
+        createApplication: () => {
+          throw new Error("not used");
+        },
+        deleteApplication: () => {
+          throw new Error("not used");
+        },
         getApplication: () => {
           throw new Error("not used");
         },
@@ -96,11 +102,15 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
           },
         }),
         listApplications: () => ({ applications: [], returned: 0, total: 0 }),
+        updateApplication: () => {
+          throw new Error("not used");
+        },
       };
-      return createReadOnlyMcpServer(tools, {
+      return createApplicationMcpServer(tools, {
         audit: {
           actorUserId: authenticatedActor.userId,
           recorder: { record: audit },
+          runAtomically: (operation) => operation(),
           transport: "remote_http",
           workspaceId: authenticatedActor.workspaceId,
         },
@@ -178,6 +188,9 @@ describe("remote MCP HTTP endpoint", () => {
         "list_applications",
         "get_application",
         "get_reference_data",
+        "create_application",
+        "update_application",
+        "delete_application",
       ],
     );
 

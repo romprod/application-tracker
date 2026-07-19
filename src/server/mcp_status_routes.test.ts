@@ -7,6 +7,7 @@ import {
   McpStatusService,
 } from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
+import { McpAccessService } from "../application/mcp_access.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
@@ -14,6 +15,7 @@ import { SqliteAuthRepository } from "../infrastructure/database/auth_repository
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
+import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { UserAdministrationService } from "../application/users.js";
 import { createApp } from "./app.js";
@@ -106,6 +108,10 @@ async function createStatusApp() {
     mcpPolicy,
     new ApplicationMcpRuntimeStatusProvider(sessionRegistry),
     auditService,
+    new McpAccessService(
+      new SqliteMcpAccessRepository(database),
+      () => new Date("2026-01-01T03:00:00.000Z"),
+    ),
   );
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
@@ -172,11 +178,12 @@ describe("MCP status route", () => {
     const body: unknown = response.body;
     expect(body).toEqual({
       status: {
+        access: { mode: "read_only" },
         availability: "available",
         capabilities: {
           auditEvents: true,
           oauthVerification: false,
-          registeredTools: 5,
+          registeredTools: 8,
         },
         recentAuditEvents: [
           {
@@ -215,5 +222,35 @@ describe("MCP status route", () => {
     ]) {
       expect(serialized).not.toContain(privateField);
     }
+  });
+
+  it("lets an administrator change access mode with same-origin protection", async () => {
+    const { app } = await createStatusApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+
+    await request(app)
+      .patch("/api/settings/mcp")
+      .set("Cookie", cookie)
+      .send({ accessMode: "read_write" })
+      .expect(403, { error: { code: "csrf_rejected" } });
+
+    const changed = await request(app)
+      .patch("/api/settings/mcp")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .set("Origin", "https://tracker.example.test")
+      .send({ accessMode: "read_write" })
+      .expect(200);
+    expect(changed.body).toMatchObject({
+      status: { access: { mode: "read_write" } },
+    });
+
+    const refreshed = await request(app)
+      .get("/api/settings/mcp")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(refreshed.body).toMatchObject({
+      status: { access: { mode: "read_write" } },
+    });
   });
 });

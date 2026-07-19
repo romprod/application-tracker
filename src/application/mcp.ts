@@ -4,14 +4,22 @@ import {
   type ApplicationRecord,
 } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
+import type {
+  CreateApplicationInput,
+  UpdateApplicationInput,
+} from "../domain/applications.js";
+import type { McpAccessMode } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
 
-export const localMcpToolNames = [
+export const applicationMcpToolNames = [
   "get_tracker_context",
   "get_job_search_summary",
   "list_applications",
   "get_application",
   "get_reference_data",
+  "create_application",
+  "update_application",
+  "delete_application",
 ] as const;
 
 export interface LocalMcpActorBinding {
@@ -38,12 +46,30 @@ export interface McpApplicationsReader {
   listApplications(actor: AuthenticatedActor): ApplicationRecord[];
 }
 
+export interface McpApplicationsService extends McpApplicationsReader {
+  createApplication(
+    actor: AuthenticatedActor,
+    input: CreateApplicationInput,
+  ): ApplicationRecord;
+  deleteApplication(actor: AuthenticatedActor, applicationId: string): void;
+  updateApplication(
+    actor: AuthenticatedActor,
+    applicationId: string,
+    input: UpdateApplicationInput,
+  ): ApplicationRecord;
+}
+
+export interface McpAccessPolicy {
+  getAccessMode(workspaceId: string): McpAccessMode;
+  requireWriteAccess(actor: AuthenticatedActor): void;
+}
+
 export interface McpReferenceValuesReader {
   listReferenceValues(actor: AuthenticatedActor): ReferenceValue[];
 }
 
 export interface LocalMcpTrackerContext {
-  access: "read_only";
+  access: McpAccessMode;
   actor: AuthenticatedActor["user"];
   workspace: {
     name: string;
@@ -103,12 +129,21 @@ export interface ListMcpApplicationsInput {
   statusId?: string;
 }
 
-export interface LocalMcpTools {
+export interface McpApplicationTools {
+  createApplication(input: CreateApplicationInput): ApplicationRecord;
+  deleteApplication(applicationId: string): {
+    applicationId: string;
+    deleted: true;
+  };
   getApplication(applicationId: string): McpApplicationDetail;
   getJobSearchSummary(): McpJobSearchSummary;
   getReferenceData(): McpReferenceData;
   getTrackerContext(): LocalMcpTrackerContext;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
+  updateApplication(
+    applicationId: string,
+    input: UpdateApplicationInput,
+  ): ApplicationRecord;
 }
 
 export class LocalMcpActorUnavailableError extends Error {
@@ -153,18 +188,19 @@ function applicationSummary(
   };
 }
 
-export class LocalMcpReadService implements LocalMcpTools {
+export class ApplicationMcpService implements McpApplicationTools {
   public constructor(
     private readonly actorProvider: McpActorProvider,
-    private readonly applications: McpApplicationsReader,
+    private readonly applications: McpApplicationsService,
     private readonly referenceValues: McpReferenceValuesReader,
+    private readonly accessPolicy: McpAccessPolicy,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
   public getTrackerContext(): LocalMcpTrackerContext {
     const actor = this.actorProvider.getActor();
     return {
-      access: "read_only",
+      access: this.accessPolicy.getAccessMode(actor.workspaceId),
       actor: { ...actor.user },
       workspace: {
         name: actor.workspace.name,
@@ -253,5 +289,30 @@ export class LocalMcpReadService implements LocalMcpTools {
   public getReferenceData(): McpReferenceData {
     const actor = this.actorProvider.getActor();
     return { values: this.referenceValues.listReferenceValues(actor) };
+  }
+
+  public createApplication(input: CreateApplicationInput): ApplicationRecord {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.createApplication(actor, input);
+  }
+
+  public updateApplication(
+    applicationId: string,
+    input: UpdateApplicationInput,
+  ): ApplicationRecord {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.updateApplication(actor, applicationId, input);
+  }
+
+  public deleteApplication(applicationId: string): {
+    applicationId: string;
+    deleted: true;
+  } {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    this.applications.deleteApplication(actor, applicationId);
+    return { applicationId, deleted: true };
   }
 }

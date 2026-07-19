@@ -59,8 +59,11 @@ issuer and audience binding, the required scope, and an authorized workspace
 membership.
 
 MCP tools use the same application services, schemas, authorization checks,
-and transactions as HTTP requests. Destructive tools require explicit product
-approval and are absent by default.
+and transactions as HTTP requests. MCP mutations are disabled by default and
+can be enabled only by a workspace administrator from the website. Application
+deletion is a soft delete, is advertised as destructive, and requires explicit
+confirmation in the tool input. A successful mutation and its audit event
+commit atomically.
 
 ## Document contract
 

@@ -6,6 +6,7 @@ import {
 } from "./mcp_status_client";
 
 const status = {
+  access: { mode: "read_only" },
   availability: "planned",
   capabilities: {
     auditEvents: true,
@@ -71,6 +72,29 @@ describe("browserMcpStatusClient", () => {
     await expect(browserMcpStatusClient.getStatus()).rejects.toEqual(
       new McpStatusClientError("invalid_response"),
     );
+  });
+
+  it("updates the workspace access mode with a same-origin JSON request", async () => {
+    const writable = { ...status, access: { mode: "read_write" as const } };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status: writable }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserMcpStatusClient.setAccessMode("read_write"),
+    ).resolves.toEqual(writable);
+    expect(fetchMock).toHaveBeenCalledWith("/api/settings/mcp", {
+      body: JSON.stringify({ accessMode: "read_write" }),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    });
   });
 
   it("rejects malformed audit events", async () => {

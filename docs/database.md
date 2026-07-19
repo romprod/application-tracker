@@ -121,6 +121,13 @@ and generation time. A composite foreign key ties the cache entry to its
 document and removes it when the document is deleted. See
 [`documents.md`](documents.md).
 
+The thirteenth migration adds workspace-scoped MCP access settings with a
+read-only default and administrator attribution for each change.
+
+The fourteenth migration rebuilds the append-only MCP audit table to admit the
+create, update, and delete application actions while preserving existing audit
+rows and immutability triggers.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and
