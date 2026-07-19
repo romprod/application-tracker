@@ -7,6 +7,7 @@ import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js"
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
+import { SqliteRemoteMcpActorRepository } from "../infrastructure/database/mcp_oauth_actor_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { createApp } from "./app.js";
@@ -263,6 +264,17 @@ describe("user administration routes", () => {
         .pluck()
         .get(userId),
     ).toBe(issuer);
+    const remoteActors = new SqliteRemoteMcpActorRepository(database);
+    expect(
+      remoteActors.findActiveActor({
+        issuer,
+        subject: "oauth-subject-123",
+        workspaceSlug: "default",
+      }),
+    ).toMatchObject({
+      user: { role: "member", username: "sam" },
+      userId,
+    });
 
     const identity = linkedUser.externalIdentities;
     if (!Array.isArray(identity)) throw new Error("Expected identity links");
@@ -278,6 +290,13 @@ describe("user administration routes", () => {
       .set("Cookie", adminCookie)
       .expect(200);
     expect(createdUser(unlinked).externalIdentities).toEqual([]);
+    expect(
+      remoteActors.findActiveActor({
+        issuer,
+        subject: "oauth-subject-123",
+        workspaceSlug: "default",
+      }),
+    ).toBeUndefined();
   });
 
   it("fails closed when identity linking is unconfigured or conflicts", async () => {
