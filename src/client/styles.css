@@ -1539,125 +1539,148 @@ code {
 .lists-workspace {
   display: grid;
   grid-template-columns: repeat(2, minmax(320px, 1fr));
-  gap: 64px clamp(42px, 6vw, 88px);
-  align-items: start;
-  padding: 58px clamp(28px, 6vw, 94px) 88px;
-}
-
-.reference-group {
-  min-width: 0;
-  border-top: 1px solid var(--ink);
-}
-
-.reference-description {
-  min-height: 48px;
-  margin: 18px 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.reference-list {
-  padding: 0;
-  margin: 0;
-  list-style: none;
+  gap: 20px;
+  align-items: stretch;
+  padding: 26px clamp(28px, 6vw, 94px) 88px;
+  background: #ebe7dc;
   border-top: 1px solid var(--line);
 }
 
-.reference-list > li {
-  display: grid;
-  grid-template-columns: minmax(130px, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  min-height: 74px;
-  padding: 12px 0;
+.lists-hero {
+  grid-template-columns: minmax(0, 820px);
+  padding-bottom: 42px;
+}
+
+.reference-group {
+  position: relative;
+  min-width: 0;
+  padding: 26px;
+  background: #fffdf7;
+  border: 1px solid #cdc9bc;
+}
+
+.reference-card-heading {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--line);
 }
 
-.reference-list > li[data-inactive="true"] {
-  opacity: 0.58;
+.reference-card-heading h2 {
+  margin: 4px 0 3px;
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 540;
+  line-height: 0.95;
 }
 
-.reference-value-copy {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.reference-value-copy strong {
-  overflow: hidden;
-  color: var(--evergreen);
-  font-family: "Newsreader Variable", Georgia, serif;
-  font-size: 20px;
-  font-weight: 560;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reference-value-copy span,
-.reference-confirmation > span {
+.reference-card-heading small {
   color: var(--muted);
   font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  font-weight: 650;
 }
 
-.reference-actions,
-.reference-confirmation {
+.reference-card-heading > span {
+  color: #aaa394;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.reference-chip-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  justify-content: flex-end;
+  gap: 8px;
+  align-content: flex-start;
+  min-height: 74px;
+  padding-top: 18px;
 }
 
-.reference-actions button,
-.reference-confirmation button,
-.reference-edit-form button {
-  padding: 7px 8px;
-  color: #68716e;
-  background: transparent;
-  border: 1px solid #aaafa9;
+.reference-chip-grid > button,
+.reference-chip-grid > span {
+  position: relative;
+  min-height: 35px;
+  padding: 0 13px;
+  color: #39433f;
+  background: #efede5;
+  border: 1px solid #d4d0c4;
   border-radius: 0;
   font: inherit;
-  font-size: 8px;
-  font-weight: 720;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 10px;
+  line-height: 33px;
+}
+
+.reference-chip-grid > button {
   cursor: pointer;
 }
 
-.reference-actions button:hover:not(:disabled),
-.reference-confirmation button:hover:not(:disabled),
-.reference-edit-form button:hover:not(:disabled) {
+.reference-chip-grid > button:hover,
+.reference-chip-grid > button[aria-pressed="true"] {
   color: #fffdf7;
-  background: var(--signal);
-  border-color: var(--signal);
+  background: var(--evergreen);
+  border-color: var(--evergreen);
 }
 
-.reference-actions button:focus-visible,
-.reference-confirmation button:focus-visible,
+.reference-chip-grid > [data-inactive="true"] {
+  opacity: 0.48;
+  text-decoration: line-through;
+}
+
+.reference-chip-grid > [data-terminal="true"]::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  content: "";
+  background: var(--signal);
+  border-radius: 50%;
+}
+
+.reference-chip-grid .reference-add-chip {
+  color: #58625e;
+  background: transparent;
+  border-style: dashed;
+}
+
+.reference-chip-grid .reference-add-chip span {
+  margin-right: 6px;
+  color: var(--signal);
+  font-size: 16px;
+  font-weight: 400;
+  vertical-align: -1px;
+}
+
+.reference-chip-grid > button:focus-visible,
 .reference-edit-form button:focus-visible,
+.reference-editor-actions button:focus-visible,
 .reference-add-form button:focus-visible {
   outline: 3px solid var(--signal);
   outline-offset: 3px;
 }
 
-.reference-actions button:disabled,
-.reference-confirmation button:disabled,
 .reference-edit-form button:disabled,
+.reference-editor-actions button:disabled,
 .reference-add-form button:disabled {
   cursor: wait;
   opacity: 0.55;
 }
 
+.reference-editor {
+  padding: 18px;
+  margin-top: 18px;
+  background: #f2eee4;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--signal);
+}
+
 .reference-edit-form {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto auto;
-  grid-column: 1 / -1;
   gap: 8px;
-  align-items: end;
+  align-items: center;
 }
 
 .reference-edit-form label {
@@ -1691,6 +1714,49 @@ code {
   outline-offset: 1px;
 }
 
+.reference-edit-form button,
+.reference-editor-actions button,
+.reference-add-form button {
+  min-height: 41px;
+  padding: 0 12px;
+  color: #fffdf7;
+  background: var(--evergreen);
+  border: 1px solid var(--evergreen);
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.reference-edit-form button:hover:not(:disabled),
+.reference-editor-actions button:hover:not(:disabled),
+.reference-add-form button:hover:not(:disabled) {
+  color: #fffdf7;
+  background: var(--signal);
+  border-color: var(--signal);
+}
+
+.reference-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.reference-editor-actions span {
+  color: #7f2f21;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .reference-add-form {
   display: grid;
   gap: 9px;
@@ -1710,23 +1776,8 @@ code {
 
 .reference-add-form > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
-}
-
-.reference-add-form button {
-  min-height: 41px;
-  padding: 0 13px;
-  color: #fffdf7;
-  background: var(--evergreen);
-  border: 1px solid var(--evergreen);
-  border-radius: 0;
-  font: inherit;
-  font-size: 8px;
-  font-weight: 720;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
 }
 
 .reference-checkbox {

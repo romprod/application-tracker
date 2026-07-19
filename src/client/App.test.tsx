@@ -1019,16 +1019,17 @@ describe("application shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     expect(
       await screen.findByRole("heading", {
-        name: "Lists that fit your search.",
+        name: "Make the tracker fit your search.",
       }),
     ).toBeInTheDocument();
     expect(referenceValuesClient.listValues).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Referral")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Add source" }));
     fireEvent.change(screen.getByLabelText("New source"), {
       target: { value: "Community board" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add value" }));
     await waitFor(() =>
       expect(referenceValuesClient.createValue).toHaveBeenCalledWith({
         category: "source",
@@ -1037,6 +1038,21 @@ describe("application shell", () => {
       }),
     );
     expect(await screen.findByText("Community board")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Edit Prospect; active/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Edit status Prospect"), {
+      target: { value: "Lead" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save label" }));
+    await waitFor(() =>
+      expect(referenceValuesClient.updateValue).toHaveBeenCalledWith(
+        "77777777-7777-4777-8777-777777777777",
+        { label: "Lead" },
+      ),
+    );
+    expect(await screen.findByText("Lead")).toBeInTheDocument();
   });
 
   it("lets members view lists without administration controls", async () => {

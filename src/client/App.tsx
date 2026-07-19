@@ -834,31 +834,26 @@ function SettingsNavigation({
 
 const referenceGroups: ReadonlyArray<{
   category: ReferenceCategory;
-  description: string;
   plural: string;
   singular: string;
 }> = [
   {
     category: "status",
-    description: "Stages and completed outcomes for each application.",
     plural: "Statuses",
     singular: "status",
   },
   {
     category: "source",
-    description: "Where opportunities and introductions came from.",
     plural: "Sources",
     singular: "source",
   },
   {
     category: "role_type",
-    description: "Employment arrangements used to classify roles.",
     plural: "Role types",
     singular: "role type",
   },
   {
     category: "document_type",
-    description: "Labels for files that will join the document library.",
     plural: "Document types",
     singular: "document type",
   },
@@ -897,6 +892,7 @@ function ListsSettingsView({
     status: "",
   });
   const [newStatusTerminal, setNewStatusTerminal] = useState(false);
+  const [addingCategory, setAddingCategory] = useState<ReferenceCategory>();
   const [editingId, setEditingId] = useState<string>();
   const [editLabel, setEditLabel] = useState("");
   const [pendingId, setPendingId] = useState<string>();
@@ -945,6 +941,7 @@ function ListsSettingsView({
         setValues((current) => [...(current ?? []), created]);
         setDrafts((current) => ({ ...current, [category]: "" }));
         if (category === "status") setNewStatusTerminal(false);
+        setAddingCategory(undefined);
         setNotice(
           `${created.label} was added to ${referenceGroups.find((group) => group.category === category)?.plural.toLowerCase() ?? "the list"}.`,
         );
@@ -989,38 +986,20 @@ function ListsSettingsView({
       .finally(() => setPendingId(undefined));
   }
 
-  const activeCount = values?.filter(({ isActive }) => isActive).length ?? 0;
-  const terminalCount =
-    values?.filter(
-      ({ category, isActive, isTerminal }) =>
-        category === "status" && isActive && isTerminal,
-    ).length ?? 0;
-
   return (
     <main id="main-content" tabIndex={-1} className="settings-main">
-      <section className="settings-hero" aria-labelledby="lists-title">
+      <section
+        className="settings-hero lists-hero"
+        aria-labelledby="lists-title"
+      >
         <div>
           <p className="eyebrow">Settings · Workspace vocabulary</p>
-          <h1 id="lists-title">Lists that fit your search.</h1>
+          <h1 id="lists-title">Make the tracker fit your search.</h1>
           <p className="lede">
-            Keep the language around applications consistent without losing the
-            flexibility of your own workflow.
+            These values power forms, filters, and MCP tools. Select any value
+            to make a change.
           </p>
         </div>
-        <dl className="settings-totals" aria-label="List summary">
-          <div>
-            <dt>Values</dt>
-            <dd>{values?.length ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Remote active</dt>
-            <dd>{values ? activeCount : "—"}</dd>
-          </div>
-          <div>
-            <dt>Closed</dt>
-            <dd>{values ? terminalCount : "—"}</dd>
-          </div>
-        </dl>
       </section>
 
       <SettingsNavigation
@@ -1056,152 +1035,172 @@ function ListsSettingsView({
           {referenceGroups.map((group, groupIndex) => {
             const groupValues = values
               .filter(({ category }) => category === group.category)
-              .sort((left, right) => left.sortOrder - right.sortOrder);
+              .sort((left, right) =>
+                left.label.localeCompare(right.label, undefined, {
+                  sensitivity: "base",
+                }),
+              );
+            const selectedValue = groupValues.find(
+              ({ id }) => id === editingId,
+            );
             return (
               <section
                 className="reference-group"
                 aria-labelledby={`reference-${group.category}`}
                 key={group.category}
               >
-                <div className="panel-heading">
+                <div className="reference-card-heading">
                   <div>
-                    <p className="eyebrow">
-                      {String(groupIndex + 1).padStart(2, "0")} · Reference list
-                    </p>
+                    <p className="eyebrow">Collection</p>
                     <h2 id={`reference-${group.category}`}>{group.plural}</h2>
+                    <small>{groupValues.length} values · A–Z</small>
                   </div>
-                  <span>{groupValues.length} total</span>
+                  <span aria-hidden="true">
+                    {String(groupIndex + 1).padStart(2, "0")}
+                  </span>
                 </div>
-                <p className="reference-description">{group.description}</p>
-                <ul className="reference-list">
-                  {groupValues.map((value) => (
-                    <li data-inactive={!value.isActive} key={value.id}>
-                      {editingId === value.id ? (
-                        <form
-                          className="reference-edit-form"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            const label = editLabel.trim();
-                            if (label) {
-                              updateValue(
-                                value,
-                                { label },
-                                `${label} was saved.`,
-                              );
-                            }
-                          }}
+                <div className="reference-chip-grid">
+                  {groupValues.map((value) =>
+                    canManage ? (
+                      <button
+                        aria-label={`Edit ${value.label}; ${value.isActive ? "active" : "inactive"}${value.isTerminal ? "; closed outcome" : ""}`}
+                        aria-pressed={editingId === value.id}
+                        data-inactive={!value.isActive}
+                        data-terminal={value.isTerminal}
+                        key={value.id}
+                        onClick={() => {
+                          setAddingCategory(undefined);
+                          setConfirmingId(undefined);
+                          setEditingId(value.id);
+                          setEditLabel(value.label);
+                        }}
+                        type="button"
+                      >
+                        {value.label}
+                      </button>
+                    ) : (
+                      <span
+                        aria-label={`${value.label}; ${value.isActive ? "active" : "inactive"}${value.isTerminal ? "; closed outcome" : ""}`}
+                        data-inactive={!value.isActive}
+                        data-terminal={value.isTerminal}
+                        key={value.id}
+                      >
+                        {value.label}
+                      </span>
+                    ),
+                  )}
+                  {canManage && addingCategory !== group.category && (
+                    <button
+                      className="reference-add-chip"
+                      onClick={() => {
+                        setEditingId(undefined);
+                        setConfirmingId(undefined);
+                        setAddingCategory(group.category);
+                      }}
+                      type="button"
+                      aria-label={`Add ${group.singular}`}
+                    >
+                      <span aria-hidden="true">+</span> Add value
+                    </button>
+                  )}
+                </div>
+                {canManage && selectedValue && (
+                  <div className="reference-editor">
+                    <form
+                      className="reference-edit-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const label = editLabel.trim();
+                        if (label) {
+                          updateValue(
+                            selectedValue,
+                            { label },
+                            `${label} was saved.`,
+                          );
+                        }
+                      }}
+                    >
+                      <label htmlFor={`edit-${selectedValue.id}`}>
+                        Edit {group.singular} {selectedValue.label}
+                      </label>
+                      <input
+                        autoFocus
+                        id={`edit-${selectedValue.id}`}
+                        maxLength={80}
+                        required
+                        value={editLabel}
+                        onChange={(event) => setEditLabel(event.target.value)}
+                      />
+                      <button type="submit" disabled={pendingId !== undefined}>
+                        Save label
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(undefined)}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                    <div className="reference-editor-actions">
+                      {group.category === "status" && (
+                        <button
+                          type="button"
+                          disabled={pendingId !== undefined}
+                          onClick={() =>
+                            updateValue(
+                              selectedValue,
+                              { isTerminal: !selectedValue.isTerminal },
+                              `${selectedValue.label} outcome behavior was updated.`,
+                            )
+                          }
                         >
-                          <label htmlFor={`edit-${value.id}`}>
-                            Edit {group.singular} {value.label}
-                          </label>
-                          <input
-                            autoFocus
-                            id={`edit-${value.id}`}
-                            maxLength={80}
-                            required
-                            value={editLabel}
-                            onChange={(event) =>
-                              setEditLabel(event.target.value)
-                            }
-                          />
+                          {selectedValue.isTerminal
+                            ? "Mark as open"
+                            : "Treat as closed"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={pendingId !== undefined}
+                        onClick={() =>
+                          updateValue(
+                            selectedValue,
+                            { isActive: !selectedValue.isActive },
+                            `${selectedValue.label} is now ${selectedValue.isActive ? "inactive" : "active"}.`,
+                          )
+                        }
+                      >
+                        {selectedValue.isActive ? "Disable" : "Enable"}
+                      </button>
+                      {confirmingId === selectedValue.id ? (
+                        <>
+                          <span>Remove this value?</span>
                           <button
-                            type="submit"
+                            type="button"
                             disabled={pendingId !== undefined}
+                            onClick={() => deleteValue(selectedValue)}
                           >
-                            Save
+                            Confirm remove
                           </button>
                           <button
                             type="button"
-                            onClick={() => setEditingId(undefined)}
+                            onClick={() => setConfirmingId(undefined)}
                           >
-                            Cancel
+                            Keep value
                           </button>
-                        </form>
-                      ) : (
-                        <>
-                          <div className="reference-value-copy">
-                            <strong>{value.label}</strong>
-                            <span>
-                              {value.isActive ? "Active" : "Inactive"}
-                              {value.isTerminal ? " · Closed outcome" : ""}
-                            </span>
-                          </div>
-                          {canManage && confirmingId !== value.id && (
-                            <div className="reference-actions">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingId(value.id);
-                                  setEditLabel(value.label);
-                                }}
-                                aria-label={`Edit ${value.label}`}
-                              >
-                                Edit
-                              </button>
-                              {group.category === "status" && (
-                                <button
-                                  type="button"
-                                  disabled={pendingId !== undefined}
-                                  onClick={() =>
-                                    updateValue(
-                                      value,
-                                      { isTerminal: !value.isTerminal },
-                                      `${value.label} outcome behavior was updated.`,
-                                    )
-                                  }
-                                  aria-label={`${value.isTerminal ? "Mark" : "Treat"} ${value.label} ${value.isTerminal ? "as open" : "as closed"}`}
-                                >
-                                  {value.isTerminal ? "Open" : "Closed"}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                disabled={pendingId !== undefined}
-                                onClick={() =>
-                                  updateValue(
-                                    value,
-                                    { isActive: !value.isActive },
-                                    `${value.label} is now ${value.isActive ? "inactive" : "active"}.`,
-                                  )
-                                }
-                                aria-label={`${value.isActive ? "Disable" : "Enable"} ${value.label}`}
-                              >
-                                {value.isActive ? "Disable" : "Enable"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmingId(value.id)}
-                                aria-label={`Remove ${value.label}`}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          )}
-                          {canManage && confirmingId === value.id && (
-                            <div className="reference-confirmation">
-                              <span>Remove this value?</span>
-                              <button
-                                type="button"
-                                disabled={pendingId !== undefined}
-                                onClick={() => deleteValue(value)}
-                                aria-label={`Confirm remove ${value.label}`}
-                              >
-                                Remove
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmingId(undefined)}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
                         </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingId(selectedValue.id)}
+                        >
+                          Remove
+                        </button>
                       )}
-                    </li>
-                  ))}
-                </ul>
-                {canManage && (
+                    </div>
+                  </div>
+                )}
+                {canManage && addingCategory === group.category && (
                   <form
                     className="reference-add-form"
                     onSubmit={(event) => createValue(event, group.category)}
@@ -1223,7 +1222,13 @@ function ListsSettingsView({
                         }
                       />
                       <button type="submit" disabled={pendingId !== undefined}>
-                        Add {group.singular}
+                        Add value
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddingCategory(undefined)}
+                      >
+                        Cancel
                       </button>
                     </div>
                     {group.category === "status" && (
