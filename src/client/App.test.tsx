@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { AuthClientError } from "./auth_client";
@@ -26,6 +26,10 @@ import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const authenticatedSession: AuthenticatedSession = {
   authenticated: true,
@@ -611,6 +615,9 @@ describe("application shell", () => {
   });
 
   it("shows the current next action in the application drawer", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 6, 18, 12));
+
     render(
       <App
         applicationsClient={createApplicationsClient()}
