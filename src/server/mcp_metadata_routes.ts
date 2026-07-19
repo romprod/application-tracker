@@ -11,6 +11,11 @@ export function mcpProtectedResourceMetadataPath(resourceUrl: string): string {
   return `/.well-known/oauth-protected-resource${resource.pathname}`;
 }
 
+export function mcpProtectedResourceMetadataUrl(resourceUrl: string): string {
+  return new URL(mcpProtectedResourceMetadataPath(resourceUrl), resourceUrl)
+    .href;
+}
+
 const setDiscoveryHeaders: RequestHandler = (_request, response, next) => {
   response.set({
     "Access-Control-Allow-Methods": "GET, OPTIONS",

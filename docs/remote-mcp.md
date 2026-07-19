@@ -38,3 +38,16 @@ required scope, and header-based bearer method. It is public, cacheable for five
 minutes, and contains no JWKS URL, subject, token, hostname beyond the public
 resource, or private deployment setting. The endpoint accepts `GET` and
 `OPTIONS` only.
+
+## Bearer authorization boundary
+
+The remote adapter accepts one `Authorization: Bearer <token>` header. Missing
+credentials receive `401 authentication_required`; malformed or rejected
+tokens receive `401 invalid_token`; a missing required scope receives
+`403 insufficient_scope`; and an identity without an active local workspace
+membership receives `403 actor_unavailable`.
+
+OAuth challenges include the protected-resource metadata URL and exact required
+scope. They omit error descriptions, identity details, and verifier failures.
+The server passes only the resolved local actor to downstream handlers and does
+not retain or echo the bearer token.
