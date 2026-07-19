@@ -5,6 +5,7 @@ import { browserUsersClient, UsersClientError } from "./users_client";
 const user = {
   createdAt: "2026-01-01T00:00:00.000Z",
   displayName: "Alex Example",
+  externalIdentities: [],
   id: "11111111-1111-4111-8111-111111111111",
   isCurrentUser: true,
   localAccount: true,
@@ -19,19 +20,73 @@ afterEach(() => {
 
 describe("browserUsersClient", () => {
   it("lists users without caching the response", async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ users: [user] }), { status: 200 }),
-      );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          externalIdentityProviderConfigured: false,
+          users: [user],
+        }),
+        { status: 200 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(browserUsersClient.listUsers()).resolves.toEqual([user]);
+    await expect(browserUsersClient.listUsers()).resolves.toEqual({
+      externalIdentityProviderConfigured: false,
+      users: [user],
+    });
     expect(fetchMock).toHaveBeenCalledWith("/api/settings/users", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     });
+  });
+
+  it("links and unlinks an external subject through scoped endpoints", async () => {
+    const identity = {
+      createdAt: "2026-01-01T01:00:00.000Z",
+      id: "22222222-2222-4222-8222-222222222222",
+      subject: "oauth-subject-123",
+    };
+    const linked = { ...user, externalIdentities: [identity] };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ user: linked }), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ user }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserUsersClient.linkExternalIdentity(user.id, identity.subject),
+    ).resolves.toEqual(linked);
+    await expect(
+      browserUsersClient.unlinkExternalIdentity(user.id, identity.id),
+    ).resolves.toEqual(user);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/settings/users/${user.id}/external-identities`,
+      {
+        body: JSON.stringify({ subject: identity.subject }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/settings/users/${user.id}/external-identities/${identity.id}`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
   });
 
   it("returns a stable error when a username is unavailable", async () => {

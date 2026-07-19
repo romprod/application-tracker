@@ -1257,6 +1257,10 @@ function UsersSettingsView({
   usersClient: UsersClient;
 }) {
   const [users, setUsers] = useState<ManagedUser[]>();
+  const [
+    externalIdentityProviderConfigured,
+    setExternalIdentityProviderConfigured,
+  ] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [form, setForm] = useState<CreateLocalUserInput>(emptyUserForm);
   const [formError, setFormError] = useState<string>();
@@ -1264,13 +1268,28 @@ function UsersSettingsView({
   const [submitting, setSubmitting] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string>();
   const [statusError, setStatusError] = useState<string>();
+  const [linkingUserId, setLinkingUserId] = useState<string>();
+  const [identitySubjects, setIdentitySubjects] = useState<
+    Record<string, string>
+  >({});
+  const [selectedIdentity, setSelectedIdentity] = useState<{
+    identityId: string;
+    userId: string;
+  }>();
+  const [identityPending, setIdentityPending] = useState(false);
+  const [identityError, setIdentityError] = useState<string>();
 
   useEffect(() => {
     let active = true;
     void usersClient
       .listUsers()
-      .then((loadedUsers) => {
-        if (active) setUsers(loadedUsers);
+      .then((directory) => {
+        if (active) {
+          setUsers(directory.users);
+          setExternalIdentityProviderConfigured(
+            directory.externalIdentityProviderConfigured,
+          );
+        }
       })
       .catch(() => {
         if (active) setLoadError(true);
@@ -1336,6 +1355,62 @@ function UsersSettingsView({
       });
   }
 
+  function replaceUser(updated: ManagedUser) {
+    setUsers((current) =>
+      current?.map((candidate) =>
+        candidate.id === updated.id ? updated : candidate,
+      ),
+    );
+  }
+
+  function linkExternalIdentity(
+    event: FormEvent<HTMLFormElement>,
+    user: ManagedUser,
+  ) {
+    event.preventDefault();
+    const subject = identitySubjects[user.id] ?? "";
+    setIdentityPending(true);
+    setIdentityError(undefined);
+    setNotice(undefined);
+    void usersClient
+      .linkExternalIdentity(user.id, subject)
+      .then((updated) => {
+        replaceUser(updated);
+        setIdentitySubjects((current) => ({ ...current, [user.id]: "" }));
+        setLinkingUserId(undefined);
+        setNotice(`Remote identity linked to ${updated.displayName}.`);
+        setIdentityPending(false);
+      })
+      .catch((caught: unknown) => {
+        const message =
+          caught instanceof UsersClientError &&
+          caught.code === "external_identity_unavailable"
+            ? "That external identity is already linked."
+            : "The external identity could not be linked.";
+        setIdentityError(message);
+        setIdentityPending(false);
+      });
+  }
+
+  function unlinkExternalIdentity(user: ManagedUser, identityId: string) {
+    if (identityPending) return;
+    setIdentityPending(true);
+    setIdentityError(undefined);
+    setNotice(undefined);
+    void usersClient
+      .unlinkExternalIdentity(user.id, identityId)
+      .then((updated) => {
+        replaceUser(updated);
+        setSelectedIdentity(undefined);
+        setNotice(`Remote identity removed from ${updated.displayName}.`);
+        setIdentityPending(false);
+      })
+      .catch(() => {
+        setIdentityError("The external identity could not be removed.");
+        setIdentityPending(false);
+      });
+  }
+
   const activeCount = users?.filter((user) => user.status === "active").length;
   const adminCount = users?.filter((user) => user.role === "admin").length;
 
@@ -1382,6 +1457,11 @@ function UsersSettingsView({
           {statusError}
         </div>
       )}
+      {identityError && (
+        <div className="settings-error" role="alert">
+          {identityError}
+        </div>
+      )}
 
       <div className="users-workspace" id="users-panel">
         <section className="users-roster" aria-labelledby="roster-title">
@@ -1401,51 +1481,167 @@ function UsersSettingsView({
               Accounts could not be loaded. Reload the page to try again.
             </p>
           )}
+          {users && !externalIdentityProviderConfigured && (
+            <p className="identity-provider-note">
+              External identity linking appears here after the OAuth verifier is
+              configured. Local accounts remain available.
+            </p>
+          )}
           {users && (
             <ul className="user-list">
-              {users.map((user, index) => (
-                <li key={user.id}>
-                  <span className="user-index">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div className="user-identity">
-                    <div>
-                      <strong>{user.displayName}</strong>
-                      {user.isCurrentUser && <span>Current session</span>}
-                    </div>
-                    <p>@{user.username}</p>
-                    <small>
-                      {user.localAccount
-                        ? "Local password"
-                        : "External identity"}
-                    </small>
-                  </div>
-                  <div className="user-badges">
-                    <span data-role={user.role}>{titleCase(user.role)}</span>
-                    <span data-status={user.status}>
-                      {titleCase(user.status)}
+              {users.map((user, index) => {
+                const selected = user.externalIdentities.find(
+                  ({ id }) =>
+                    selectedIdentity?.userId === user.id &&
+                    selectedIdentity.identityId === id,
+                );
+                return (
+                  <li key={user.id}>
+                    <span className="user-index">
+                      {String(index + 1).padStart(2, "0")}
                     </span>
-                  </div>
-                  <div className="user-action">
-                    {user.isCurrentUser ? (
-                      <span>Protected</span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={pendingUserId !== undefined}
-                        onClick={() => changeStatus(user)}
-                        aria-label={`${user.status === "active" ? "Disable" : "Enable"} ${user.displayName}`}
-                      >
-                        {pendingUserId === user.id
-                          ? "Saving…"
-                          : user.status === "active"
-                            ? "Disable"
-                            : "Enable"}
-                      </button>
+                    <div className="user-identity">
+                      <div>
+                        <strong>{user.displayName}</strong>
+                        {user.isCurrentUser && <span>Current session</span>}
+                      </div>
+                      <p>@{user.username}</p>
+                      <small>
+                        {user.localAccount
+                          ? "Local password"
+                          : "External identity"}
+                        {user.externalIdentities.length > 0
+                          ? ` · ${String(user.externalIdentities.length)} remote ${user.externalIdentities.length === 1 ? "link" : "links"}`
+                          : ""}
+                      </small>
+                      {user.externalIdentities.length > 0 && (
+                        <div
+                          className="external-identity-chips"
+                          aria-label={`Remote identities for ${user.displayName}`}
+                        >
+                          {user.externalIdentities.map((identity) => (
+                            <button
+                              aria-pressed={selected?.id === identity.id}
+                              key={identity.id}
+                              onClick={() => {
+                                setLinkingUserId(undefined);
+                                setSelectedIdentity({
+                                  identityId: identity.id,
+                                  userId: user.id,
+                                });
+                              }}
+                              title={identity.subject}
+                              type="button"
+                            >
+                              {identity.subject}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="user-badges">
+                      <span data-role={user.role}>{titleCase(user.role)}</span>
+                      <span data-status={user.status}>
+                        {titleCase(user.status)}
+                      </span>
+                    </div>
+                    <div className="user-action">
+                      {user.isCurrentUser ? (
+                        <span>Protected</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={pendingUserId !== undefined}
+                          onClick={() => changeStatus(user)}
+                          aria-label={`${user.status === "active" ? "Disable" : "Enable"} ${user.displayName}`}
+                        >
+                          {pendingUserId === user.id
+                            ? "Saving…"
+                            : user.status === "active"
+                              ? "Disable"
+                              : "Enable"}
+                        </button>
+                      )}
+                      {externalIdentityProviderConfigured && (
+                        <button
+                          aria-label={`Link remote identity to ${user.displayName}`}
+                          disabled={identityPending}
+                          onClick={() => {
+                            setSelectedIdentity(undefined);
+                            setLinkingUserId(user.id);
+                          }}
+                          type="button"
+                        >
+                          Link identity
+                        </button>
+                      )}
+                    </div>
+                    {selected && (
+                      <div className="external-identity-editor">
+                        <div>
+                          <span>Selected remote subject</span>
+                          <code>{selected.subject}</code>
+                        </div>
+                        <button
+                          disabled={identityPending}
+                          onClick={() =>
+                            unlinkExternalIdentity(user, selected.id)
+                          }
+                          type="button"
+                        >
+                          {identityPending ? "Removing…" : "Remove link"}
+                        </button>
+                        <button
+                          disabled={identityPending}
+                          onClick={() => setSelectedIdentity(undefined)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
-                  </div>
-                </li>
-              ))}
+                    {linkingUserId === user.id && (
+                      <form
+                        className="external-identity-form"
+                        onSubmit={(event) => linkExternalIdentity(event, user)}
+                      >
+                        <label htmlFor={`external-subject-${user.id}`}>
+                          OAuth subject for {user.displayName}
+                        </label>
+                        <input
+                          autoCapitalize="none"
+                          autoComplete="off"
+                          id={`external-subject-${user.id}`}
+                          maxLength={512}
+                          onChange={(event) =>
+                            setIdentitySubjects((current) => ({
+                              ...current,
+                              [user.id]: event.target.value,
+                            }))
+                          }
+                          required
+                          spellCheck={false}
+                          value={identitySubjects[user.id] ?? ""}
+                        />
+                        <button disabled={identityPending} type="submit">
+                          {identityPending ? "Linking…" : "Link subject"}
+                        </button>
+                        <button
+                          disabled={identityPending}
+                          onClick={() => setLinkingUserId(undefined)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                        <small>
+                          Copy the exact <code>sub</code> claim from the
+                          configured provider.
+                        </small>
+                      </form>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

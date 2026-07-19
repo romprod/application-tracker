@@ -1788,6 +1788,15 @@ code {
   font-size: 20px;
 }
 
+.identity-provider-note {
+  padding: 18px 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  border-bottom: 1px solid var(--line);
+}
+
 .user-list {
   padding: 0;
   margin: 0;
@@ -1801,6 +1810,42 @@ code {
   align-items: center;
   min-height: 104px;
   border-bottom: 1px solid var(--line);
+}
+
+.external-identity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.external-identity-chips button {
+  max-width: 190px;
+  padding: 5px 7px;
+  overflow: hidden;
+  color: #4f5c58;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #e9e7dd;
+  border: 1px solid #c9c8bf;
+  border-radius: 0;
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.external-identity-chips button:hover,
+.external-identity-chips button[aria-pressed="true"] {
+  color: #fffdf7;
+  background: var(--evergreen);
+  border-color: var(--evergreen);
+}
+
+.external-identity-chips button:focus-visible,
+.external-identity-editor button:focus-visible,
+.external-identity-form button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
 }
 
 .user-index {
@@ -1886,6 +1931,8 @@ code {
 
 .user-action {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   justify-content: flex-end;
 }
 
@@ -1921,6 +1968,98 @@ code {
 .user-action button:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.external-identity-editor,
+.external-identity-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-column: 2 / -1;
+  gap: 8px;
+  align-items: center;
+  padding: 13px 0 16px;
+  border-top: 1px dashed #c5c6be;
+}
+
+.external-identity-editor > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.external-identity-editor span,
+.external-identity-form label {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.external-identity-editor code {
+  overflow-wrap: anywhere;
+  color: var(--evergreen);
+  font-size: 11px;
+}
+
+.external-identity-editor button,
+.external-identity-form button {
+  min-height: 36px;
+  padding: 0 10px;
+  color: #68716e;
+  background: transparent;
+  border: 1px solid #aaafa9;
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.external-identity-editor button:hover:not(:disabled),
+.external-identity-form button:hover:not(:disabled) {
+  color: #fffdf7;
+  background: var(--signal);
+  border-color: var(--signal);
+}
+
+.external-identity-form {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.external-identity-form label,
+.external-identity-form small {
+  grid-column: 1 / -1;
+}
+
+.external-identity-form input {
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: #fffdf7;
+  border: 1px solid #aaa;
+  border-radius: 0;
+  font: inherit;
+  font-size: 11px;
+}
+
+.external-identity-form input:focus {
+  border-color: var(--signal);
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.external-identity-form small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.external-identity-form small code {
+  color: var(--evergreen);
+  font-size: inherit;
 }
 
 .create-user-form {
@@ -2541,6 +2680,17 @@ code {
 
   .user-action {
     grid-column: 2 / -1;
+  }
+
+  .external-identity-editor,
+  .external-identity-form {
+    grid-template-columns: 1fr;
+    grid-column: 2 / -1;
+  }
+
+  .external-identity-form label,
+  .external-identity-form small {
+    grid-column: 1;
   }
 
   .create-user-form {

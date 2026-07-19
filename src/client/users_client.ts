@@ -1,12 +1,24 @@
+export interface ExternalIdentityLink {
+  createdAt: string;
+  id: string;
+  subject: string;
+}
+
 export interface ManagedUser {
   createdAt: string;
   displayName: string;
+  externalIdentities: ExternalIdentityLink[];
   id: string;
   isCurrentUser: boolean;
   localAccount: boolean;
   role: "admin" | "member";
   status: "active" | "disabled";
   username: string;
+}
+
+export interface UserDirectory {
+  externalIdentityProviderConfigured: boolean;
+  users: ManagedUser[];
 }
 
 export interface CreateLocalUserInput {
@@ -18,10 +30,15 @@ export interface CreateLocalUserInput {
 
 export interface UsersClient {
   createUser(input: CreateLocalUserInput): Promise<ManagedUser>;
-  listUsers(): Promise<ManagedUser[]>;
+  linkExternalIdentity(userId: string, subject: string): Promise<ManagedUser>;
+  listUsers(): Promise<UserDirectory>;
   setStatus(
     userId: string,
     status: "active" | "disabled",
+  ): Promise<ManagedUser>;
+  unlinkExternalIdentity(
+    userId: string,
+    identityId: string,
   ): Promise<ManagedUser>;
 }
 
@@ -60,6 +77,7 @@ function parseUser(value: unknown): ManagedUser {
     !isRecord(value) ||
     typeof value.createdAt !== "string" ||
     typeof value.displayName !== "string" ||
+    !Array.isArray(value.externalIdentities) ||
     typeof value.id !== "string" ||
     typeof value.isCurrentUser !== "boolean" ||
     typeof value.localAccount !== "boolean" ||
@@ -69,9 +87,25 @@ function parseUser(value: unknown): ManagedUser {
   ) {
     throw new UsersClientError("invalid_response");
   }
+  const externalIdentities = value.externalIdentities.map((identity) => {
+    if (
+      !isRecord(identity) ||
+      typeof identity.createdAt !== "string" ||
+      typeof identity.id !== "string" ||
+      typeof identity.subject !== "string"
+    ) {
+      throw new UsersClientError("invalid_response");
+    }
+    return {
+      createdAt: identity.createdAt,
+      id: identity.id,
+      subject: identity.subject,
+    };
+  });
   return {
     createdAt: value.createdAt,
     displayName: value.displayName,
+    externalIdentities,
     id: value.id,
     isCurrentUser: value.isCurrentUser,
     localAccount: value.localAccount,
@@ -100,10 +134,18 @@ export const browserUsersClient: UsersClient = {
       headers: { Accept: "application/json" },
     });
     const body = await successfulBody(response);
-    if (!isRecord(body) || !Array.isArray(body.users)) {
+    if (
+      !isRecord(body) ||
+      typeof body.externalIdentityProviderConfigured !== "boolean" ||
+      !Array.isArray(body.users)
+    ) {
       throw new UsersClientError("invalid_response");
     }
-    return body.users.map(parseUser);
+    return {
+      externalIdentityProviderConfigured:
+        body.externalIdentityProviderConfigured,
+      users: body.users.map(parseUser),
+    };
   },
 
   async createUser(input) {
@@ -130,6 +172,34 @@ export const browserUsersClient: UsersClient = {
           "Content-Type": "application/json",
         },
         method: "PATCH",
+      },
+    );
+    return parseUserResponse(await successfulBody(response));
+  },
+
+  async linkExternalIdentity(userId, subject) {
+    const response = await fetch(
+      `/api/settings/users/${encodeURIComponent(userId)}/external-identities`,
+      {
+        body: JSON.stringify({ subject }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    return parseUserResponse(await successfulBody(response));
+  },
+
+  async unlinkExternalIdentity(userId, identityId) {
+    const response = await fetch(
+      `/api/settings/users/${encodeURIComponent(userId)}/external-identities/${encodeURIComponent(identityId)}`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
       },
     );
     return parseUserResponse(await successfulBody(response));

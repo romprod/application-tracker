@@ -98,6 +98,7 @@ const applicationEvents: ApplicationEvent[] = [
 const administrator: ManagedUser = {
   createdAt: "2026-01-01T00:00:00.000Z",
   displayName: "Alex Example",
+  externalIdentities: [],
   id: "11111111-1111-4111-8111-111111111111",
   isCurrentUser: true,
   localAccount: true,
@@ -109,6 +110,7 @@ const administrator: ManagedUser = {
 const member: ManagedUser = {
   createdAt: "2026-01-02T00:00:00.000Z",
   displayName: "Sam Member",
+  externalIdentities: [],
   id: "22222222-2222-4222-8222-222222222222",
   isCurrentUser: false,
   localAccount: true,
@@ -236,16 +238,53 @@ function createAuthClient(session: AuthSession) {
   } satisfies AuthClient;
 }
 
-function createUsersClient(users: ManagedUser[] = [administrator, member]) {
+function createUsersClient(
+  users: ManagedUser[] = [administrator, member],
+  externalIdentityProviderConfigured = false,
+) {
   return {
     createUser: vi.fn<UsersClient["createUser"]>().mockResolvedValue(member),
-    listUsers: vi.fn<UsersClient["listUsers"]>().mockResolvedValue(users),
+    linkExternalIdentity: vi
+      .fn<UsersClient["linkExternalIdentity"]>()
+      .mockImplementation((userId, subject) => {
+        const user = users.find((candidate) => candidate.id === userId);
+        return user
+          ? Promise.resolve({
+              ...user,
+              externalIdentities: [
+                ...user.externalIdentities,
+                {
+                  createdAt: "2026-01-01T01:00:00.000Z",
+                  id: "77777777-7777-4777-8777-777777777777",
+                  subject,
+                },
+              ],
+            })
+          : Promise.reject(new Error("Missing test user"));
+      }),
+    listUsers: vi.fn<UsersClient["listUsers"]>().mockResolvedValue({
+      externalIdentityProviderConfigured,
+      users,
+    }),
     setStatus: vi
       .fn<UsersClient["setStatus"]>()
       .mockImplementation((userId, status) => {
         const user = users.find((candidate) => candidate.id === userId);
         return user
           ? Promise.resolve({ ...user, status })
+          : Promise.reject(new Error("Missing test user"));
+      }),
+    unlinkExternalIdentity: vi
+      .fn<UsersClient["unlinkExternalIdentity"]>()
+      .mockImplementation((userId, identityId) => {
+        const user = users.find((candidate) => candidate.id === userId);
+        return user
+          ? Promise.resolve({
+              ...user,
+              externalIdentities: user.externalIdentities.filter(
+                ({ id }) => id !== identityId,
+              ),
+            })
           : Promise.reject(new Error("Missing test user"));
       }),
   } satisfies UsersClient;
@@ -1101,6 +1140,55 @@ describe("application shell", () => {
       expect(usersClient.setStatus).toHaveBeenCalledWith(member.id, "disabled"),
     );
     expect(await screen.findByText("Disabled")).toBeInTheDocument();
+  });
+
+  it("links and removes a remote identity from a workspace user", async () => {
+    const usersClient = createUsersClient([administrator, member], true);
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+        usersClient={usersClient}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Link remote identity to Sam Member",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("OAuth subject for Sam Member"), {
+      target: { value: "oauth-subject-123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Link subject" }));
+
+    await waitFor(() =>
+      expect(usersClient.linkExternalIdentity).toHaveBeenCalledWith(
+        member.id,
+        "oauth-subject-123",
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "oauth-subject-123" }),
+    );
+    expect(screen.getByText("Selected remote subject")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove link" }));
+    await waitFor(() =>
+      expect(usersClient.unlinkExternalIdentity).toHaveBeenCalledWith(
+        member.id,
+        "77777777-7777-4777-8777-777777777777",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "oauth-subject-123" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("explains how to configure a missing setup token", async () => {
