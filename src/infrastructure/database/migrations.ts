@@ -12,6 +12,7 @@ import { applicationContactsLinksMigration } from "./migrations/007_application_
 import { referenceValuesMigration } from "./migrations/008_reference_values.js";
 import { applicationReferencesMigration } from "./migrations/009_application_references.js";
 import { mcpAuditEventsMigration } from "./migrations/010_mcp_audit_events.js";
+import { documentsMigration } from "./migrations/011_documents.js";
 
 export interface Migration {
   name: string;
@@ -43,6 +44,7 @@ export const applicationMigrations: readonly Migration[] = [
   referenceValuesMigration,
   applicationReferencesMigration,
   mcpAuditEventsMigration,
+  documentsMigration,
 ];
 
 const createMigrationTable = `

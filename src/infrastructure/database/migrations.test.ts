@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
       expect(
         database
           .prepare(
@@ -272,6 +272,19 @@ describe("migrateDatabase", () => {
         "mcp_audit_events_reject_delete",
         "mcp_audit_events_reject_update",
       ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name IN (
+               'file_objects',
+               'documents',
+               'application_documents'
+             ) ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual(["application_documents", "documents", "file_objects"]);
     } finally {
       database.close();
     }
