@@ -128,6 +128,10 @@ The fourteenth migration rebuilds the append-only MCP audit table to admit the
 create, update, and delete application actions while preserving existing audit
 rows and immutability triggers.
 
+The fifteenth migration adds workspace-scoped MCP clients. It stores the public
+client ID, local actor binding, lifecycle timestamps, and a SHA-256 hash of the
+high-entropy bearer secret. Plaintext bearer tokens never enter the database.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

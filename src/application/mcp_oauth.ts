@@ -1,4 +1,8 @@
 import type { AuthenticatedActor } from "./auth.js";
+import type {
+  RemoteMcpAuthorizer,
+  RemoteMcpPrincipal,
+} from "./mcp_remote_auth.js";
 
 export const supportedMcpOAuthAlgorithms = ["ES256", "RS256"] as const;
 
@@ -62,7 +66,7 @@ export class RemoteMcpActorUnavailableError extends Error {
   }
 }
 
-export class RemoteMcpAuthorizationService {
+export class RemoteMcpAuthorizationService implements RemoteMcpAuthorizer {
   public constructor(
     private readonly verifier: McpAccessTokenVerifier,
     private readonly actors: RemoteMcpActorRepository,
@@ -70,7 +74,7 @@ export class RemoteMcpAuthorizationService {
     private readonly workspaceSlug: string,
   ) {}
 
-  public async authorize(token: string): Promise<AuthenticatedActor> {
+  public async authorize(token: string): Promise<RemoteMcpPrincipal> {
     const verified = await this.verifier.verify(token);
     if (!verified.scopes.has(this.requiredScope)) {
       throw new InsufficientMcpScopeError(this.requiredScope);
@@ -82,6 +86,10 @@ export class RemoteMcpAuthorizationService {
       workspaceSlug: this.workspaceSlug,
     });
     if (!actor) throw new RemoteMcpActorUnavailableError();
-    return actor;
+    return {
+      actor,
+      principalId: `oauth:${verified.issuer}:${verified.subject}`,
+      workspaceSlug: this.workspaceSlug,
+    };
   }
 }

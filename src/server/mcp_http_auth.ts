@@ -6,16 +6,18 @@ import {
   InvalidMcpAccessTokenError,
   RemoteMcpActorUnavailableError,
 } from "../application/mcp_oauth.js";
+import type {
+  RemoteMcpAuthorizer,
+  RemoteMcpPrincipal,
+} from "../application/mcp_remote_auth.js";
 import { mcpProtectedResourceMetadataUrl } from "./mcp_metadata_routes.js";
-
-export interface RemoteMcpAuthorizer {
-  authorize(token: string): Promise<AuthenticatedActor>;
-}
 
 export interface RemoteMcpBearerAuthOptions {
   authorizer: RemoteMcpAuthorizer;
-  requiredScope: string;
-  resourceUrl: string;
+  oauth?: {
+    requiredScope: string;
+    resourceUrl: string;
+  };
 }
 
 const bearerTokenPattern = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/i;
@@ -28,13 +30,18 @@ function bearerChallenge(
   options: RemoteMcpBearerAuthOptions,
   error?: "insufficient_scope" | "invalid_token",
 ): string {
-  return [
-    ...(error ? [`error="${error}"`] : []),
-    `resource_metadata="${challengeValue(
-      mcpProtectedResourceMetadataUrl(options.resourceUrl),
-    )}"`,
-    `scope="${challengeValue(options.requiredScope)}"`,
-  ].join(", ");
+  return options.oauth
+    ? [
+        ...(error ? [`error="${error}"`] : []),
+        `resource_metadata="${challengeValue(
+          mcpProtectedResourceMetadataUrl(options.oauth.resourceUrl),
+        )}"`,
+        `scope="${challengeValue(options.oauth.requiredScope)}"`,
+      ].join(", ")
+    : [
+        `realm="application-tracker-mcp"`,
+        ...(error ? [`error="${error}"`] : []),
+      ].join(", ");
 }
 
 function sendAuthorizationError(
@@ -53,9 +60,13 @@ function sendAuthorizationError(
 }
 
 export function remoteMcpActor(response: Response): AuthenticatedActor {
-  const actor: unknown = response.locals.remoteMcpActor;
-  if (!actor) throw new Error("Remote MCP actor is unavailable");
-  return actor as AuthenticatedActor;
+  return remoteMcpPrincipal(response).actor;
+}
+
+export function remoteMcpPrincipal(response: Response): RemoteMcpPrincipal {
+  const principal: unknown = response.locals.remoteMcpPrincipal;
+  if (!principal) throw new Error("Remote MCP principal is unavailable");
+  return principal as RemoteMcpPrincipal;
 }
 
 export function createRemoteMcpBearerAuth(
@@ -84,7 +95,7 @@ export function createRemoteMcpBearerAuth(
     }
 
     try {
-      response.locals.remoteMcpActor =
+      response.locals.remoteMcpPrincipal =
         await options.authorizer.authorize(token);
       next();
     } catch (error) {

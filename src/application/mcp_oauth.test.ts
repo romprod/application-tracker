@@ -51,7 +51,12 @@ describe("RemoteMcpAuthorizationService", () => {
       "tracker:read",
     ]);
 
-    await expect(service.authorize("signed-token")).resolves.toEqual(actor);
+    await expect(service.authorize("signed-token")).resolves.toEqual({
+      actor,
+      principalId:
+        "oauth:https://identity.example/application/o/mcp/:identity-123",
+      workspaceSlug: "default",
+    });
     expect(verify).toHaveBeenCalledWith("signed-token");
     expect(findActiveActor).toHaveBeenCalledWith({
       issuer: "https://identity.example/application/o/mcp/",

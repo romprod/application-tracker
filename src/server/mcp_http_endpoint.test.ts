@@ -69,7 +69,16 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
   const endpoint = new RemoteMcpHttpEndpoint({
     authorizer: {
       authorize: (token) =>
-        Promise.resolve(token === "other.jwt.value" ? otherActor : actor),
+        Promise.resolve({
+          actor: token === "other.jwt.value" ? otherActor : actor,
+          principalId:
+            token === "other.jwt.value"
+              ? "oauth:test:taylor"
+              : token === "same-actor.other-credential"
+                ? "client:other"
+                : "client:primary",
+          workspaceSlug: "default",
+        }),
     },
     createServer: (actorProvider, authenticatedActor) => {
       const tools: McpApplicationTools = {
@@ -118,7 +127,7 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
       });
     },
     network,
-    requiredScope: "tracker:read",
+    oauth: { requiredScope: "tracker:read" },
     requestPolicy: {
       maxConcurrentRequests: 8,
       maxRequestBytes: 65_536,
@@ -126,7 +135,6 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
       rateLimitWindowMs: 60_000,
     },
     sessions: registry,
-    workspaceSlug: "default",
   });
   return {
     app: createApp({ remoteMcpRouter: endpoint.router() }),
@@ -238,6 +246,28 @@ describe("remote MCP HTTP endpoint", () => {
       .set({
         ...protocolHeaders,
         Authorization: "Bearer other.jwt.value",
+        "MCP-Session-Id": sessionId,
+      })
+      .send({ id: 2, jsonrpc: "2.0", method: "tools/list", params: {} })
+      .expect(404);
+
+    expect(response.body).toEqual({
+      error: { code: -32_001, message: "Session not found" },
+      id: null,
+      jsonrpc: "2.0",
+    });
+  });
+
+  it("does not disclose a session to another credential for the same actor", async () => {
+    const { app } = initializedEndpoint();
+    const initialization = await initialize(app);
+    const sessionId = initialization.headers["mcp-session-id"] as string;
+
+    const response = await request(app)
+      .post("/mcp")
+      .set({
+        ...protocolHeaders,
+        Authorization: "Bearer same-actor.other-credential",
         "MCP-Session-Id": sessionId,
       })
       .send({ id: 2, jsonrpc: "2.0", method: "tools/list", params: {} })

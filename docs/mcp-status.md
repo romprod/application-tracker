@@ -29,8 +29,9 @@ The response contains only:
 - active and initializing session counts;
 - configured global and per-actor session limits;
 - configured idle and absolute lifetimes;
-- Boolean readiness flags for OAuth verification and audit events, plus the
-  registered tool count; and
+- Boolean readiness flags for client credentials, optional OAuth verification,
+  and audit events, plus the registered tool count;
+- eligible local actors and sanitized MCP client records; and
 - the 20 most recent workspace-scoped MCP audit events.
 
 Each displayed event contains the local actor's display name and username,
@@ -40,16 +41,16 @@ rows are append-only and remain in the database until the installation's data
 is retired under the operator's retention policy.
 
 The response omits network addresses, hostnames, identity-provider details,
-subjects, tokens, credentials, database paths, and internal errors. Server tests
-check this disclosure contract.
+subjects, bearer tokens, token hashes, database paths, and internal errors.
+Server tests check this disclosure contract.
 
 The status marks local stdio as ready when the build contains the transport and
 tool registry. Each local client spawns its own process, so the website does
 not discover or count those processes. Active and initializing counts cover
 remote sessions only. The remote transport reports ready only when startup
-installs the authenticated `/mcp` endpoint. OAuth verification reports ready
-only when all verifier settings pass startup validation and the server
-constructs the authorization service.
+installs the authenticated `/mcp` endpoint. Client credentials are always
+available to administrators. OAuth verification reports ready only when all
+optional verifier settings pass startup validation.
 
 Local client setup, actor binding, revocation behavior, and tool contracts are
 documented in [`local-mcp.md`](local-mcp.md).
@@ -81,9 +82,9 @@ These values do not govern local child processes. The registry reports
 The registry stores opaque session IDs, local actor IDs, workspace IDs,
 timestamps, state, and an in-process close handle. The status API exposes only
 workspace-scoped counts. Startup installs the network route only after all
-remote network and OAuth settings pass validation.
+remote network settings pass validation.
 
-## OAuth verifier prerequisite
+## Optional OAuth verifier
 
 The optional verifier uses six environment variables. Configure all six or
 leave all six blank:
@@ -105,9 +106,9 @@ the exact configured scope and maps the issuer-subject pair to an active local
 user with a membership in the fixed workspace. Tokens and tool inputs cannot
 select a workspace.
 
-Complete remote configuration publishes protected-resource metadata, installs
-the bearer boundary, and enables Streamable HTTP. See
-[`remote-mcp.md`](remote-mcp.md) for the network and request controls.
+OAuth configuration publishes protected-resource metadata and adds OAuth tokens
+to the bearer boundary. Native client credentials require no OAuth settings.
+See [`remote-mcp.md`](remote-mcp.md) for client, network, and request controls.
 
 When OAuth is configured, administrators can link an exact provider subject to
 an existing local user from **Settings → Users**. The server fixes the issuer to

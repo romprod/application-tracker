@@ -23,7 +23,7 @@ Repositories implement interfaces owned by the application layer.
 ```mermaid
 flowchart LR
   Browser["Browser"] -->|"HTTPS + session"| HTTP["HTTP adapter"]
-  RemoteMCP["Remote MCP client"] -->|"HTTPS + OAuth"| MCPHTTP["MCP HTTP adapter"]
+  RemoteMCP["Remote MCP client"] -->|"HTTPS + bearer token"| MCPHTTP["MCP HTTP adapter"]
   LocalMCP["Local MCP client"] -->|"stdio + operator config"| MCPStdio["MCP stdio adapter"]
   HTTP --> UseCases["Application use cases"]
   MCPHTTP --> UseCases

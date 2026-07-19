@@ -21,7 +21,11 @@ function actorApp(
 ) {
   const app = express();
   app.use((_request, response, next) => {
-    response.locals.remoteMcpActor = actor;
+    response.locals.remoteMcpPrincipal = {
+      actor,
+      principalId: "client:test",
+      workspaceSlug: "default",
+    };
     next();
   });
   app.use(guards.concurrency);

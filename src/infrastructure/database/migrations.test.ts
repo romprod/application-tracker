@@ -94,7 +94,7 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
       expect(
         database
           .prepare(
@@ -637,6 +637,34 @@ describe("migrateDatabase", () => {
           .run("2026-07-19T12:00:00.000Z"),
       ).not.toThrow();
       expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates constrained hash-only MCP client storage", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations);
+      const tableSql = database
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_clients'",
+        )
+        .pluck()
+        .get();
+      expect(tableSql).toContain("token_hash TEXT NOT NULL");
+      expect(tableSql).not.toContain("bearer_token");
+      expect(tableSql).not.toContain("token_secret");
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'mcp_clients_by_workspace'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("mcp_clients_by_workspace");
     } finally {
       database.close();
     }

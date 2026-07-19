@@ -10,8 +10,19 @@ const status = {
   availability: "planned",
   capabilities: {
     auditEvents: true,
+    clientCredentials: true,
     oauthVerification: false,
     registeredTools: 0,
+  },
+  clients: {
+    actors: [
+      {
+        displayName: "Alex Example",
+        id: "user-0000000001",
+        username: "alex",
+      },
+    ],
+    clients: [],
   },
   recentAuditEvents: [
     {
@@ -95,6 +106,69 @@ describe("browserMcpStatusClient", () => {
       },
       method: "PATCH",
     });
+  });
+
+  it("creates a client and accepts the one-time bearer token response", async () => {
+    const client = {
+      actor: status.clients.actors[0],
+      clientId: "atmcp_abcdefghijklmnopqrstuvwx",
+      createdAt: "2026-01-01T11:00:00.000Z",
+      lastUsedAt: null,
+      name: "Codex on laptop",
+      rotatedAt: null,
+      state: "active",
+    } as const;
+    const credential = {
+      bearerToken:
+        "atmcp_abcdefghijklmnopqrstuvwx.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+      client,
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ credential, status }), { status: 201 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserMcpStatusClient.createClient({
+        actorUserId: "user-0000000001",
+        name: "Codex on laptop",
+      }),
+    ).resolves.toEqual({ credential, status });
+    expect(fetchMock).toHaveBeenCalledWith("/api/settings/mcp/clients", {
+      body: JSON.stringify({
+        actorUserId: "user-0000000001",
+        name: "Codex on laptop",
+      }),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("revokes a client with an encoded same-origin request", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ client: {}, status }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserMcpStatusClient.revokeClient("atmcp_abcdefghijklmnopqrstuvwx"),
+    ).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings/mcp/clients/atmcp_abcdefghijklmnopqrstuvwx",
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
   });
 
   it("rejects malformed audit events", async () => {

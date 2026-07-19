@@ -5,9 +5,11 @@ export interface McpStatus {
   availability: "available" | "degraded" | "planned";
   capabilities: {
     auditEvents: boolean;
+    clientCredentials: boolean;
     oauthVerification: boolean;
     registeredTools: number;
   };
+  clients: McpClientDirectory;
   recentAuditEvents: McpAuditEvent[];
   sessions: {
     absoluteLifetimeSeconds: number;
@@ -28,6 +30,37 @@ export interface McpStatus {
       transport: "streamable_http";
     };
   };
+}
+
+export interface McpClientActor {
+  displayName: string;
+  id: string;
+  username: string;
+}
+
+export interface McpClientRecord {
+  actor: McpClientActor;
+  clientId: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  name: string;
+  rotatedAt: string | null;
+  state: "active" | "revoked" | "unavailable";
+}
+
+export interface McpClientDirectory {
+  actors: McpClientActor[];
+  clients: McpClientRecord[];
+}
+
+export interface IssuedMcpClientCredential {
+  bearerToken: string;
+  client: McpClientRecord;
+}
+
+export interface McpCredentialResult {
+  credential: IssuedMcpClientCredential;
+  status: McpStatus;
 }
 
 export interface McpAuditEvent {
@@ -56,7 +89,13 @@ export interface McpAuditEvent {
 }
 
 export interface McpStatusClient {
+  createClient(input: {
+    actorUserId: string;
+    name: string;
+  }): Promise<McpCredentialResult>;
   getStatus(): Promise<McpStatus>;
+  revokeClient(clientId: string): Promise<McpStatus>;
+  rotateClient(clientId: string): Promise<McpCredentialResult>;
   setAccessMode(accessMode: "read_only" | "read_write"): Promise<McpStatus>;
 }
 
@@ -117,6 +156,53 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
   };
 }
 
+function parseClientActor(value: unknown): McpClientActor {
+  if (
+    !isRecord(value) ||
+    typeof value.displayName !== "string" ||
+    typeof value.id !== "string" ||
+    typeof value.username !== "string"
+  ) {
+    throw new McpStatusClientError("invalid_response");
+  }
+  return {
+    displayName: value.displayName,
+    id: value.id,
+    username: value.username,
+  };
+}
+
+function parseClient(value: unknown): McpClientRecord {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.actor) ||
+    typeof value.clientId !== "string" ||
+    typeof value.createdAt !== "string" ||
+    Number.isNaN(Date.parse(value.createdAt)) ||
+    (value.lastUsedAt !== null &&
+      (typeof value.lastUsedAt !== "string" ||
+        Number.isNaN(Date.parse(value.lastUsedAt)))) ||
+    typeof value.name !== "string" ||
+    (value.rotatedAt !== null &&
+      (typeof value.rotatedAt !== "string" ||
+        Number.isNaN(Date.parse(value.rotatedAt)))) ||
+    (value.state !== "active" &&
+      value.state !== "revoked" &&
+      value.state !== "unavailable")
+  ) {
+    throw new McpStatusClientError("invalid_response");
+  }
+  return {
+    actor: parseClientActor(value.actor),
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    lastUsedAt: value.lastUsedAt,
+    name: value.name,
+    rotatedAt: value.rotatedAt,
+    state: value.state,
+  };
+}
+
 function parseStatus(value: unknown): McpStatus {
   if (
     !isRecord(value) ||
@@ -127,10 +213,14 @@ function parseStatus(value: unknown): McpStatus {
       value.availability !== "planned") ||
     !isRecord(value.capabilities) ||
     typeof value.capabilities.auditEvents !== "boolean" ||
+    typeof value.capabilities.clientCredentials !== "boolean" ||
     typeof value.capabilities.oauthVerification !== "boolean" ||
     !isNonNegativeInteger(value.capabilities.registeredTools) ||
     !Array.isArray(value.recentAuditEvents) ||
     value.recentAuditEvents.length > 20 ||
+    !isRecord(value.clients) ||
+    !Array.isArray(value.clients.actors) ||
+    !Array.isArray(value.clients.clients) ||
     !isRecord(value.sessions) ||
     !isNonNegativeInteger(value.sessions.absoluteLifetimeSeconds) ||
     !isNonNegativeInteger(value.sessions.active) ||
@@ -159,8 +249,13 @@ function parseStatus(value: unknown): McpStatus {
     availability: value.availability,
     capabilities: {
       auditEvents: value.capabilities.auditEvents,
+      clientCredentials: value.capabilities.clientCredentials,
       oauthVerification: value.capabilities.oauthVerification,
       registeredTools: value.capabilities.registeredTools,
+    },
+    clients: {
+      actors: value.clients.actors.map(parseClientActor),
+      clients: value.clients.clients.map(parseClient),
     },
     recentAuditEvents: value.recentAuditEvents.map(parseAuditEvent),
     sessions: {
@@ -194,6 +289,20 @@ async function responseBody(response: Response): Promise<unknown> {
 }
 
 export const browserMcpStatusClient: McpStatusClient = {
+  async createClient(input) {
+    const response = await fetch("/api/settings/mcp/clients", {
+      body: JSON.stringify(input),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    return parseCredentialResult(body);
+  },
   async getStatus() {
     const response = await fetch("/api/settings/mcp", {
       cache: "no-store",
@@ -220,4 +329,52 @@ export const browserMcpStatusClient: McpStatusClient = {
     if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
     return parseStatus(body.status);
   },
+  async rotateClient(clientId) {
+    const response = await fetch(
+      `/api/settings/mcp/clients/${encodeURIComponent(clientId)}/rotate`,
+      {
+        body: "{}",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    return parseCredentialResult(body);
+  },
+  async revokeClient(clientId) {
+    const response = await fetch(
+      `/api/settings/mcp/clients/${encodeURIComponent(clientId)}`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
+    return parseStatus(body.status);
+  },
 };
+
+function parseCredentialResult(value: unknown): McpCredentialResult {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.credential) ||
+    typeof value.credential.bearerToken !== "string"
+  ) {
+    throw new McpStatusClientError("invalid_response");
+  }
+  return {
+    credential: {
+      bearerToken: value.credential.bearerToken,
+      client: parseClient(value.credential.client),
+    },
+    status: parseStatus(value.status),
+  };
+}

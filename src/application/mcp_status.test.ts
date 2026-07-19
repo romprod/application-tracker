@@ -50,9 +50,11 @@ describe("McpStatusService", () => {
       availability: "available",
       capabilities: {
         auditEvents: true,
+        clientCredentials: true,
         oauthVerification: false,
         registeredTools: 8,
       },
+      clients: { actors: [], clients: [] },
       recentAuditEvents: [
         {
           action: "get_tracker_context",

@@ -1,4 +1,8 @@
 import type { AuthenticatedActor } from "./auth.js";
+import type {
+  McpClientDirectory,
+  McpClientCredentialsService,
+} from "./mcp_clients.js";
 import { applicationMcpToolNames } from "./mcp.js";
 import type { McpAccessMode } from "./mcp_access.js";
 import {
@@ -14,6 +18,7 @@ export interface McpRuntimeSnapshot {
   availability: "available" | "degraded" | "planned";
   initializingSessions: number;
   localTransportState: "ready" | "unavailable";
+  clientCredentialsAvailable: boolean;
   oauthVerificationAvailable: boolean;
   registeredTools: number;
   remoteTransportState: "disabled" | "ready" | "unavailable";
@@ -29,7 +34,7 @@ export interface McpSessionCountsProvider {
 }
 
 export interface McpOAuthAuthorizationProvider {
-  authorize(token: string): Promise<AuthenticatedActor>;
+  authorize(token: string): Promise<unknown>;
 }
 
 export interface McpRemoteTransportCapability {
@@ -43,9 +48,11 @@ export interface McpStatus {
   availability: McpRuntimeSnapshot["availability"];
   capabilities: {
     auditEvents: boolean;
+    clientCredentials: boolean;
     oauthVerification: boolean;
     registeredTools: number;
   };
+  clients: McpClientDirectory;
   recentAuditEvents: McpAuditEvent[];
   sessions: {
     absoluteLifetimeSeconds: number;
@@ -97,6 +104,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
     },
     private readonly oauthAuthorization?: McpOAuthAuthorizationProvider,
     private readonly remoteTransport?: McpRemoteTransportCapability,
+    private readonly clientCredentialsAvailable = true,
   ) {}
 
   public snapshot(workspaceId: string): McpRuntimeSnapshot {
@@ -105,6 +113,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       activeSessions: sessions.active,
       auditEventsAvailable: true,
       availability: "available",
+      clientCredentialsAvailable: this.clientCredentialsAvailable,
       initializingSessions: sessions.initializing,
       localTransportState: "ready",
       oauthVerificationAvailable: this.oauthAuthorization !== undefined,
@@ -123,6 +132,10 @@ export class McpStatusService {
     private readonly provider: McpRuntimeStatusProvider = new ApplicationMcpRuntimeStatusProvider(),
     private readonly auditReader: McpAuditReader = emptyMcpAuditReader,
     private readonly accessSettings: McpAccessSettingsProvider = defaultReadOnlyAccessSettings,
+    private readonly clientCredentials?: Pick<
+      McpClientCredentialsService,
+      "getDirectory"
+    >,
   ) {}
 
   public getStatus(actor: AuthenticatedActor): McpStatus {
@@ -136,8 +149,13 @@ export class McpStatusService {
       availability: runtime.availability,
       capabilities: {
         auditEvents: runtime.auditEventsAvailable,
+        clientCredentials: runtime.clientCredentialsAvailable,
         oauthVerification: runtime.oauthVerificationAvailable,
         registeredTools: runtime.registeredTools,
+      },
+      clients: this.clientCredentials?.getDirectory(actor) ?? {
+        actors: [],
+        clients: [],
       },
       recentAuditEvents: this.auditReader.listRecent(actor.workspaceId, 20),
       sessions: {

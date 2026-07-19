@@ -57,7 +57,8 @@ The required quality gates will include:
 - unit and component tests
 - SQLite migration tests from an empty database and supported prior schemas
 - API integration tests for authentication, authorization, validation, and CSRF
-- MCP protocol tests for OAuth, actors, limits, lifecycle, and tool policy
+- MCP protocol tests for client credentials, OAuth, actors, limits, lifecycle,
+  and tool policy
 - browser tests for setup, login, application workflows, and Settings
 - production build and dependency audit
 - public-content and secret scanning

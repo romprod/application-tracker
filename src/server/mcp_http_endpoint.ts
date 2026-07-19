@@ -20,9 +20,12 @@ import {
 } from "../application/mcp_sessions.js";
 import {
   createRemoteMcpBearerAuth,
-  remoteMcpActor,
-  type RemoteMcpAuthorizer,
+  remoteMcpPrincipal,
 } from "./mcp_http_auth.js";
+import type {
+  RemoteMcpAuthorizer,
+  RemoteMcpPrincipal,
+} from "../application/mcp_remote_auth.js";
 import { createRemoteMcpNetworkGuard } from "./mcp_http_network.js";
 import {
   createRemoteMcpRequestGuards,
@@ -33,6 +36,7 @@ import { noOpLogger, type ApplicationLogger } from "./logging.js";
 interface RemoteMcpSession {
   actorProvider: SessionActorProvider;
   actorUserId: string;
+  principalId: string;
   transport: StreamableHTTPServerTransport;
   workspaceId: string;
 }
@@ -46,9 +50,10 @@ export interface RemoteMcpHttpEndpointOptions {
   logger?: ApplicationLogger;
   network: RemoteMcpNetworkConfig;
   requestPolicy: RemoteMcpRequestPolicy;
-  requiredScope: string;
+  oauth?: {
+    requiredScope: string;
+  };
   sessions: RemoteMcpSessionRegistry;
-  workspaceSlug: string;
 }
 
 class SessionActorProvider implements McpActorProvider {
@@ -101,21 +106,19 @@ export class RemoteMcpHttpEndpoint {
   private readonly createServer: RemoteMcpHttpEndpointOptions["createServer"];
   private readonly logger: ApplicationLogger;
   private readonly network: RemoteMcpNetworkConfig;
-  private readonly requiredScope: string;
+  private readonly oauth?: RemoteMcpHttpEndpointOptions["oauth"];
   private readonly requestPolicy: RemoteMcpRequestPolicy;
   private readonly sessionRegistry: RemoteMcpSessionRegistry;
   private readonly sessions = new Map<string, RemoteMcpSession>();
-  private readonly workspaceSlug: string;
 
   public constructor(options: RemoteMcpHttpEndpointOptions) {
     this.authorizer = options.authorizer;
     this.createServer = options.createServer;
     this.logger = options.logger ?? noOpLogger;
     this.network = options.network;
-    this.requiredScope = options.requiredScope;
+    this.oauth = options.oauth;
     this.requestPolicy = options.requestPolicy;
     this.sessionRegistry = options.sessions;
-    this.workspaceSlug = options.workspaceSlug;
   }
 
   public isAvailable(): boolean {
@@ -130,8 +133,14 @@ export class RemoteMcpHttpEndpoint {
     router.use(
       createRemoteMcpBearerAuth({
         authorizer: this.authorizer,
-        requiredScope: this.requiredScope,
-        resourceUrl: this.network.resourceUrl,
+        ...(this.oauth
+          ? {
+              oauth: {
+                requiredScope: this.oauth.requiredScope,
+                resourceUrl: this.network.resourceUrl,
+              },
+            }
+          : {}),
       }),
     );
     router.use(requestGuards.rateLimit);
@@ -212,14 +221,15 @@ export class RemoteMcpHttpEndpoint {
       );
       return;
     }
-    const actor = remoteMcpActor(response);
+    const principal = remoteMcpPrincipal(response);
+    const actor = principal.actor;
     const requestedSessionId = sessionId(request);
     if (
       request.method === "POST" &&
       !requestedSessionId &&
       isInitializeRequest(request.body)
     ) {
-      await this.initialize(request, response, actor);
+      await this.initialize(request, response, principal);
       return;
     }
     if (!requestedSessionId) {
@@ -236,6 +246,7 @@ export class RemoteMcpHttpEndpoint {
     if (
       !session ||
       session.actorUserId !== actor.userId ||
+      session.principalId !== principal.principalId ||
       session.workspaceId !== actor.workspaceId ||
       !session.actorProvider.update(actor)
     ) {
@@ -258,8 +269,9 @@ export class RemoteMcpHttpEndpoint {
   private async initialize(
     request: Request,
     response: Response,
-    actor: AuthenticatedActor,
+    principal: RemoteMcpPrincipal,
   ): Promise<void> {
+    const actor = principal.actor;
     let reservation: McpSessionReservation;
     try {
       reservation = await this.sessionRegistry.reserve({
@@ -277,7 +289,10 @@ export class RemoteMcpHttpEndpoint {
       throw error;
     }
 
-    const actorProvider = new SessionActorProvider(actor, this.workspaceSlug);
+    const actorProvider = new SessionActorProvider(
+      actor,
+      principal.workspaceSlug,
+    );
     const server = this.createServer(actorProvider, actor);
     let closed = false;
     const close = async (): Promise<void> => {
@@ -303,6 +318,7 @@ export class RemoteMcpHttpEndpoint {
         this.sessions.set(reservation.id, {
           actorProvider,
           actorUserId: actor.userId,
+          principalId: principal.principalId,
           transport,
           workspaceId: actor.workspaceId,
         });

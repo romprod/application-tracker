@@ -74,15 +74,14 @@ explicit actor and workspace binding. Fresh workspaces block mutations until an
 administrator enables read-write access in Settings → MCP. Every tool outcome
 is recorded in an immutable audit ledger, and successful mutations commit with
 their audit event in one transaction. An optional Streamable HTTP endpoint
-exposes the same tools over HTTPS. It
-validates OAuth tokens, maps external identities to active local memberships,
-binds each session to its actor and workspace, and enforces network, session,
-request-size, concurrency, and rate limits. The endpoint stays absent until the
-operator supplies every remote and OAuth setting, accepts only size-limited
-`application/json`, and rejects JSON-RPC batches before tool dispatch.
-Administrators link an exact
-provider subject to an existing local user from Settings → Users; removing the
-link immediately prevents that identity from resolving for new remote requests.
+exposes the same tools over HTTPS. Administrators create named client IDs and
+one-time bearer tokens in Settings → MCP, bind each client to an active local
+user, and rotate or revoke credentials. The database stores only token hashes.
+Each session remains bound to its exact credential, actor, and workspace.
+Optional OAuth verification can map external identities to local memberships.
+The endpoint enforces network, session, request-size, concurrency, and rate
+limits, accepts size-limited `application/json`, and rejects JSON-RPC batches
+before tool dispatch.
 The app does not yet provide OpenID Connect browser login.
 Automated tests and CI cover each completed boundary.
 

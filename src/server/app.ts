@@ -6,6 +6,7 @@ import type { SetupService } from "../application/setup.js";
 import type { ApplicationLedgerService } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
+import type { McpClientCredentialsService } from "../application/mcp_clients.js";
 import type { UserAdministrationService } from "../application/users.js";
 import type { ReferenceValuesService } from "../application/reference_values.js";
 import type { DocumentsRouteOptions } from "./documents_routes.js";
@@ -35,6 +36,7 @@ export interface AppOptions {
   documents?: DocumentsRouteOptions;
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
+  mcpClientsService?: McpClientCredentialsService;
   mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
   remoteMcpRouter?: Router;
   referenceValuesService?: ReferenceValuesService;
@@ -123,7 +125,11 @@ export function createApp(options: AppOptions = {}): Express {
   if (options.authService && options.mcpStatusService) {
     app.use(
       "/api/settings/mcp",
-      createMcpStatusRouter(options.authService, options.mcpStatusService),
+      createMcpStatusRouter(
+        options.authService,
+        options.mcpStatusService,
+        options.mcpClientsService,
+      ),
     );
   }
 

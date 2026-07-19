@@ -207,8 +207,19 @@ const mcpStatus: McpStatus = {
   availability: "available",
   capabilities: {
     auditEvents: true,
+    clientCredentials: true,
     oauthVerification: false,
     registeredTools: 8,
+  },
+  clients: {
+    actors: [
+      {
+        displayName: "Alex Example",
+        id: "user-0000000001",
+        username: "alex",
+      },
+    ],
+    clients: [],
   },
   recentAuditEvents: [
     {
@@ -312,8 +323,30 @@ function createUsersClient(
 }
 
 function createMcpStatusClient(status: McpStatus = mcpStatus) {
+  const credential = {
+    bearerToken:
+      "atmcp_abcdefghijklmnopqrstuvwx.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+    client: {
+      actor: status.clients.actors[0]!,
+      clientId: "atmcp_abcdefghijklmnopqrstuvwx",
+      createdAt: "2026-01-01T10:00:00.000Z",
+      lastUsedAt: null,
+      name: "Codex on laptop",
+      rotatedAt: null,
+      state: "active" as const,
+    },
+  };
   return {
+    createClient: vi
+      .fn<McpStatusClient["createClient"]>()
+      .mockResolvedValue({ credential, status }),
     getStatus: vi.fn<McpStatusClient["getStatus"]>().mockResolvedValue(status),
+    revokeClient: vi
+      .fn<McpStatusClient["revokeClient"]>()
+      .mockResolvedValue(status),
+    rotateClient: vi
+      .fn<McpStatusClient["rotateClient"]>()
+      .mockResolvedValue({ credential, status }),
     setAccessMode: vi
       .fn<McpStatusClient["setAccessMode"]>()
       .mockImplementation((accessMode) =>
@@ -1176,7 +1209,7 @@ describe("application shell", () => {
       screen.getByRole("heading", { name: "Recent MCP activity" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Get Tracker Context")).toBeInTheDocument();
-    expect(screen.getByText("Alex Example · @alex")).toBeInTheDocument();
+    expect(screen.getAllByText("Alex Example · @alex")).not.toHaveLength(0);
     expect(screen.getByText("Success")).toBeInTheDocument();
     expect(
       within(
@@ -1211,6 +1244,43 @@ describe("application shell", () => {
       screen.getByRole("radio", { name: /Read and write/ }),
     ).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText(/Write access is active/)).toBeInTheDocument();
+  });
+
+  it("creates an HTTPS MCP client and reveals its bearer token once", async () => {
+    const mcpStatusClient = createMcpStatusClient();
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.change(await screen.findByLabelText("Client name"), {
+      target: { value: "Codex on laptop" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create client" }));
+
+    await waitFor(() =>
+      expect(mcpStatusClient.createClient).toHaveBeenCalledWith({
+        actorUserId: "user-0000000001",
+        name: "Codex on laptop",
+      }),
+    );
+    expect(screen.getByText("Copy this bearer token now.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/atmcp_abcdefghijklmnopqrstuvwx\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "It is shown once. Application Tracker stores only its hash.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("reports authenticated remote MCP when runtime configuration enables it", async () => {

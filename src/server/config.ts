@@ -436,10 +436,10 @@ export function parseRuntimeConfig(
   }
   if (
     result.data.MCP_REMOTE_ENABLED === "true" &&
-    (configuredRemoteFields !== remoteFields.length || !oauth)
+    configuredRemoteFields !== remoteFields.length
   ) {
     throw new Error(
-      "Invalid runtime configuration: remote MCP requires complete network and OAuth settings",
+      "Invalid runtime configuration: remote MCP requires complete network settings",
     );
   }
 
@@ -448,8 +448,7 @@ export function parseRuntimeConfig(
     result.data.MCP_REMOTE_ENABLED === "true" &&
     result.data.MCP_REMOTE_URL &&
     result.data.MCP_REMOTE_ALLOWED_HOSTS &&
-    result.data.MCP_REMOTE_ALLOWED_ORIGINS &&
-    oauth
+    result.data.MCP_REMOTE_ALLOWED_ORIGINS
   ) {
     const resourceUrl = secureConfigurationUrl(
       result.data.MCP_REMOTE_URL,
@@ -460,7 +459,7 @@ export function parseRuntimeConfig(
         "Invalid runtime configuration: MCP_REMOTE_URL must use the /mcp path",
       );
     }
-    if (oauth.audience !== resourceUrl.href) {
+    if (oauth && oauth.audience !== resourceUrl.href) {
       throw new Error(
         "Invalid runtime configuration: MCP_OAUTH_AUDIENCE must equal MCP_REMOTE_URL",
       );

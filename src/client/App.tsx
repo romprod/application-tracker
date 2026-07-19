@@ -1791,6 +1791,15 @@ function McpSettingsView({
   const [loadError, setLoadError] = useState(false);
   const [accessError, setAccessError] = useState(false);
   const [savingAccess, setSavingAccess] = useState(false);
+  const [clientName, setClientName] = useState("");
+  const [clientActorId, setClientActorId] = useState("");
+  const [clientError, setClientError] = useState(false);
+  const [clientBusy, setClientBusy] = useState(false);
+  const [issuedToken, setIssuedToken] = useState<string>();
+  const [confirmation, setConfirmation] = useState<{
+    action: "revoke" | "rotate";
+    clientId: string;
+  }>();
   const localReady = status?.transports.local.state === "ready";
   const remoteReady = status?.transports.remote.state === "ready";
   const registryReady = status?.sessions.enforcement === "active";
@@ -1800,7 +1809,12 @@ function McpSettingsView({
     void mcpStatusClient
       .getStatus()
       .then((loadedStatus) => {
-        if (active) setStatus(loadedStatus);
+        if (active) {
+          setStatus(loadedStatus);
+          setClientActorId(
+            (current) => current || loadedStatus.clients.actors[0]?.id || "",
+          );
+        }
       })
       .catch(() => {
         if (active) setLoadError(true);
@@ -1819,6 +1833,52 @@ function McpSettingsView({
       .then(setStatus)
       .catch(() => setAccessError(true))
       .finally(() => setSavingAccess(false));
+  }
+
+  function createClient(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!clientName.trim() || !clientActorId || clientBusy) return;
+    setClientError(false);
+    setIssuedToken(undefined);
+    setClientBusy(true);
+    void mcpStatusClient
+      .createClient({ actorUserId: clientActorId, name: clientName.trim() })
+      .then(({ credential, status: updatedStatus }) => {
+        setStatus(updatedStatus);
+        setIssuedToken(credential.bearerToken);
+        setClientName("");
+      })
+      .catch(() => setClientError(true))
+      .finally(() => setClientBusy(false));
+  }
+
+  function manageClient(action: "revoke" | "rotate", clientId: string) {
+    if (clientBusy) return;
+    if (confirmation?.action !== action || confirmation.clientId !== clientId) {
+      setConfirmation({ action, clientId });
+      return;
+    }
+    setClientError(false);
+    setIssuedToken(undefined);
+    setClientBusy(true);
+    const operation =
+      action === "rotate"
+        ? mcpStatusClient.rotateClient(clientId).then((result) => {
+            setStatus(result.status);
+            setIssuedToken(result.credential.bearerToken);
+          })
+        : mcpStatusClient.revokeClient(clientId).then(setStatus);
+    void operation
+      .catch(() => setClientError(true))
+      .finally(() => {
+        setClientBusy(false);
+        setConfirmation(undefined);
+      });
+  }
+
+  function copyIssuedToken() {
+    if (!issuedToken) return;
+    void navigator.clipboard?.writeText(issuedToken);
   }
 
   return (
@@ -1922,6 +1982,151 @@ function McpSettingsView({
             </div>
           </section>
 
+          <section className="mcp-clients" aria-labelledby="mcp-clients-title">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">HTTPS client credentials</p>
+                <h2 id="mcp-clients-title">
+                  Name and bind every remote client.
+                </h2>
+              </div>
+              <span>
+                {
+                  status.clients.clients.filter(
+                    ({ state }) => state === "active",
+                  ).length
+                }{" "}
+                active
+              </span>
+            </div>
+            <p className="mcp-clients-intro">
+              Create a client ID and bearer token for Streamable HTTPS. Tokens
+              inherit the selected local user and the workspace access policy
+              above. OAuth remains optional when configured by an operator.
+            </p>
+
+            <form className="mcp-client-form" onSubmit={createClient}>
+              <label>
+                Client name
+                <input
+                  autoComplete="off"
+                  maxLength={80}
+                  onChange={(event) => setClientName(event.target.value)}
+                  placeholder="Codex on laptop"
+                  required
+                  value={clientName}
+                />
+              </label>
+              <label>
+                Act as
+                <select
+                  onChange={(event) => setClientActorId(event.target.value)}
+                  required
+                  value={clientActorId}
+                >
+                  {status.clients.actors.map((actor) => (
+                    <option key={actor.id} value={actor.id}>
+                      {actor.displayName} · @{actor.username}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="primary-button"
+                disabled={clientBusy || status.clients.actors.length === 0}
+                type="submit"
+              >
+                {clientBusy ? "Working…" : "Create client"}
+              </button>
+            </form>
+
+            {issuedToken && (
+              <div className="mcp-token-reveal" role="status">
+                <div>
+                  <strong>Copy this bearer token now.</strong>
+                  <span>
+                    It is shown once. Application Tracker stores only its hash.
+                  </span>
+                </div>
+                <code>{issuedToken}</code>
+                <button onClick={copyIssuedToken} type="button">
+                  Copy token
+                </button>
+              </div>
+            )}
+
+            {clientError && (
+              <p className="mcp-access-error" role="alert">
+                The MCP client change could not be saved. Existing credentials
+                are unchanged.
+              </p>
+            )}
+
+            <div className="mcp-client-list">
+              {status.clients.clients.length === 0 ? (
+                <p className="mcp-client-empty">
+                  No HTTPS client credentials have been created yet.
+                </p>
+              ) : (
+                status.clients.clients.map((client) => {
+                  const confirming = confirmation?.clientId === client.clientId;
+                  return (
+                    <article key={client.clientId} data-state={client.state}>
+                      <div>
+                        <strong>{client.name}</strong>
+                        <span>
+                          {client.actor.displayName} · @{client.actor.username}
+                        </span>
+                      </div>
+                      <code>{client.clientId}</code>
+                      <dl>
+                        <div>
+                          <dt>Status</dt>
+                          <dd>{statusLabel(client.state)}</dd>
+                        </div>
+                        <div>
+                          <dt>Last used</dt>
+                          <dd>
+                            {client.lastUsedAt
+                              ? formatAuditTime(client.lastUsedAt)
+                              : "Never"}
+                          </dd>
+                        </div>
+                      </dl>
+                      {client.state !== "revoked" && (
+                        <div className="mcp-client-actions">
+                          <button
+                            disabled={clientBusy}
+                            onClick={() =>
+                              manageClient("rotate", client.clientId)
+                            }
+                            type="button"
+                          >
+                            {confirming && confirmation.action === "rotate"
+                              ? "Confirm rotation"
+                              : "Rotate token"}
+                          </button>
+                          <button
+                            className="danger-button"
+                            disabled={clientBusy}
+                            onClick={() =>
+                              manageClient("revoke", client.clientId)
+                            }
+                            type="button"
+                          >
+                            {confirming && confirmation.action === "revoke"
+                              ? "Confirm revoke"
+                              : "Revoke"}
+                          </button>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
           <section className="mcp-ledger" aria-labelledby="transport-title">
             <div className="panel-heading">
               <div>
@@ -1994,7 +2199,7 @@ function McpSettingsView({
               {registryReady
                 ? remoteReady
                   ? "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup for authenticated HTTP sessions."
-                  : "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. HTTP activates only after complete network and OAuth configuration."
+                  : "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. HTTPS activates after the operator configures its public network boundary."
                 : "These limits remain reserved for the remote session registry. Local stdio processes rely on operating-system access and their configured actor binding."}
             </p>
             <dl className="policy-list">
@@ -2018,10 +2223,16 @@ function McpSettingsView({
               </div>
             </dl>
             <ul className="capability-list" aria-label="MCP security controls">
+              <li data-ready={status.capabilities.clientCredentials}>
+                <span>Client credentials</span>
+                <strong>
+                  {status.capabilities.clientCredentials ? "Ready" : "Pending"}
+                </strong>
+              </li>
               <li data-ready={status.capabilities.oauthVerification}>
                 <span>OAuth verification</span>
                 <strong>
-                  {status.capabilities.oauthVerification ? "Ready" : "Pending"}
+                  {status.capabilities.oauthVerification ? "Ready" : "Optional"}
                 </strong>
               </li>
               <li data-ready={status.capabilities.auditEvents}>

@@ -4,7 +4,8 @@
 
 - Application records, notes, contacts, events, and due actions
 - Uploaded CVs, cover letters, and email files
-- Local password verifiers, sessions, setup tokens, and OAuth tokens
+- Local password verifiers, sessions, setup tokens, MCP bearer tokens, and OAuth
+  tokens
 - Workspace membership and administrative settings
 - SQLite integrity, backups, and migration state
 - MCP availability, actor identity, tool authority, and audit events
@@ -12,7 +13,7 @@
 ## Trust boundaries
 
 - Browser to HTTP server through session, CSRF, origin, and authorization checks
-- Remote MCP client to OAuth verification, protocol validation, and tool policy
+- Remote MCP client to bearer verification, protocol validation, and tool policy
 - Local MCP process to operating-system identity and explicit actor configuration
 - HTTP and MCP adapters to shared application use cases
 - Application use cases to workspace-scoped repositories and SQLite transactions
@@ -66,7 +67,12 @@
 
 ### Remote MCP
 
+- High-entropy native bearer secrets stored only as SHA-256 hashes
+- Administrator-controlled client creation, actor binding, rotation, and
+  revocation
+- Exact credential, actor, and workspace binding for every session
 - Signature algorithm, issuer, audience, expiry, scope, and subject verification
+  when optional OAuth is configured
 - Configurable group or claim policy mapped to a local membership
 - Host and origin allowlists
 - Per-actor and global session limits
@@ -82,16 +88,17 @@ local user and a fixed workspace membership. Configuration is all-or-nothing,
 and the JWKS URL must share the issuer's origin. The verifier does not log or
 store tokens.
 
-The remote adapter exposes one authenticated Streamable HTTP route only after
-all network and OAuth settings pass startup validation. It publishes protected
-resource metadata, checks the Host and optional Origin, verifies the bearer
-token, resolves an active local membership, and then admits a session.
+The remote adapter exposes one authenticated Streamable HTTP route after all
+network settings pass startup validation. It checks the Host and optional
+Origin, verifies a native bearer token or optional OAuth token, resolves an
+active local membership, and then admits a session. OAuth configuration also
+publishes protected-resource metadata.
 Initializing reservations consume capacity before asynchronous setup begins.
 The request boundary caps JSON size, global concurrent work, and requests per
 resolved actor. It rejects unsupported media types and JSON-RPC batches before
 protocol dispatch so envelope accounting and tool accounting cannot diverge.
-Sessions use idle and absolute expiry and remain bound to their original actor
-and workspace.
+Sessions use idle and absolute expiry and remain bound to their original
+credential, actor, and workspace.
 
 The administrator-only MCP status endpoint reports protocol readiness, remote
 registry counts, and policy values. It never reports addresses, identity

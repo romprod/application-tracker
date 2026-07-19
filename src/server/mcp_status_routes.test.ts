@@ -8,14 +8,17 @@ import {
 } from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { McpAccessService } from "../application/mcp_access.js";
+import { McpClientCredentialsService } from "../application/mcp_clients.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
+import { CryptoMcpClientTokenManager } from "../infrastructure/auth/mcp_client_token_manager.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
+import { SqliteMcpClientsRepository } from "../infrastructure/database/mcp_clients_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { UserAdministrationService } from "../application/users.js";
 import { createApp } from "./app.js";
@@ -104,6 +107,11 @@ async function createStatusApp() {
     actorUserId: created.administrator.id,
     workspaceId: created.workspace.id,
   });
+  const mcpClientsService = new McpClientCredentialsService(
+    new SqliteMcpClientsRepository(database),
+    new CryptoMcpClientTokenManager(),
+    () => new Date("2026-01-01T04:00:00.000Z"),
+  );
   const mcpStatusService = new McpStatusService(
     mcpPolicy,
     new ApplicationMcpRuntimeStatusProvider(sessionRegistry),
@@ -112,14 +120,16 @@ async function createStatusApp() {
       new SqliteMcpAccessRepository(database),
       () => new Date("2026-01-01T03:00:00.000Z"),
     ),
+    mcpClientsService,
   );
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
+    mcpClientsService,
     mcpStatusService,
     usersService,
   });
-  return { app };
+  return { app, created, database, mcpClientsService };
 }
 
 async function login(
@@ -167,7 +177,7 @@ describe("MCP status route", () => {
   });
 
   it("returns only the sanitized MCP status contract", async () => {
-    const { app } = await createStatusApp();
+    const { app, created } = await createStatusApp();
     const cookie = await login(app, "alex", "correct horse battery staple");
     const response = await request(app)
       .get("/api/settings/mcp")
@@ -182,8 +192,19 @@ describe("MCP status route", () => {
         availability: "available",
         capabilities: {
           auditEvents: true,
+          clientCredentials: true,
           oauthVerification: false,
           registeredTools: 8,
+        },
+        clients: {
+          actors: [
+            {
+              displayName: "Alex Example",
+              id: created.administrator.id,
+              username: "alex",
+            },
+          ],
+          clients: [],
         },
         recentAuditEvents: [
           {
@@ -252,5 +273,75 @@ describe("MCP status route", () => {
     expect(refreshed.body).toMatchObject({
       status: { access: { mode: "read_write" } },
     });
+  });
+
+  it("creates, rotates, and revokes a hash-only client credential", async () => {
+    const { app, created, database, mcpClientsService } =
+      await createStatusApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const requestHeaders = {
+      Cookie: cookie,
+      Host: "tracker.example.test",
+      Origin: "https://tracker.example.test",
+    };
+
+    const createdResponse = await request(app)
+      .post("/api/settings/mcp/clients")
+      .set(requestHeaders)
+      .send({
+        actorUserId: created.administrator.id,
+        name: "Codex on laptop",
+      })
+      .expect(201);
+    const createdBody = createdResponse.body as unknown as {
+      credential: { bearerToken: string; client: { clientId: string } };
+    };
+    const firstToken = createdBody.credential.bearerToken;
+    const clientId = createdBody.credential.client.clientId;
+    expect(firstToken).toMatch(/^atmcp_[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{43}$/);
+    expect(clientId).toMatch(/^atmcp_[A-Za-z0-9_-]{24}$/);
+
+    const stored = database
+      .prepare("SELECT token_hash AS tokenHash FROM mcp_clients WHERE id = ?")
+      .get(clientId) as { tokenHash: string };
+    expect(stored.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.tokenHash).not.toContain(firstToken);
+    expect(mcpClientsService.authorize(firstToken)).toMatchObject({
+      actor: { userId: created.administrator.id },
+      workspaceSlug: "default",
+    });
+
+    const rotatedResponse = await request(app)
+      .post(`/api/settings/mcp/clients/${clientId}/rotate`)
+      .set(requestHeaders)
+      .send({})
+      .expect(200);
+    const rotatedBody = rotatedResponse.body as unknown as {
+      credential: { bearerToken: string };
+    };
+    const rotatedToken = rotatedBody.credential.bearerToken;
+    expect(rotatedToken).not.toBe(firstToken);
+    expect(() => mcpClientsService.authorize(firstToken)).toThrow("invalid");
+    expect(mcpClientsService.authorize(rotatedToken)).toMatchObject({
+      actor: { userId: created.administrator.id },
+    });
+
+    await request(app)
+      .delete(`/api/settings/mcp/clients/${clientId}`)
+      .set(requestHeaders)
+      .expect(200);
+    expect(() => mcpClientsService.authorize(rotatedToken)).toThrow("invalid");
+    const status = await request(app)
+      .get("/api/settings/mcp")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(JSON.stringify(status.body)).not.toContain(firstToken);
+    expect(JSON.stringify(status.body)).not.toContain(rotatedToken);
+    const statusBody = status.body as unknown as {
+      status: { clients: { clients: unknown[] } };
+    };
+    expect(statusBody.status.clients.clients).toMatchObject([
+      { clientId, name: "Codex on laptop", state: "revoked" },
+    ]);
   });
 });

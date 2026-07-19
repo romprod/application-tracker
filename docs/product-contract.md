@@ -54,8 +54,10 @@ Lists but cannot change them.
 ## MCP contract
 
 Local stdio MCP runs only when an operator starts it and receives an explicit
-workspace and actor configuration. Remote MCP requires verified OAuth tokens,
-issuer and audience binding, the required scope, and an authorized workspace
+workspace and actor configuration. Remote MCP requires a named client
+credential bound to an active local workspace member. Administrators create,
+rotate, and revoke credentials in Settings → MCP. Optional OAuth tokens require
+issuer and audience binding, the configured scope, and an authorized workspace
 membership.
 
 MCP tools use the same application services, schemas, authorization checks,

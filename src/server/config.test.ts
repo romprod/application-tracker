@@ -297,7 +297,7 @@ describe("parseRuntimeConfig", () => {
     ).toThrow("MCP_OAUTH_JWKS_URL must use the issuer origin");
   });
 
-  it("enables remote MCP only with complete network and OAuth settings", () => {
+  it("enables remote MCP with complete network settings and optional OAuth", () => {
     expect(parseRuntimeConfig(completeRemoteEnvironment).mcp.remote).toEqual({
       allowedHosts: ["tracker.example", "tracker.example:8443"],
       allowedOrigins: ["https://client.example", "https://desktop.example"],
@@ -309,7 +309,21 @@ describe("parseRuntimeConfig", () => {
         MCP_REMOTE_ENABLED: "true",
         MCP_REMOTE_URL: "https://tracker.example/mcp",
       }),
-    ).toThrow("remote MCP requires complete network and OAuth settings");
+    ).toThrow("remote MCP requires complete network settings");
+    expect(
+      parseRuntimeConfig({
+        MCP_REMOTE_ALLOWED_HOSTS: "tracker.example",
+        MCP_REMOTE_ALLOWED_ORIGINS: "https://client.example",
+        MCP_REMOTE_ENABLED: "true",
+        MCP_REMOTE_URL: "https://tracker.example/mcp",
+      }).mcp,
+    ).toMatchObject({
+      remote: {
+        allowedHosts: ["tracker.example"],
+        allowedOrigins: ["https://client.example"],
+        resourceUrl: "https://tracker.example/mcp",
+      },
+    });
     expect(() =>
       parseRuntimeConfig({
         MCP_REMOTE_ENABLED: "false",

@@ -44,7 +44,8 @@ tests and user documentation.
 - [x] Local stdio server with explicit workspace and actor context
 - [x] Remote HTTPS server with supported external-identity linking
 - [x] Remote HTTP metadata, challenges, allowlists, and request limits
-- [x] Strict OAuth token verification and local membership mapping prerequisite
+- [x] Administrator-managed native client credentials with hash-only storage
+- [x] Optional strict OAuth token verification and local membership mapping
 - [x] Read tool schemas, per-call authorization, and audit events
 - [x] Website-controlled mutation approval, atomic audits, and rollback tests
 - [x] Global and per-actor session limits, expiry, and cleanup

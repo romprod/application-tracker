@@ -8,11 +8,8 @@ import {
   InvalidMcpAccessTokenError,
   RemoteMcpActorUnavailableError,
 } from "../application/mcp_oauth.js";
-import {
-  createRemoteMcpBearerAuth,
-  remoteMcpActor,
-  type RemoteMcpAuthorizer,
-} from "./mcp_http_auth.js";
+import { createRemoteMcpBearerAuth, remoteMcpActor } from "./mcp_http_auth.js";
+import type { RemoteMcpAuthorizer } from "../application/mcp_remote_auth.js";
 
 const actor: AuthenticatedActor = {
   authenticated: true,
@@ -24,14 +21,20 @@ const actor: AuthenticatedActor = {
 const resourceMetadataUrl =
   "https://tracker.example/.well-known/oauth-protected-resource/mcp";
 
-function appWith(authorizer: RemoteMcpAuthorizer) {
+function appWith(authorizer: RemoteMcpAuthorizer, oauth = true) {
   const app = express();
   app.get(
     "/mcp",
     createRemoteMcpBearerAuth({
       authorizer,
-      requiredScope: "tracker:read",
-      resourceUrl: "https://tracker.example/mcp",
+      ...(oauth
+        ? {
+            oauth: {
+              requiredScope: "tracker:read",
+              resourceUrl: "https://tracker.example/mcp",
+            },
+          }
+        : {}),
     }),
     (_request, response) => {
       response.json({ userId: remoteMcpActor(response).userId });
@@ -51,6 +54,18 @@ describe("remote MCP bearer authorization", () => {
     expect(response.headers["www-authenticate"]).toBe(
       `Bearer resource_metadata="${resourceMetadataUrl}", scope="tracker:read"`,
     );
+  });
+
+  it("uses a generic bearer challenge when OAuth discovery is not configured", async () => {
+    const response = await request(appWith({ authorize: vi.fn() }, false)).get(
+      "/mcp",
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers["www-authenticate"]).toBe(
+      'Bearer realm="application-tracker-mcp"',
+    );
+    expect(JSON.stringify(response.body)).not.toContain("oauth");
   });
 
   it.each(["Basic abc", "Bearer", "Bearer one two"])(
@@ -94,7 +109,13 @@ describe("remote MCP bearer authorization", () => {
   );
 
   it("passes the resolved actor without retaining the bearer token", async () => {
-    const authorize = vi.fn(() => Promise.resolve(actor));
+    const authorize = vi.fn(() =>
+      Promise.resolve({
+        actor,
+        principalId: "oauth:test:alex",
+        workspaceSlug: "default",
+      }),
+    );
     const response = await request(appWith({ authorize }))
       .get("/mcp")
       .set("Authorization", "Bearer signed.jwt.value")
