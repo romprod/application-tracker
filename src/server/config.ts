@@ -1,7 +1,31 @@
 import { z } from "zod";
 
+import {
+  supportedMcpOAuthAlgorithms,
+  type McpOAuthConfig,
+} from "../application/mcp_oauth.js";
+
 function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
+
+function secureConfigurationUrl(value: string, field: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid runtime configuration: ${field}`);
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new Error(`Invalid runtime configuration: ${field}`);
+  }
+  return url;
 }
 
 const runtimeEnvironmentSchema = z.object({
@@ -51,6 +75,42 @@ const runtimeEnvironmentSchema = z.object({
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
       .optional(),
   ),
+  MCP_OAUTH_ALGORITHM: z.preprocess(
+    blankToUndefined,
+    z.enum(supportedMcpOAuthAlgorithms).optional(),
+  ),
+  MCP_OAUTH_AUDIENCE: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(512).optional(),
+  ),
+  MCP_OAUTH_ISSUER: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(2048).optional(),
+  ),
+  MCP_OAUTH_JWKS_URL: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(2048).optional(),
+  ),
+  MCP_OAUTH_REQUIRED_SCOPE: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[\x21\x23-\x5b\x5d-\x7e]+$/)
+      .optional(),
+  ),
+  MCP_OAUTH_WORKSPACE_SLUG: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
+      .optional(),
+  ),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
@@ -89,6 +149,7 @@ export interface RuntimeConfig {
       actorUsername: string;
       workspaceSlug: string;
     };
+    oauth?: McpOAuthConfig;
     session: {
       absoluteDurationMs: number;
       globalLimit: number;
@@ -126,6 +187,56 @@ export function parseRuntimeConfig(
     throw new Error(
       "Invalid runtime configuration: MCP_LOCAL_ACTOR_USERNAME, MCP_LOCAL_WORKSPACE_SLUG",
     );
+  }
+
+  const oauthFields = [
+    result.data.MCP_OAUTH_ALGORITHM,
+    result.data.MCP_OAUTH_AUDIENCE,
+    result.data.MCP_OAUTH_ISSUER,
+    result.data.MCP_OAUTH_JWKS_URL,
+    result.data.MCP_OAUTH_REQUIRED_SCOPE,
+    result.data.MCP_OAUTH_WORKSPACE_SLUG,
+  ];
+  const configuredOauthFields = oauthFields.filter(Boolean).length;
+  if (
+    configuredOauthFields !== 0 &&
+    configuredOauthFields !== oauthFields.length
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: MCP OAuth settings must be configured together",
+    );
+  }
+
+  let oauth: McpOAuthConfig | undefined;
+  if (
+    result.data.MCP_OAUTH_ALGORITHM &&
+    result.data.MCP_OAUTH_AUDIENCE &&
+    result.data.MCP_OAUTH_ISSUER &&
+    result.data.MCP_OAUTH_JWKS_URL &&
+    result.data.MCP_OAUTH_REQUIRED_SCOPE &&
+    result.data.MCP_OAUTH_WORKSPACE_SLUG
+  ) {
+    const issuer = secureConfigurationUrl(
+      result.data.MCP_OAUTH_ISSUER,
+      "MCP_OAUTH_ISSUER",
+    );
+    const jwks = secureConfigurationUrl(
+      result.data.MCP_OAUTH_JWKS_URL,
+      "MCP_OAUTH_JWKS_URL",
+    );
+    if (issuer.origin !== jwks.origin) {
+      throw new Error(
+        "Invalid runtime configuration: MCP_OAUTH_JWKS_URL must use the issuer origin",
+      );
+    }
+    oauth = {
+      algorithm: result.data.MCP_OAUTH_ALGORITHM,
+      audience: result.data.MCP_OAUTH_AUDIENCE,
+      issuer: result.data.MCP_OAUTH_ISSUER,
+      jwksUrl: result.data.MCP_OAUTH_JWKS_URL,
+      requiredScope: result.data.MCP_OAUTH_REQUIRED_SCOPE,
+      workspaceSlug: result.data.MCP_OAUTH_WORKSPACE_SLUG,
+    };
   }
 
   if (
@@ -168,6 +279,7 @@ export function parseRuntimeConfig(
             },
           }
         : {}),
+      ...(oauth ? { oauth } : {}),
       session: {
         absoluteDurationMs: result.data.MCP_SESSION_ABSOLUTE_SECONDS * 1000,
         globalLimit: result.data.MCP_SESSION_GLOBAL_LIMIT,

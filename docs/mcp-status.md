@@ -38,7 +38,9 @@ The status marks local stdio as ready when the build contains the transport and
 tool registry. Each MCP client spawns its own process, so the website does not
 discover or count those processes. Active and initializing counts cover only
 the closed remote registry. They stay at zero until a future authenticated
-remote adapter admits sessions.
+remote adapter admits sessions. OAuth verification reports ready only when all
+verifier settings pass startup validation and the server constructs the
+authorization service.
 
 Local client setup, actor binding, revocation behavior, and tool contracts are
 documented in [`local-mcp.md`](local-mcp.md).
@@ -72,8 +74,33 @@ timestamps, state, and an in-process close handle. The status API exposes only
 workspace-scoped counts. Registry readiness does not enable a network route or
 weaken the OAuth requirement.
 
+## OAuth verifier prerequisite
+
+The optional verifier uses six environment variables. Configure all six or
+leave all six blank:
+
+| Variable                   | Meaning                                       |
+| -------------------------- | --------------------------------------------- |
+| `MCP_OAUTH_ALGORITHM`      | One allowed signing algorithm: RS256 or ES256 |
+| `MCP_OAUTH_AUDIENCE`       | Exact audience assigned to this MCP resource  |
+| `MCP_OAUTH_ISSUER`         | Exact HTTPS token issuer                      |
+| `MCP_OAUTH_JWKS_URL`       | HTTPS signing-key set on the issuer's origin  |
+| `MCP_OAUTH_REQUIRED_SCOPE` | Exact scope required for MCP access           |
+| `MCP_OAUTH_WORKSPACE_SLUG` | Fixed local workspace for remote MCP          |
+
+Startup rejects partial configuration, unsupported algorithms, insecure URLs,
+embedded URL credentials, fragments, query strings, and a JWKS URL on another
+origin. The verifier checks the signature, configured algorithm, issuer,
+audience, expiry, subject, and OAuth scope syntax. Authorization then requires
+the exact configured scope and maps the issuer-subject pair to an active local
+user with a membership in the fixed workspace. Tokens and tool inputs cannot
+select a workspace.
+
+This prerequisite does not publish OAuth metadata, accept bearer tokens, or
+enable Streamable HTTP. Those controls belong to the remote adapter milestone.
+
 ## Remaining MCP milestones
 
-Remote HTTPS, OAuth verification, and mutating tools remain separate stages.
-Until those controls land, the remote transport stays disabled and local tools
-stay read-only.
+Remote HTTPS, authorization discovery and challenges, and mutating tools remain
+separate stages. Until those controls land, the remote transport stays disabled
+and local tools stay read-only.

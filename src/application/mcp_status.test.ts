@@ -88,4 +88,14 @@ describe("McpStatusService", () => {
 
     expect(() => service.getStatus(member)).toThrow(McpStatusForbiddenError);
   });
+
+  it("reports OAuth verification only when an authorization service exists", () => {
+    const provider = new ApplicationMcpRuntimeStatusProvider(undefined, {
+      authorize: vi.fn(() => Promise.resolve(admin)),
+    });
+
+    expect(provider.snapshot("workspace-1").oauthVerificationAvailable).toBe(
+      true,
+    );
+  });
 });

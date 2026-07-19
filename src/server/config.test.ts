@@ -97,6 +97,52 @@ describe("parseRuntimeConfig", () => {
     );
   });
 
+  it("accepts a complete strict MCP OAuth verifier configuration", () => {
+    expect(
+      parseRuntimeConfig({
+        MCP_OAUTH_ALGORITHM: "RS256",
+        MCP_OAUTH_AUDIENCE: "https://tracker.example/mcp",
+        MCP_OAUTH_ISSUER: "https://identity.example/application/o/mcp/",
+        MCP_OAUTH_JWKS_URL: "https://identity.example/application/o/mcp/jwks/",
+        MCP_OAUTH_REQUIRED_SCOPE: "tracker:read",
+        MCP_OAUTH_WORKSPACE_SLUG: "default",
+      }).mcp.oauth,
+    ).toEqual({
+      algorithm: "RS256",
+      audience: "https://tracker.example/mcp",
+      issuer: "https://identity.example/application/o/mcp/",
+      jwksUrl: "https://identity.example/application/o/mcp/jwks/",
+      requiredScope: "tracker:read",
+      workspaceSlug: "default",
+    });
+  });
+
+  it("rejects partial or unsafe MCP OAuth configuration", () => {
+    expect(() => parseRuntimeConfig({ MCP_OAUTH_ALGORITHM: "RS256" })).toThrow(
+      "MCP OAuth settings must be configured together",
+    );
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_OAUTH_ALGORITHM: "RS256",
+        MCP_OAUTH_AUDIENCE: "https://tracker.example/mcp",
+        MCP_OAUTH_ISSUER: "http://identity.example/application/o/mcp/",
+        MCP_OAUTH_JWKS_URL: "http://identity.example/application/o/mcp/jwks/",
+        MCP_OAUTH_REQUIRED_SCOPE: "tracker:read",
+        MCP_OAUTH_WORKSPACE_SLUG: "default",
+      }),
+    ).toThrow("Invalid runtime configuration: MCP_OAUTH_ISSUER");
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_OAUTH_ALGORITHM: "RS256",
+        MCP_OAUTH_AUDIENCE: "https://tracker.example/mcp",
+        MCP_OAUTH_ISSUER: "https://identity.example/application/o/mcp/",
+        MCP_OAUTH_JWKS_URL: "https://keys.example/mcp/jwks/",
+        MCP_OAUTH_REQUIRED_SCOPE: "tracker:read",
+        MCP_OAUTH_WORKSPACE_SLUG: "default",
+      }),
+    ).toThrow("MCP_OAUTH_JWKS_URL must use the issuer origin");
+  });
+
   it("rejects contradictory MCP session limits and lifetimes", () => {
     expect(() =>
       parseRuntimeConfig({

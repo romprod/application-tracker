@@ -42,6 +42,7 @@ tests and user documentation.
 
 - [x] Local stdio server with explicit workspace and actor context
 - [ ] Remote HTTPS server with strict OAuth verification
+- [x] Strict OAuth token verification and local membership mapping prerequisite
 - [x] Read-only tool schemas, per-call authorization, and audit events
 - [ ] Mutating tool approval, transactions, and rollback tests
 - [x] Global and per-actor session limits, expiry, and cleanup

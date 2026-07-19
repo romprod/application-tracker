@@ -27,6 +27,10 @@ export interface McpSessionCountsProvider {
   sessionCounts(workspaceId: string): McpSessionCounts;
 }
 
+export interface McpOAuthAuthorizationProvider {
+  authorize(token: string): Promise<AuthenticatedActor>;
+}
+
 export interface McpStatus {
   availability: McpRuntimeSnapshot["availability"];
   capabilities: {
@@ -68,6 +72,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
     private readonly sessions: McpSessionCountsProvider = {
       sessionCounts: () => ({ active: 0, initializing: 0 }),
     },
+    private readonly oauthAuthorization?: McpOAuthAuthorizationProvider,
   ) {}
 
   public snapshot(workspaceId: string): McpRuntimeSnapshot {
@@ -78,7 +83,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       availability: "available",
       initializingSessions: sessions.initializing,
       localTransportState: "ready",
-      oauthVerificationAvailable: false,
+      oauthVerificationAvailable: this.oauthAuthorization !== undefined,
       registeredTools: localMcpToolNames.length,
       remoteTransportState: "disabled",
       sessionEnforcement: "active",

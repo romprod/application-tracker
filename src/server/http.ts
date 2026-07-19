@@ -9,16 +9,19 @@ import {
   McpStatusService,
 } from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
+import { RemoteMcpAuthorizationService } from "../application/mcp_oauth.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
+import { JoseMcpAccessTokenVerifier } from "../infrastructure/auth/mcp_access_token_verifier.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
+import { SqliteRemoteMcpActorRepository } from "../infrastructure/database/mcp_oauth_actor_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
@@ -72,6 +75,14 @@ async function startApplication(): Promise<void> {
       new SqliteMcpAuditRepository(database),
     );
     const mcpSessionRegistry = new RemoteMcpSessionRegistry(config.mcp.session);
+    const remoteMcpAuthorization = config.mcp.oauth
+      ? new RemoteMcpAuthorizationService(
+          new JoseMcpAccessTokenVerifier(config.mcp.oauth),
+          new SqliteRemoteMcpActorRepository(database),
+          config.mcp.oauth.requiredScope,
+          config.mcp.oauth.workspaceSlug,
+        )
+      : undefined;
     const mcpSessionRuntime = new McpSessionRuntime(
       mcpSessionRegistry,
       Math.min(
@@ -82,7 +93,10 @@ async function startApplication(): Promise<void> {
     );
     const mcpStatusService = new McpStatusService(
       config.mcp.session,
-      new ApplicationMcpRuntimeStatusProvider(mcpSessionRegistry),
+      new ApplicationMcpRuntimeStatusProvider(
+        mcpSessionRegistry,
+        remoteMcpAuthorization,
+      ),
       mcpAuditService,
     );
     const staticRoot =

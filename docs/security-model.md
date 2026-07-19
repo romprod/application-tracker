@@ -67,9 +67,18 @@
 - Request size, concurrency, and rate limits
 - Sanitized status that omits tokens, subjects, hostnames, and internal errors
 
-The in-memory registry already enforces admission and lifecycle policy, but no
-remote request can reach it until OAuth and Streamable HTTP are implemented.
-Initializing reservations consume capacity before asynchronous setup begins.
+The server can verify signed JWT access tokens against a configured HTTPS JWKS,
+with a fixed algorithm, issuer, audience, expiry, subject, and exact scope. It
+maps the verified issuer-subject pair through `external_identities` to an active
+local user and a fixed workspace membership. Configuration is all-or-nothing,
+and the JWKS URL must share the issuer's origin. The verifier does not log or
+store tokens.
+
+The in-memory registry enforces admission and lifecycle policy, but no remote
+request can reach the verifier or registry until Streamable HTTP, protected
+resource metadata, authorization challenges, and network controls are
+implemented. Initializing reservations consume capacity before asynchronous
+setup begins.
 
 The administrator-only MCP status endpoint reports protocol readiness, remote
 registry counts, and policy values. It never reports addresses, identity
