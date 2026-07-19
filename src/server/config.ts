@@ -102,6 +102,30 @@ const runtimeEnvironmentSchema = z.object({
     .min(1024)
     .max(52_428_800)
     .default(10_485_760),
+  DOCUMENT_PREVIEW_MAX_INPUT_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(10_485_760)
+    .default(1_048_576),
+  DOCUMENT_PREVIEW_MAX_MEMORY_MB: z.coerce
+    .number()
+    .int()
+    .min(16)
+    .max(128)
+    .default(32),
+  DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(1_000_000)
+    .default(100_000),
+  DOCUMENT_PREVIEW_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(10_000)
+    .default(1500),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
   MCP_SESSION_ABSOLUTE_SECONDS: z.coerce
     .number()
@@ -249,6 +273,12 @@ export interface RuntimeConfig {
   databasePath: string;
   documents: {
     maxUploadBytes: number;
+    preview: {
+      maxInputBytes: number;
+      maxMemoryMb: number;
+      maxOutputCharacters: number;
+      timeoutMs: number;
+    };
   };
   host: string;
   mcp: {
@@ -417,6 +447,15 @@ export function parseRuntimeConfig(
     throw new Error("Invalid runtime configuration: SESSION_ABSOLUTE_SECONDS");
   }
 
+  if (
+    result.data.DOCUMENT_PREVIEW_MAX_INPUT_BYTES >
+    result.data.DOCUMENT_MAX_UPLOAD_BYTES
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_INPUT_BYTES",
+    );
+  }
+
   if (result.data.SESSION_REFRESH_SECONDS >= result.data.SESSION_IDLE_SECONDS) {
     throw new Error("Invalid runtime configuration: SESSION_REFRESH_SECONDS");
   }
@@ -440,7 +479,15 @@ export function parseRuntimeConfig(
   return {
     backupDirectory: result.data.BACKUP_DIRECTORY,
     databasePath: result.data.DATABASE_PATH,
-    documents: { maxUploadBytes: result.data.DOCUMENT_MAX_UPLOAD_BYTES },
+    documents: {
+      maxUploadBytes: result.data.DOCUMENT_MAX_UPLOAD_BYTES,
+      preview: {
+        maxInputBytes: result.data.DOCUMENT_PREVIEW_MAX_INPUT_BYTES,
+        maxMemoryMb: result.data.DOCUMENT_PREVIEW_MAX_MEMORY_MB,
+        maxOutputCharacters: result.data.DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS,
+        timeoutMs: result.data.DOCUMENT_PREVIEW_TIMEOUT_MS,
+      },
+    },
     host: result.data.HOST,
     mcp: {
       ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&

@@ -20,7 +20,15 @@ describe("parseRuntimeConfig", () => {
     expect(parseRuntimeConfig({})).toEqual({
       backupDirectory: "./backups",
       databasePath: "./data/application-tracker.sqlite",
-      documents: { maxUploadBytes: 10_485_760 },
+      documents: {
+        maxUploadBytes: 10_485_760,
+        preview: {
+          maxInputBytes: 1_048_576,
+          maxMemoryMb: 32,
+          maxOutputCharacters: 100_000,
+          timeoutMs: 1500,
+        },
+      },
       host: "0.0.0.0",
       mcp: {
         request: {
@@ -56,13 +64,40 @@ describe("parseRuntimeConfig", () => {
   it("accepts only a bounded document upload limit", () => {
     expect(
       parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "5242880" }).documents,
-    ).toEqual({ maxUploadBytes: 5_242_880 });
+    ).toMatchObject({ maxUploadBytes: 5_242_880 });
     expect(() =>
       parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "512" }),
     ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_UPLOAD_BYTES");
     expect(() =>
       parseRuntimeConfig({ DOCUMENT_MAX_UPLOAD_BYTES: "52428801" }),
     ).toThrow("Invalid runtime configuration: DOCUMENT_MAX_UPLOAD_BYTES");
+  });
+
+  it("accepts only bounded document preview worker limits", () => {
+    expect(
+      parseRuntimeConfig({
+        DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "524288",
+        DOCUMENT_PREVIEW_MAX_MEMORY_MB: "48",
+        DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS: "50000",
+        DOCUMENT_PREVIEW_TIMEOUT_MS: "2000",
+      }).documents.preview,
+    ).toEqual({
+      maxInputBytes: 524_288,
+      maxMemoryMb: 48,
+      maxOutputCharacters: 50_000,
+      timeoutMs: 2000,
+    });
+    expect(() =>
+      parseRuntimeConfig({ DOCUMENT_PREVIEW_MAX_MEMORY_MB: "8" }),
+    ).toThrow("Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_MEMORY_MB");
+    expect(() =>
+      parseRuntimeConfig({
+        DOCUMENT_MAX_UPLOAD_BYTES: "1024",
+        DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "2048",
+      }),
+    ).toThrow(
+      "Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_INPUT_BYTES",
+    );
   });
 
   it("rejects a port outside the TCP range", () => {
