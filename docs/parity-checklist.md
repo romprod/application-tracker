@@ -33,9 +33,9 @@ tests and user documentation.
 
 ## Documents
 
-- [ ] Content-addressed storage and deduplication
-- [ ] Document metadata and application associations
-- [ ] Original upload and download with authorization
+- [x] Content-addressed storage and deduplication
+- [x] Document metadata and application associations
+- [x] Original upload and download with authorization
 - [ ] Resource-limited preview workers for explicitly supported formats
 - [ ] Safe email-link extraction from bounded input
 

@@ -11,8 +11,7 @@ src/
   application/  Use cases, authorization, and transaction boundaries
   domain/       Schemas, entities, value objects, and domain errors
   infrastructure/
-    database/   SQLite connection, migrations, and repositories
-    documents/  Content storage and isolated preview adapters
+    database/   SQLite connection, migrations, bytes, and repositories
 ```
 
 The domain and application layers do not import Express, React, SQLite, or the
@@ -31,8 +30,8 @@ flowchart LR
   MCPStdio --> UseCases
   UseCases --> Repositories["Repository interfaces"]
   Repositories --> SQLite[("SQLite")]
-  UseCases --> PreviewQueue["Preview supervisor"]
-  PreviewQueue --> Worker["Resource-limited parser worker"]
+  UseCases -. future .-> PreviewQueue["Preview supervisor"]
+  PreviewQueue -. future .-> Worker["Resource-limited parser worker"]
 ```
 
 ## Database contract
@@ -63,6 +62,8 @@ The application ledger is described in
 [`application-ledger.md`](application-ledger.md).
 Workspace-owned statuses, sources, role types, and document types are described
 in [`reference-lists.md`](reference-lists.md).
+Content-addressed original storage, upload limits, application associations,
+and downloads are described in [`documents.md`](documents.md).
 
 The schema separates:
 

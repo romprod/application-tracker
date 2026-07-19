@@ -35,7 +35,9 @@ values and order results by category and workspace-owned sort order.
 Migration 9 connects applications to statuses, sources, and role types. It
 backfills prior applications, rejects inactive or wrong-category selections,
 and keeps status labels in immutable history events as point-in-time snapshots.
-Document types are ready for the document-storage milestone.
+Migration 11 connects each document to an active document type from its own
+workspace. Disabling a referenced type preserves existing document metadata but
+removes the type from new uploads.
 
 Authenticated members can read `GET /api/settings/lists`. The create, update,
 and delete routes require an administrator and a matching browser origin. The

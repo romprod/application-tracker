@@ -105,6 +105,14 @@ Database constraints restrict these fields to implemented values, and triggers
 reject updates and deletions. The audit record retains actor attribution even
 after an administrator disables the account.
 
+The eleventh migration adds content-addressed document storage. `file_objects`
+stores each unique byte sequence once under its server-calculated SHA-256
+digest. Workspace-owned `documents` rows retain the original filename, media
+type, active document-type reference, uploader, and creation time.
+`application_documents` links a document to active applications in the same
+workspace. An immediate transaction stores bytes, metadata, and associations
+together. See [`documents.md`](documents.md).
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

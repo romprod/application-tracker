@@ -20,9 +20,11 @@ The commands:
 - report the byte size, SHA-256 digest, stored schema version, and current
   application schema version.
 
-Backups contain application data, local password hashes, and active session
-records. Store them as sensitive data. The commands do not encrypt artifacts,
-copy them off-host, schedule backups, or delete old backups.
+Backups contain application data, original document bytes, local password
+hashes, and active session records. Store them as sensitive data. Document
+libraries can make each artifact substantially larger, although duplicate file
+content is stored once. The commands do not encrypt artifacts, copy them
+off-host, schedule backups, or delete old backups.
 
 ## Create an online backup
 

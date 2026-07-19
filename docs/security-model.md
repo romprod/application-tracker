@@ -90,13 +90,17 @@ claims, secret material, database paths, or internal errors. See
 
 ### Documents
 
-- Input and decoded-output size limits
-- Archive entry, nesting, and compression-ratio limits
-- Cycle-aware compound-file traversal
-- Parser execution outside the HTTP event loop
-- Wall-clock and memory budgets with worker termination
-- Plain-text and HTML output limits with safe HTML handling
-- Original download remains independent from preview support
+- Session and workspace authorization for metadata and original bytes
+- Same-host origin checks before multipart parsing
+- One bounded file, bounded metadata fields, and a configurable size limit
+- Server-calculated SHA-256 digests and transactional deduplication
+- Attachment-only downloads with sandbox and `nosniff` headers
+- Original download independent from preview support
+
+Preview workers remain future work. Before the server parses a document, that
+boundary must add archive-entry, nesting, compression-ratio, decoded-output,
+wall-clock, and memory limits. Parsers must run outside the HTTP event loop and
+terminate when a limit expires.
 
 ### Data and operations
 

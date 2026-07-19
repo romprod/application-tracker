@@ -1,7 +1,7 @@
 # Application Tracker
 
 Application Tracker is a self-hosted, local-first workspace for recording job
-applications, documents, follow-up actions, and outcomes. It will provide a web
+applications, documents, follow-up actions, and outcomes. It provides a web
 interface and optional Model Context Protocol (MCP) integrations over local
 stdio and authenticated HTTPS.
 
@@ -17,7 +17,7 @@ stdio and authenticated HTTPS.
 - All application data belongs to an explicit workspace.
 - Administrative settings require an administrator role.
 - MCP clients receive the same validation and authorization as the website.
-- Untrusted document parsing runs behind strict resource limits.
+- Any future document parsing must run behind strict resource limits.
 - Public source contains no deployment identity, credentials, or private
   infrastructure details.
 
@@ -29,7 +29,7 @@ be added in a small, testable commit.
 ## Planned capabilities
 
 - Application pipeline, events, contacts, links, notes, and due actions
-- Versioned CV and cover-letter records with application associations
+- Original document records with application associations and deduplication
 - Configurable statuses, sources, role types, and document types
 - Local users with administrator and member roles
 - Administrator-managed external identity linking for remote MCP
@@ -55,7 +55,9 @@ drawer, ordered recruiter and hiring contacts, labeled related links, current
 next actions with optional due dates, and an immutable timeline for creation
 and stage changes. Application removal is workspace-scoped and audited without
 erasing that timeline. Workspace administrators can configure statuses,
-sources, role types, and document types. Operator commands provide online
+sources, role types, and document types. A document library stores exact
+originals, deduplicates their bytes by SHA-256, links them to applications, and
+serves authorized attachment downloads. Operator commands provide online
 SQLite backup, verification, and non-overwriting restore. API failures use
 stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
@@ -68,8 +70,9 @@ request-size, concurrency, and rate limits. The endpoint stays absent until the
 operator supplies every remote and OAuth setting. Administrators link an exact
 provider subject to an existing local user from Settings → Users; removing the
 link immediately prevents that identity from resolving for new remote requests.
-The app does not yet provide documents, OpenID Connect browser login, or
-mutating MCP tools. Automated tests and CI cover each completed boundary.
+The app does not yet provide document previews, email-link extraction, OpenID
+Connect browser login, or mutating MCP tools. Automated tests and CI cover each
+completed boundary.
 
 ## Run the foundation
 
@@ -101,6 +104,9 @@ Run every local quality gate with `npm run check`.
 Database operators should follow the tested
 [`backup and restore runbook`](docs/backup-restore.md); copying a live WAL
 database file is not a valid backup procedure.
+
+Document operators should review the
+[storage and upload policy](docs/documents.md).
 
 Local MCP clients should follow the [stdio configuration guide](docs/local-mcp.md).
 Remote operators should start with the
