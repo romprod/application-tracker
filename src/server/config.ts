@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   supportedMcpOAuthAlgorithms,
   type McpOAuthConfig,
+  type RemoteMcpNetworkConfig,
 } from "../application/mcp_oauth.js";
 
 function blankToUndefined(value: unknown): unknown {
@@ -26,6 +27,65 @@ function secureConfigurationUrl(value: string, field: string): URL {
     throw new Error(`Invalid runtime configuration: ${field}`);
   }
   return url;
+}
+
+function configurationList(
+  value: string,
+  field: string,
+  normalize: (entry: string) => string,
+): readonly string[] {
+  const entries = value.split(",").map((entry) => entry.trim());
+  if (
+    entries.length === 0 ||
+    entries.length > 32 ||
+    entries.some((entry) => entry.length === 0)
+  ) {
+    throw new Error(`Invalid runtime configuration: ${field}`);
+  }
+  const normalized = entries.map(normalize);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`Invalid runtime configuration: ${field}`);
+  }
+  return normalized;
+}
+
+function parseAllowedHosts(value: string): readonly string[] {
+  return configurationList(value, "MCP_REMOTE_ALLOWED_HOSTS", (entry) => {
+    const normalized = entry.toLowerCase();
+    let parsed: URL;
+    try {
+      parsed = new URL(`https://${normalized}`);
+    } catch {
+      throw new Error(
+        "Invalid runtime configuration: MCP_REMOTE_ALLOWED_HOSTS",
+      );
+    }
+    if (
+      parsed.host !== normalized ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.pathname !== "/" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    ) {
+      throw new Error(
+        "Invalid runtime configuration: MCP_REMOTE_ALLOWED_HOSTS",
+      );
+    }
+    return normalized;
+  });
+}
+
+function parseAllowedOrigins(value: string): readonly string[] {
+  return configurationList(value, "MCP_REMOTE_ALLOWED_ORIGINS", (entry) => {
+    const parsed = secureConfigurationUrl(entry, "MCP_REMOTE_ALLOWED_ORIGINS");
+    if (parsed.pathname !== "/") {
+      throw new Error(
+        "Invalid runtime configuration: MCP_REMOTE_ALLOWED_ORIGINS",
+      );
+    }
+    return parsed.origin;
+  });
 }
 
 const runtimeEnvironmentSchema = z.object({
@@ -111,6 +171,19 @@ const runtimeEnvironmentSchema = z.object({
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
       .optional(),
   ),
+  MCP_REMOTE_ALLOWED_HOSTS: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(4096).optional(),
+  ),
+  MCP_REMOTE_ALLOWED_ORIGINS: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(4096).optional(),
+  ),
+  MCP_REMOTE_ENABLED: z.enum(["true", "false"]).default("false"),
+  MCP_REMOTE_URL: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(2048).optional(),
+  ),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
@@ -150,6 +223,7 @@ export interface RuntimeConfig {
       workspaceSlug: string;
     };
     oauth?: McpOAuthConfig;
+    remote?: RemoteMcpNetworkConfig;
     session: {
       absoluteDurationMs: number;
       globalLimit: number;
@@ -239,6 +313,69 @@ export function parseRuntimeConfig(
     };
   }
 
+  const remoteFields = [
+    result.data.MCP_REMOTE_URL,
+    result.data.MCP_REMOTE_ALLOWED_HOSTS,
+    result.data.MCP_REMOTE_ALLOWED_ORIGINS,
+  ];
+  const configuredRemoteFields = remoteFields.filter(Boolean).length;
+  if (
+    result.data.MCP_REMOTE_ENABLED === "false" &&
+    configuredRemoteFields > 0
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: MCP_REMOTE_ENABLED must be true when remote settings are present",
+    );
+  }
+  if (
+    result.data.MCP_REMOTE_ENABLED === "true" &&
+    (configuredRemoteFields !== remoteFields.length || !oauth)
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: remote MCP requires complete network and OAuth settings",
+    );
+  }
+
+  let remote: RuntimeConfig["mcp"]["remote"];
+  if (
+    result.data.MCP_REMOTE_ENABLED === "true" &&
+    result.data.MCP_REMOTE_URL &&
+    result.data.MCP_REMOTE_ALLOWED_HOSTS &&
+    result.data.MCP_REMOTE_ALLOWED_ORIGINS &&
+    oauth
+  ) {
+    const resourceUrl = secureConfigurationUrl(
+      result.data.MCP_REMOTE_URL,
+      "MCP_REMOTE_URL",
+    );
+    if (resourceUrl.pathname !== "/mcp") {
+      throw new Error(
+        "Invalid runtime configuration: MCP_REMOTE_URL must use the /mcp path",
+      );
+    }
+    if (oauth.audience !== resourceUrl.href) {
+      throw new Error(
+        "Invalid runtime configuration: MCP_OAUTH_AUDIENCE must equal MCP_REMOTE_URL",
+      );
+    }
+    const allowedHosts = parseAllowedHosts(
+      result.data.MCP_REMOTE_ALLOWED_HOSTS,
+    );
+    const allowedOrigins = parseAllowedOrigins(
+      result.data.MCP_REMOTE_ALLOWED_ORIGINS,
+    );
+    if (!allowedHosts.includes(resourceUrl.host.toLowerCase())) {
+      throw new Error(
+        "Invalid runtime configuration: MCP_REMOTE_ALLOWED_HOSTS must include the remote URL host",
+      );
+    }
+    remote = {
+      allowedHosts,
+      allowedOrigins,
+      resourceUrl: resourceUrl.href,
+    };
+  }
+
   if (
     result.data.SESSION_ABSOLUTE_SECONDS <= result.data.SESSION_IDLE_SECONDS
   ) {
@@ -280,6 +417,7 @@ export function parseRuntimeConfig(
           }
         : {}),
       ...(oauth ? { oauth } : {}),
+      ...(remote ? { remote } : {}),
       session: {
         absoluteDurationMs: result.data.MCP_SESSION_ABSOLUTE_SECONDS * 1000,
         globalLimit: result.data.MCP_SESSION_GLOBAL_LIMIT,

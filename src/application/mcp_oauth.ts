@@ -13,6 +13,12 @@ export interface McpOAuthConfig {
   workspaceSlug: string;
 }
 
+export interface RemoteMcpNetworkConfig {
+  allowedHosts: readonly string[];
+  allowedOrigins: readonly string[];
+  resourceUrl: string;
+}
+
 export interface VerifiedMcpAccessToken {
   issuer: string;
   scopes: ReadonlySet<string>;

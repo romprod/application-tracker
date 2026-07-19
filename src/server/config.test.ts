@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { parseRuntimeConfig } from "./config.js";
 
+const completeRemoteEnvironment = {
+  MCP_OAUTH_ALGORITHM: "RS256",
+  MCP_OAUTH_AUDIENCE: "https://tracker.example/mcp",
+  MCP_OAUTH_ISSUER: "https://identity.example/application/o/mcp/",
+  MCP_OAUTH_JWKS_URL: "https://identity.example/application/o/mcp/jwks/",
+  MCP_OAUTH_REQUIRED_SCOPE: "tracker:read",
+  MCP_OAUTH_WORKSPACE_SLUG: "default",
+  MCP_REMOTE_ALLOWED_HOSTS: "tracker.example,tracker.example:8443",
+  MCP_REMOTE_ALLOWED_ORIGINS: "https://client.example,https://desktop.example/",
+  MCP_REMOTE_ENABLED: "true",
+  MCP_REMOTE_URL: "https://tracker.example/mcp",
+} as const;
+
 describe("parseRuntimeConfig", () => {
   it("uses self-hosted network defaults", () => {
     expect(parseRuntimeConfig({})).toEqual({
@@ -141,6 +154,63 @@ describe("parseRuntimeConfig", () => {
         MCP_OAUTH_WORKSPACE_SLUG: "default",
       }),
     ).toThrow("MCP_OAUTH_JWKS_URL must use the issuer origin");
+  });
+
+  it("enables remote MCP only with complete network and OAuth settings", () => {
+    expect(parseRuntimeConfig(completeRemoteEnvironment).mcp.remote).toEqual({
+      allowedHosts: ["tracker.example", "tracker.example:8443"],
+      allowedOrigins: ["https://client.example", "https://desktop.example"],
+      resourceUrl: "https://tracker.example/mcp",
+    });
+
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_REMOTE_ENABLED: "true",
+        MCP_REMOTE_URL: "https://tracker.example/mcp",
+      }),
+    ).toThrow("remote MCP requires complete network and OAuth settings");
+    expect(() =>
+      parseRuntimeConfig({
+        MCP_REMOTE_ENABLED: "false",
+        MCP_REMOTE_URL: "https://tracker.example/mcp",
+      }),
+    ).toThrow("MCP_REMOTE_ENABLED must be true");
+  });
+
+  it("requires a canonical resource URL and matching audience", () => {
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeRemoteEnvironment,
+        MCP_REMOTE_URL: "https://tracker.example/other",
+      }),
+    ).toThrow("MCP_REMOTE_URL must use the /mcp path");
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeRemoteEnvironment,
+        MCP_OAUTH_AUDIENCE: "https://tracker.example/other",
+      }),
+    ).toThrow("MCP_OAUTH_AUDIENCE must equal MCP_REMOTE_URL");
+  });
+
+  it("rejects unsafe remote host and origin allowlists", () => {
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeRemoteEnvironment,
+        MCP_REMOTE_ALLOWED_HOSTS: "other.example",
+      }),
+    ).toThrow("must include the remote URL host");
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeRemoteEnvironment,
+        MCP_REMOTE_ALLOWED_HOSTS: "https://tracker.example",
+      }),
+    ).toThrow("Invalid runtime configuration: MCP_REMOTE_ALLOWED_HOSTS");
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeRemoteEnvironment,
+        MCP_REMOTE_ALLOWED_ORIGINS: "http://client.example",
+      }),
+    ).toThrow("Invalid runtime configuration: MCP_REMOTE_ALLOWED_ORIGINS");
   });
 
   it("rejects contradictory MCP session limits and lifetimes", () => {
