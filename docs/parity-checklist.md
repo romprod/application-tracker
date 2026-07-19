@@ -41,7 +41,8 @@ tests and user documentation.
 ## MCP
 
 - [x] Local stdio server with explicit workspace and actor context
-- [ ] Remote HTTPS server with strict OAuth verification
+- [ ] Remote HTTPS server with supported external-identity linking
+- [x] Remote HTTP metadata, challenges, allowlists, and request limits
 - [x] Strict OAuth token verification and local membership mapping prerequisite
 - [x] Read-only tool schemas, per-call authorization, and audit events
 - [ ] Mutating tool approval, transactions, and rollback tests

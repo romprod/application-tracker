@@ -120,6 +120,7 @@ async function startApplication(): Promise<void> {
             logger,
             network: config.mcp.remote,
             requiredScope: config.mcp.oauth.requiredScope,
+            requestPolicy: config.mcp.request,
             sessions: mcpSessionRegistry,
             workspaceSlug: config.mcp.oauth.workspaceSlug,
           })

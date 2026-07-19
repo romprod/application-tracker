@@ -48,7 +48,7 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(helmet());
   app.use(compression());
   app.use("/api", createApiRequestLogger(logger));
-  app.use(express.json({ limit: "256kb" }));
+  app.use("/api", express.json({ limit: "256kb" }));
 
   app.get("/api/health", (_request, response) => {
     response.json({
@@ -69,7 +69,7 @@ export function createApp(options: AppOptions = {}): Express {
   }
 
   if (options.remoteMcpRouter) {
-    app.use("/mcp", options.remoteMcpRouter);
+    app.use("/mcp", createApiRequestLogger(logger), options.remoteMcpRouter);
   }
 
   if (options.authService && options.applicationsService) {

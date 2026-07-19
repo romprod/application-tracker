@@ -60,11 +60,13 @@ stable error codes and server-generated request IDs; structured runtime logs
 redact credentials, content, identity, and private topology. A local stdio MCP
 server exposes five read-only tools through an explicit actor and workspace
 binding and records each accepted tool outcome in an immutable audit ledger.
-A closed remote registry enforces session admission, expiry, and cleanup. A
-strict OAuth verifier can validate signed tokens and map external identities to
-active local workspace memberships. Neither component exposes a network
-endpoint. The app does not yet support documents, remote MCP, or mutating MCP
-tools. Automated tests and CI cover each completed boundary.
+An optional Streamable HTTP endpoint exposes the same tools over HTTPS. It
+validates OAuth tokens, maps external identities to active local memberships,
+binds each session to its actor and workspace, and enforces network, session,
+request-size, concurrency, and rate limits. The endpoint stays absent until the
+operator supplies every remote and OAuth setting. The app does not yet provide
+an external-identity linking workflow, documents, or mutating MCP tools.
+Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 
@@ -98,6 +100,8 @@ Database operators should follow the tested
 database file is not a valid backup procedure.
 
 Local MCP clients should follow the [stdio configuration guide](docs/local-mcp.md).
+Remote operators should start with the
+[authenticated HTTPS guide](docs/remote-mcp.md).
 
 ## License
 

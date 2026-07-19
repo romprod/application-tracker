@@ -24,6 +24,12 @@ query strings, fragments, insecure origins, and remote URLs on another path.
 When every network and OAuth setting is valid, the server installs the endpoint
 and the administrator MCP status view reports the remote transport as ready.
 
+Remote authorization also requires an `external_identities` mapping from the
+token issuer and subject to an active local user. The repository does not yet
+provide an administrator workflow for creating that mapping. A fresh
+installation therefore rejects remote actors until an operator provisions the
+mapping through a trusted deployment process.
+
 ## Authorization discovery
 
 When remote configuration is complete, the server publishes RFC 9728 protected
@@ -64,3 +70,21 @@ MCP status view.
 The remote endpoint exposes the same five read-only tools as the local stdio
 server. Every tool call records the actor, workspace, result, target type, and
 `remote_http` transport. The endpoint never accepts an application mutation.
+
+## Request controls
+
+The endpoint checks Host and Origin, applies the global concurrency cap, and
+then authenticates the bearer token. It applies the per-actor rate limit and
+JSON size cap before protocol handling:
+
+| Variable                               | Default | Range           | Meaning                            |
+| -------------------------------------- | ------: | --------------- | ---------------------------------- |
+| `MCP_REMOTE_MAX_REQUEST_BYTES`         |   65536 | 1,024–1,048,576 | Maximum JSON request body          |
+| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS`   |       8 | 1–1,000         | Installation-wide in-flight limit  |
+| `MCP_REMOTE_RATE_LIMIT_REQUESTS`       |      60 | 1–10,000        | Requests allowed per actor window  |
+| `MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS` |      60 | 1–3,600         | Fixed rate-limit window in seconds |
+
+The rate limit uses the resolved local actor ID, never an unverified subject,
+token string, or client-supplied workspace. Limited requests return `429` with
+`Retry-After`; oversized JSON returns `413`. Startup rejects values outside the
+documented safe ranges.

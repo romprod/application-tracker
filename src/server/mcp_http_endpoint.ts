@@ -2,7 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { Router, type Request, type Response } from "express";
+import express, {
+  Router,
+  type ErrorRequestHandler,
+  type Request,
+  type Response,
+} from "express";
 
 import type { AuthenticatedActor } from "../application/auth.js";
 import type { McpActorProvider } from "../application/mcp.js";
@@ -19,6 +24,10 @@ import {
   type RemoteMcpAuthorizer,
 } from "./mcp_http_auth.js";
 import { createRemoteMcpNetworkGuard } from "./mcp_http_network.js";
+import {
+  createRemoteMcpRequestGuards,
+  type RemoteMcpRequestPolicy,
+} from "./mcp_http_limits.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
 interface RemoteMcpSession {
@@ -36,6 +45,7 @@ export interface RemoteMcpHttpEndpointOptions {
   ) => McpServer;
   logger?: ApplicationLogger;
   network: RemoteMcpNetworkConfig;
+  requestPolicy: RemoteMcpRequestPolicy;
   requiredScope: string;
   sessions: RemoteMcpSessionRegistry;
   workspaceSlug: string;
@@ -92,6 +102,7 @@ export class RemoteMcpHttpEndpoint {
   private readonly logger: ApplicationLogger;
   private readonly network: RemoteMcpNetworkConfig;
   private readonly requiredScope: string;
+  private readonly requestPolicy: RemoteMcpRequestPolicy;
   private readonly sessionRegistry: RemoteMcpSessionRegistry;
   private readonly sessions = new Map<string, RemoteMcpSession>();
   private readonly workspaceSlug: string;
@@ -102,6 +113,7 @@ export class RemoteMcpHttpEndpoint {
     this.logger = options.logger ?? noOpLogger;
     this.network = options.network;
     this.requiredScope = options.requiredScope;
+    this.requestPolicy = options.requestPolicy;
     this.sessionRegistry = options.sessions;
     this.workspaceSlug = options.workspaceSlug;
   }
@@ -112,7 +124,9 @@ export class RemoteMcpHttpEndpoint {
 
   public router(): Router {
     const router = Router();
+    const requestGuards = createRemoteMcpRequestGuards(this.requestPolicy);
     router.use(createRemoteMcpNetworkGuard(this.network));
+    router.use(requestGuards.concurrency);
     router.use(
       createRemoteMcpBearerAuth({
         authorizer: this.authorizer,
@@ -120,10 +134,53 @@ export class RemoteMcpHttpEndpoint {
         resourceUrl: this.network.resourceUrl,
       }),
     );
+    router.use(requestGuards.rateLimit);
+    router.use(
+      express.json({
+        limit: this.requestPolicy.maxRequestBytes,
+        type: "application/json",
+      }),
+    );
     router.all("/", (request, response, next) => {
       void this.handleRequest(request, response).catch(next);
     });
+    router.use((_request, response) => {
+      sendProtocolError(response, 404, -32_001, "Endpoint not found");
+    });
+    router.use(this.createBodyErrorHandler());
     return router;
+  }
+
+  private createBodyErrorHandler(): ErrorRequestHandler {
+    return (error: unknown, _request, response, next) => {
+      if (response.headersSent) {
+        next(error);
+        return;
+      }
+      const statusValue =
+        typeof error === "object" && error !== null && "status" in error
+          ? error.status
+          : undefined;
+      const status = typeof statusValue === "number" ? statusValue : undefined;
+      const typeValue =
+        typeof error === "object" && error !== null && "type" in error
+          ? error.type
+          : undefined;
+      const type = typeof typeValue === "string" ? typeValue : undefined;
+      if (status === 413 && type === "entity.too.large") {
+        sendProtocolError(response, 413, -32_004, "Request payload too large");
+        return;
+      }
+      if (status === 400 && type === "entity.parse.failed") {
+        sendProtocolError(response, 400, -32_700, "Parse error");
+        return;
+      }
+      if (typeof status === "number" && status >= 400 && status < 500) {
+        sendProtocolError(response, status, -32_600, "Invalid Request");
+        return;
+      }
+      next(error);
+    };
   }
 
   private async handleRequest(

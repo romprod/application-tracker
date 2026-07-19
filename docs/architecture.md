@@ -51,11 +51,11 @@ Local password verification and session lifecycle are described in
 [`authentication.md`](authentication.md).
 Administrator account creation, roles, and disablement are described in
 [`user-management.md`](user-management.md).
-The sanitized MCP status boundary and closed remote session registry are described in
+The sanitized MCP status boundary and remote session registry are described in
 [`mcp-status.md`](mcp-status.md).
 The local stdio transport, explicit actor binding, and read-only tools are
 described in [`local-mcp.md`](local-mcp.md).
-The closed-by-default remote transport configuration is described in
+The closed-by-default remote transport and request controls are described in
 [`remote-mcp.md`](remote-mcp.md).
 The API error envelope, request correlation, and redacted JSON logging contract
 are described in [`error-handling.md`](error-handling.md).

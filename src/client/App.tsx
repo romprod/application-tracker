@@ -1563,6 +1563,7 @@ function McpSettingsView({
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
   const localReady = status?.transports.local.state === "ready";
+  const remoteReady = status?.transports.remote.state === "ready";
   const registryReady = status?.sessions.enforcement === "active";
 
   useEffect(() => {
@@ -1649,7 +1650,10 @@ function McpSettingsView({
                     {status.capabilities.registeredTools} read-only tools
                     available
                   </strong>{" "}
-                  over local stdio with an explicit actor and workspace binding.
+                  over local stdio
+                  {remoteReady
+                    ? " and authenticated Streamable HTTP."
+                    : " with an explicit actor and workspace binding."}
                 </>
               ) : (
                 "The status boundary is ready. No MCP transport or tool is active in this build."
@@ -1693,7 +1697,9 @@ function McpSettingsView({
             </div>
             <p>
               {registryReady
-                ? "The closed remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. Remote HTTP remains disabled."
+                ? remoteReady
+                  ? "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup for authenticated HTTP sessions."
+                  : "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. HTTP activates only after complete network and OAuth configuration."
                 : "These limits remain reserved for the remote session registry. Local stdio processes rely on operating-system access and their configured actor binding."}
             </p>
             <dl className="policy-list">

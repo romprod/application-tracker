@@ -74,11 +74,14 @@ local user and a fixed workspace membership. Configuration is all-or-nothing,
 and the JWKS URL must share the issuer's origin. The verifier does not log or
 store tokens.
 
-The in-memory registry enforces admission and lifecycle policy, but no remote
-request can reach the verifier or registry until Streamable HTTP, protected
-resource metadata, authorization challenges, and network controls are
-implemented. Initializing reservations consume capacity before asynchronous
-setup begins.
+The remote adapter exposes one authenticated Streamable HTTP route only after
+all network and OAuth settings pass startup validation. It publishes protected
+resource metadata, checks the Host and optional Origin, verifies the bearer
+token, resolves an active local membership, and then admits a session.
+Initializing reservations consume capacity before asynchronous setup begins.
+The request boundary caps JSON size, global concurrent work, and requests per
+resolved actor. Sessions use idle and absolute expiry and remain bound to their
+original actor and workspace.
 
 The administrator-only MCP status endpoint reports protocol readiness, remote
 registry counts, and policy values. It never reports addresses, identity

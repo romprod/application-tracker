@@ -5,6 +5,7 @@ import {
   type McpOAuthConfig,
   type RemoteMcpNetworkConfig,
 } from "../application/mcp_oauth.js";
+import type { RemoteMcpRequestPolicy } from "./mcp_http_limits.js";
 
 function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -180,6 +181,30 @@ const runtimeEnvironmentSchema = z.object({
     z.string().trim().min(1).max(4096).optional(),
   ),
   MCP_REMOTE_ENABLED: z.enum(["true", "false"]).default("false"),
+  MCP_REMOTE_MAX_CONCURRENT_REQUESTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(8),
+  MCP_REMOTE_MAX_REQUEST_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(1_048_576)
+    .default(65_536),
+  MCP_REMOTE_RATE_LIMIT_REQUESTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(60),
+  MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3600)
+    .default(60),
   MCP_REMOTE_URL: z.preprocess(
     blankToUndefined,
     z.string().trim().min(1).max(2048).optional(),
@@ -224,6 +249,7 @@ export interface RuntimeConfig {
     };
     oauth?: McpOAuthConfig;
     remote?: RemoteMcpNetworkConfig;
+    request: RemoteMcpRequestPolicy;
     session: {
       absoluteDurationMs: number;
       globalLimit: number;
@@ -418,6 +444,13 @@ export function parseRuntimeConfig(
         : {}),
       ...(oauth ? { oauth } : {}),
       ...(remote ? { remote } : {}),
+      request: {
+        maxConcurrentRequests: result.data.MCP_REMOTE_MAX_CONCURRENT_REQUESTS,
+        maxRequestBytes: result.data.MCP_REMOTE_MAX_REQUEST_BYTES,
+        rateLimitRequests: result.data.MCP_REMOTE_RATE_LIMIT_REQUESTS,
+        rateLimitWindowMs:
+          result.data.MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS * 1000,
+      },
       session: {
         absoluteDurationMs: result.data.MCP_SESSION_ABSOLUTE_SECONDS * 1000,
         globalLimit: result.data.MCP_SESSION_GLOBAL_LIMIT,

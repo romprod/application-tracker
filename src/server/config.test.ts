@@ -22,6 +22,12 @@ describe("parseRuntimeConfig", () => {
       databasePath: "./data/application-tracker.sqlite",
       host: "0.0.0.0",
       mcp: {
+        request: {
+          maxConcurrentRequests: 8,
+          maxRequestBytes: 65_536,
+          rateLimitRequests: 60,
+          rateLimitWindowMs: 60_000,
+        },
         session: {
           absoluteDurationMs: 14_400_000,
           globalLimit: 6,
@@ -93,6 +99,36 @@ describe("parseRuntimeConfig", () => {
       idleDurationMs: 1_800_000,
       perActorLimit: 3,
     });
+  });
+
+  it("accepts bounded remote MCP request controls", () => {
+    expect(
+      parseRuntimeConfig({
+        MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "4",
+        MCP_REMOTE_MAX_REQUEST_BYTES: "32768",
+        MCP_REMOTE_RATE_LIMIT_REQUESTS: "30",
+        MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS: "120",
+      }).mcp.request,
+    ).toEqual({
+      maxConcurrentRequests: 4,
+      maxRequestBytes: 32_768,
+      rateLimitRequests: 30,
+      rateLimitWindowMs: 120_000,
+    });
+  });
+
+  it("rejects out-of-range remote MCP request controls", () => {
+    expect(() =>
+      parseRuntimeConfig({ MCP_REMOTE_MAX_REQUEST_BYTES: "512" }),
+    ).toThrow("Invalid runtime configuration: MCP_REMOTE_MAX_REQUEST_BYTES");
+    expect(() =>
+      parseRuntimeConfig({ MCP_REMOTE_MAX_CONCURRENT_REQUESTS: "0" }),
+    ).toThrow(
+      "Invalid runtime configuration: MCP_REMOTE_MAX_CONCURRENT_REQUESTS",
+    );
+    expect(() =>
+      parseRuntimeConfig({ MCP_REMOTE_RATE_LIMIT_REQUESTS: "10001" }),
+    ).toThrow("Invalid runtime configuration: MCP_REMOTE_RATE_LIMIT_REQUESTS");
   });
 
   it("accepts only a complete local MCP actor binding", () => {

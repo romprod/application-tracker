@@ -4,8 +4,9 @@ Application Tracker exposes an administrator-only MCP status page at
 Settings → MCP. The page reports what the current build can do without exposing
 deployment or identity-provider details.
 
-The build includes a local stdio transport and five read-only tools. Remote
-Streamable HTTP remains disabled. The page reports both facts directly.
+The build includes local stdio and optional remote Streamable HTTP transports
+for five read-only tools. The page reports whether runtime configuration has
+enabled each transport.
 
 ## Status API
 
@@ -35,19 +36,19 @@ subjects, tokens, credentials, database paths, and internal errors. Server tests
 check this disclosure contract.
 
 The status marks local stdio as ready when the build contains the transport and
-tool registry. Each MCP client spawns its own process, so the website does not
-discover or count those processes. Active and initializing counts cover only
-the closed remote registry. They stay at zero until a future authenticated
-remote adapter admits sessions. OAuth verification reports ready only when all
-verifier settings pass startup validation and the server constructs the
-authorization service.
+tool registry. Each local client spawns its own process, so the website does
+not discover or count those processes. Active and initializing counts cover
+remote sessions only. The remote transport reports ready only when startup
+installs the authenticated `/mcp` endpoint. OAuth verification reports ready
+only when all verifier settings pass startup validation and the server
+constructs the authorization service.
 
 Local client setup, actor binding, revocation behavior, and tool contracts are
 documented in [`local-mcp.md`](local-mcp.md).
 
 ## Remote session policy
 
-The environment controls the closed remote MCP session policy:
+The environment controls the remote MCP session policy:
 
 | Variable                       | Default | Meaning                          |
 | ------------------------------ | ------: | -------------------------------- |
@@ -71,8 +72,8 @@ These values do not govern local child processes. The registry reports
 
 The registry stores opaque session IDs, local actor IDs, workspace IDs,
 timestamps, state, and an in-process close handle. The status API exposes only
-workspace-scoped counts. Registry readiness does not enable a network route or
-weaken the OAuth requirement.
+workspace-scoped counts. Startup installs the network route only after all
+remote network and OAuth settings pass validation.
 
 ## OAuth verifier prerequisite
 
@@ -96,11 +97,13 @@ the exact configured scope and maps the issuer-subject pair to an active local
 user with a membership in the fixed workspace. Tokens and tool inputs cannot
 select a workspace.
 
-This prerequisite does not publish OAuth metadata, accept bearer tokens, or
-enable Streamable HTTP. Those controls belong to the remote adapter milestone.
+Complete remote configuration publishes protected-resource metadata, installs
+the bearer boundary, and enables Streamable HTTP. See
+[`remote-mcp.md`](remote-mcp.md) for the network and request controls.
 
 ## Remaining MCP milestones
 
-Remote HTTPS, authorization discovery and challenges, and mutating tools remain
-separate stages. Until those controls land, the remote transport stays disabled
-and local tools stay read-only.
+The remaining MCP milestones are an administrator workflow for external
+identity linking and separately approved mutating tools. Until then, remote
+access requires a pre-provisioned external identity mapping and all tools stay
+read-only.

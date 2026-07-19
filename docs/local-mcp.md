@@ -72,7 +72,7 @@ payloads. If the event cannot be stored, the tool returns `internal_error`
 without returning workspace data. Settings → MCP shows the 20 most recent
 events to administrators.
 
-The local milestone does not add create, update, or delete tools. The codebase
-contains a closed remote session registry and OAuth verification prerequisite,
-but it provides no remote Streamable HTTP route. Remote access remains a closed
-release milestone.
+The local transport does not add create, update, or delete tools. Deployments
+that need authenticated remote access can configure the separate Streamable
+HTTP endpoint described in [`remote-mcp.md`](remote-mcp.md). Both transports
+expose the same read-only tool contracts.

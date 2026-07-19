@@ -109,6 +109,12 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
     },
     network,
     requiredScope: "tracker:read",
+    requestPolicy: {
+      maxConcurrentRequests: 8,
+      maxRequestBytes: 65_536,
+      rateLimitRequests: 60,
+      rateLimitWindowMs: 60_000,
+    },
     sessions: registry,
     workspaceSlug: "default",
   });
@@ -247,7 +253,43 @@ describe("remote MCP HTTP endpoint", () => {
     });
   });
 
+  it("rejects malformed and oversized JSON before protocol handling", async () => {
+    const { app } = initializedEndpoint();
+    const malformed = await request(app)
+      .post("/mcp")
+      .set(protocolHeaders)
+      .set("Content-Type", "application/json")
+      .send('{"jsonrpc":"2.0"');
+    expect(malformed.status).toBe(400);
+    expect(responseBody(malformed).error).toEqual({
+      code: -32_700,
+      message: "Parse error",
+    });
+
+    const oversized = await request(app)
+      .post("/mcp")
+      .set(protocolHeaders)
+      .send({ value: "x".repeat(70_000) });
+    expect(oversized.status).toBe(413);
+    expect(responseBody(oversized).error).toEqual({
+      code: -32_004,
+      message: "Request payload too large",
+    });
+  });
+
   it("does not expose the remote endpoint unless it is installed", async () => {
     await request(createApp()).post("/mcp").expect(404);
+  });
+
+  it("does not expose another route below the configured endpoint", async () => {
+    const { app } = initializedEndpoint();
+    const response = await request(app)
+      .get("/mcp/internal")
+      .set(protocolHeaders)
+      .expect(404);
+    expect(responseBody(response).error).toEqual({
+      code: -32_001,
+      message: "Endpoint not found",
+    });
   });
 });

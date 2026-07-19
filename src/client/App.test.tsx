@@ -251,11 +251,9 @@ function createUsersClient(users: ManagedUser[] = [administrator, member]) {
   } satisfies UsersClient;
 }
 
-function createMcpStatusClient() {
+function createMcpStatusClient(status: McpStatus = mcpStatus) {
   return {
-    getStatus: vi
-      .fn<McpStatusClient["getStatus"]>()
-      .mockResolvedValue(mcpStatus),
+    getStatus: vi.fn<McpStatusClient["getStatus"]>().mockResolvedValue(status),
   } satisfies McpStatusClient;
 }
 
@@ -929,6 +927,41 @@ describe("application shell", () => {
         screen.getByRole("list", { name: "MCP security controls" }),
       ).getByText("Active"),
     ).toBeInTheDocument();
+  });
+
+  it("reports authenticated remote MCP when runtime configuration enables it", async () => {
+    const mcpStatusClient = createMcpStatusClient({
+      ...mcpStatus,
+      capabilities: { ...mcpStatus.capabilities, oauthVerification: true },
+      transports: {
+        ...mcpStatus.transports,
+        remote: { state: "ready", transport: "streamable_http" },
+      },
+    });
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+
+    expect(
+      await screen.findByText((_content, element) => {
+        return (
+          element?.classList.contains("mcp-boundary-note") === true &&
+          element.textContent?.includes("authenticated Streamable HTTP") ===
+            true
+        );
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/authenticated HTTP sessions/)).toBeInTheDocument();
   });
 
   it("lets administrators maintain workspace lists", async () => {
