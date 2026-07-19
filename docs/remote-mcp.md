@@ -24,11 +24,29 @@ query strings, fragments, insecure origins, and remote URLs on another path.
 When every network and OAuth setting is valid, the server installs the endpoint
 and the administrator MCP status view reports the remote transport as ready.
 
-Remote authorization also requires an `external_identities` mapping from the
-token issuer and subject to an active local user. The repository does not yet
-provide an administrator workflow for creating that mapping. A fresh
-installation therefore rejects remote actors until an operator provisions the
-mapping through a trusted deployment process.
+Remote authorization also requires an identity link from the token issuer and
+subject to an active local workspace user. Until an administrator creates that
+link, the remote endpoint rejects the actor.
+
+## Link a remote identity
+
+After configuring the OAuth verifier, sign in with a local administrator
+account and open **Settings → Users**:
+
+1. Find the local user who should receive remote MCP access.
+2. Select **Link identity**.
+3. Enter the exact `sub` claim issued to that user, then select **Link
+   subject**.
+
+Obtain the subject from the identity provider's trusted administration or
+token-inspection interface. Copy it exactly; subjects are case-sensitive and
+the app does not trim or normalize them. Never paste an access token into the
+subject field.
+
+The server binds the subject to `MCP_OAUTH_ISSUER`, so the browser cannot select
+another issuer. One issuer-subject pair can map to only one local user. Removing
+the link from **Settings → Users** prevents that subject from opening new remote
+MCP requests. Disabling the local user also blocks resolution.
 
 ## Authorization discovery
 

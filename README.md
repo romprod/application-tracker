@@ -32,7 +32,8 @@ be added in a small, testable commit.
 - Versioned CV and cover-letter records with application associations
 - Configurable statuses, sources, role types, and document types
 - Local users with administrator and member roles
-- Optional OpenID Connect login and account linking
+- Administrator-managed external identity linking for remote MCP
+- Optional OpenID Connect browser login
 - Settings sections for Lists, Users, and MCP status
 - Local and remote MCP tools with explicit actor context and audit events
 - Online SQLite backup, verified restore, and migration tooling
@@ -64,9 +65,11 @@ An optional Streamable HTTP endpoint exposes the same tools over HTTPS. It
 validates OAuth tokens, maps external identities to active local memberships,
 binds each session to its actor and workspace, and enforces network, session,
 request-size, concurrency, and rate limits. The endpoint stays absent until the
-operator supplies every remote and OAuth setting. The app does not yet provide
-an external-identity linking workflow, documents, or mutating MCP tools.
-Automated tests and CI cover each completed boundary.
+operator supplies every remote and OAuth setting. Administrators link an exact
+provider subject to an existing local user from Settings → Users; removing the
+link immediately prevents that identity from resolving for new remote requests.
+The app does not yet provide documents, OpenID Connect browser login, or
+mutating MCP tools. Automated tests and CI cover each completed boundary.
 
 ## Run the foundation
 

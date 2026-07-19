@@ -101,9 +101,12 @@ Complete remote configuration publishes protected-resource metadata, installs
 the bearer boundary, and enables Streamable HTTP. See
 [`remote-mcp.md`](remote-mcp.md) for the network and request controls.
 
+When OAuth is configured, administrators can link an exact provider subject to
+an existing local user from **Settings → Users**. The server fixes the issuer to
+`MCP_OAUTH_ISSUER`; the browser never receives or selects it.
+
 ## Remaining MCP milestones
 
-The remaining MCP milestones are an administrator workflow for external
-identity linking and separately approved mutating tools. Until then, remote
-access requires a pre-provisioned external identity mapping and all tools stay
-read-only.
+Remote access, including administrator-managed external identity linking, is
+implemented for the five read-only tools. Separately approved mutating tools
+remain a future milestone.

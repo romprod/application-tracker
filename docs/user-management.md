@@ -1,4 +1,4 @@
-# Local user management
+# User management
 
 Application Tracker administrators can manage local accounts inside their
 current workspace. Public registration is not available, and the installation
@@ -30,7 +30,21 @@ login but does not restore revoked sessions.
 
 All list and mutation queries include the authenticated workspace identifier.
 Responses include user identity, role, status, creation time, and whether a
-local credential exists. They never include password hashes or session tokens.
+local credential exists. When an OAuth provider is configured, they also
+include the provider subjects linked to each user. They never include password
+hashes, session tokens, or the provider issuer.
+
+## External identity links
+
+An administrator can link an exact OAuth `sub` claim to an existing workspace
+user. The server supplies the configured issuer; the browser cannot choose or
+override it. Each issuer-subject pair belongs to one local user, and conflicts
+return `external_identity_unavailable` without identifying that user.
+
+Removing a link immediately stops that subject from resolving to the local
+user for new remote MCP requests. It does not disable the local account or
+revoke unrelated browser sessions. Identity linking remains unavailable until
+the operator configures all OAuth verifier settings.
 
 ## HTTP boundary
 
@@ -39,6 +53,8 @@ The browser uses these administrator-only routes:
 - `GET /api/settings/users`
 - `POST /api/settings/users`
 - `PATCH /api/settings/users/:userId/status`
+- `POST /api/settings/users/:userId/external-identities`
+- `DELETE /api/settings/users/:userId/external-identities/:identityId`
 
 An absent or expired session receives `authentication_required`; an active
 member session receives `forbidden`. Responses are marked `no-store`.
@@ -54,9 +70,8 @@ exercised during local use.
 Administrators open **Settings → Users** to see account, active, and admin
 counts; inspect every workspace account; create a local user; or enable and
 disable another account. The current account is visibly marked and protected
-from disablement. Password fields are cleared after every account-creation
-response.
+from disablement. When OAuth is configured, the same page links and removes
+exact provider subjects. Password fields are cleared after every
+account-creation response.
 
-The Settings submenu also reserves stable positions for Lists and MCP. Those
-labels are intentionally non-interactive until their underlying capabilities
-are implemented.
+The other Settings sections manage workspace Lists and sanitized MCP status.

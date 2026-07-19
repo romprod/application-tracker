@@ -18,11 +18,11 @@ accepts that token once, creates the first local administrator, and permanently
 invalidates the token. The project will never ship `admin/admin` or another
 known default credential.
 
-Local password authentication is always available. OpenID Connect is optional.
-An administrator may link an external identity to an existing user or allow a
-configured claim to create a member account. External identity configuration
-must never disable recovery through a deliberately retained local
-administrator.
+Local password authentication is always available. An administrator may link
+an external identity to an existing user for remote MCP access. Optional
+OpenID Connect browser login and claim-based account creation remain separate
+future capabilities. External identity configuration must never disable
+recovery through a deliberately retained local administrator.
 
 ## Authorization model
 

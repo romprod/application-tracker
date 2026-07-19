@@ -15,7 +15,8 @@ tests and user documentation.
 - [x] Closed first-run setup with one-time administrator creation
 - [x] Local login, logout, session rotation, expiry, and revocation
 - [x] Administrator and member workspace roles
-- [ ] Optional OpenID Connect login and identity linking
+- [x] Administrator-managed external identity linking for remote MCP
+- [ ] Optional OpenID Connect browser login
 - [x] Settings navigation with Lists, Users, and MCP sections
 
 ## Application tracking
@@ -41,7 +42,7 @@ tests and user documentation.
 ## MCP
 
 - [x] Local stdio server with explicit workspace and actor context
-- [ ] Remote HTTPS server with supported external-identity linking
+- [x] Remote HTTPS server with supported external-identity linking
 - [x] Remote HTTP metadata, challenges, allowlists, and request limits
 - [x] Strict OAuth token verification and local membership mapping prerequisite
 - [x] Read-only tool schemas, per-call authorization, and audit events
