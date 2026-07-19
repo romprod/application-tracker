@@ -21,5 +21,20 @@ Origin values contain only an HTTPS scheme and authority.
 
 Startup rejects partial settings, duplicate entries, embedded credentials,
 query strings, fragments, insecure origins, and remote URLs on another path.
-These checks prepare the network boundary; they do not enable an HTTP route on
-their own.
+These checks prepare the network boundary; they do not enable the MCP endpoint
+on their own.
+
+## Authorization discovery
+
+When remote configuration is complete, the server publishes RFC 9728 protected
+resource metadata at:
+
+```text
+/.well-known/oauth-protected-resource/mcp
+```
+
+The document identifies the canonical MCP resource, authorization server,
+required scope, and header-based bearer method. It is public, cacheable for five
+minutes, and contains no JWKS URL, subject, token, hostname beyond the public
+resource, or private deployment setting. The endpoint accepts `GET` and
+`OPTIONS` only.

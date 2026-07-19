@@ -12,6 +12,11 @@ import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
 import { createApplicationsRouter } from "./applications_routes.js";
 import { createSetupRouter } from "./setup_routes.js";
 import { createMcpStatusRouter } from "./mcp_status_routes.js";
+import {
+  createMcpProtectedResourceMetadataRouter,
+  mcpProtectedResourceMetadataPath,
+  type McpProtectedResourceMetadataConfig,
+} from "./mcp_metadata_routes.js";
 import { createUsersRouter } from "./users_routes.js";
 import { createReferenceValuesRouter } from "./reference_values_routes.js";
 import {
@@ -27,6 +32,7 @@ export interface AppOptions {
   authService?: AuthService;
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
+  mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
   referenceValuesService?: ReferenceValuesService;
   setupService?: SetupService;
   staticRoot?: string;
@@ -49,6 +55,17 @@ export function createApp(options: AppOptions = {}): Express {
       status: "ok",
     });
   });
+
+  if (options.mcpProtectedResourceMetadata) {
+    app.use(
+      mcpProtectedResourceMetadataPath(
+        options.mcpProtectedResourceMetadata.resourceUrl,
+      ),
+      createMcpProtectedResourceMetadataRouter(
+        options.mcpProtectedResourceMetadata,
+      ),
+    );
+  }
 
   if (options.authService && options.applicationsService) {
     app.use(

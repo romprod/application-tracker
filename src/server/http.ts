@@ -111,6 +111,15 @@ async function startApplication(): Promise<void> {
       },
       authService,
       logger,
+      ...(config.mcp.remote && config.mcp.oauth
+        ? {
+            mcpProtectedResourceMetadata: {
+              authorizationServer: config.mcp.oauth.issuer,
+              requiredScope: config.mcp.oauth.requiredScope,
+              resourceUrl: config.mcp.remote.resourceUrl,
+            },
+          }
+        : {}),
       mcpStatusService,
       referenceValuesService,
       setupService,
