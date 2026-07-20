@@ -20,6 +20,11 @@ store if a future deployment runs more than one Application Tracker process.
 Login and remote MCP requests retain their stricter account, source, actor, and
 concurrency controls below this outer boundary.
 
+The remote MCP router repeats the direct-source policy immediately before
+bearer authorization. This is intentional: it keeps invalid-token attempts
+bounded even when the router is embedded independently, while the existing
+post-authentication actor limit controls authorized MCP use.
+
 ## Password verification
 
 Passwords are stored as uniquely salted scrypt hashes. Login uses the same

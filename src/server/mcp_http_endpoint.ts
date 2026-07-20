@@ -8,6 +8,7 @@ import express, {
   type Request,
   type Response,
 } from "express";
+import { rateLimit } from "express-rate-limit";
 
 import type { AuthenticatedActor } from "../application/auth.js";
 import type { McpActorProvider } from "../application/mcp.js";
@@ -54,6 +55,10 @@ export interface RemoteMcpHttpEndpointOptions {
     requiredScope: string;
   };
   sessions: RemoteMcpSessionRegistry;
+  sourceRateLimit: {
+    requests: number;
+    windowMs: number;
+  };
 }
 
 class SessionActorProvider implements McpActorProvider {
@@ -110,6 +115,7 @@ export class RemoteMcpHttpEndpoint {
   private readonly requestPolicy: RemoteMcpRequestPolicy;
   private readonly sessionRegistry: RemoteMcpSessionRegistry;
   private readonly sessions = new Map<string, RemoteMcpSession>();
+  private readonly sourceRateLimit: RemoteMcpHttpEndpointOptions["sourceRateLimit"];
 
   public constructor(options: RemoteMcpHttpEndpointOptions) {
     this.authorizer = options.authorizer;
@@ -119,6 +125,7 @@ export class RemoteMcpHttpEndpoint {
     this.oauth = options.oauth;
     this.requestPolicy = options.requestPolicy;
     this.sessionRegistry = options.sessions;
+    this.sourceRateLimit = options.sourceRateLimit;
   }
 
   public isAvailable(): boolean {
@@ -129,6 +136,19 @@ export class RemoteMcpHttpEndpoint {
     const router = Router();
     const requestGuards = createRemoteMcpRequestGuards(this.requestPolicy);
     router.use(createRemoteMcpNetworkGuard(this.network));
+    router.use(
+      rateLimit({
+        handler: (_request, response) => {
+          sendProtocolError(response, 429, -32_003, "Request limit reached");
+        },
+        identifier: "application-tracker-remote-mcp-source",
+        legacyHeaders: false,
+        limit: this.sourceRateLimit.requests,
+        standardHeaders: "draft-8",
+        validate: { xForwardedForHeader: false },
+        windowMs: this.sourceRateLimit.windowMs,
+      }),
+    );
     router.use(
       createRemoteMcpBearerAuth({
         authorizer: this.authorizer,

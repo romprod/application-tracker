@@ -57,7 +57,10 @@ afterEach(async () => {
   );
 });
 
-function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
+function initializedEndpoint(
+  policy = { globalLimit: 6, perActorLimit: 2 },
+  sourceRateLimit = { requests: 600, windowMs: 60_000 },
+) {
   const audit = vi.fn<(event: NewMcpAuditEvent) => void>();
   const registry = new RemoteMcpSessionRegistry({
     absoluteDurationMs: 14_400_000,
@@ -136,6 +139,7 @@ function initializedEndpoint(policy = { globalLimit: 6, perActorLimit: 2 }) {
       rateLimitWindowMs: 60_000,
     },
     sessions: registry,
+    sourceRateLimit,
   });
   return {
     app: createApp({ remoteMcpRouter: endpoint.router() }),
@@ -164,6 +168,27 @@ function initialize(
 }
 
 describe("remote MCP HTTP endpoint", () => {
+  it("rate limits repeated authorization attempts from one network source", async () => {
+    const { app } = initializedEndpoint(
+      { globalLimit: 6, perActorLimit: 2 },
+      { requests: 2, windowMs: 60_000 },
+    );
+
+    await request(app).get("/mcp").set("Host", "tracker.example").expect(401);
+    await request(app).get("/mcp").set("Host", "tracker.example").expect(401);
+    const limited = await request(app)
+      .get("/mcp")
+      .set("Host", "tracker.example")
+      .expect(429);
+
+    expect(limited.headers.ratelimit).toBeDefined();
+    expect(limited.headers["retry-after"]).toBeDefined();
+    expect(responseBody(limited).error).toEqual({
+      code: -32_003,
+      message: "Request limit reached",
+    });
+  });
+
   it("initializes, lists and calls tools, audits, and closes a bound session", async () => {
     const { app, audit, registry } = initializedEndpoint();
     const initialization = await initialize(app);

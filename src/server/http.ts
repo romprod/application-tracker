@@ -168,6 +168,10 @@ async function startApplication(): Promise<void> {
             : {}),
           requestPolicy: config.mcp.request,
           sessions: mcpSessionRegistry,
+          sourceRateLimit: {
+            requests: config.http.rateLimitRequests,
+            windowMs: config.http.rateLimitWindowMs,
+          },
         })
       : undefined;
     const mcpStatusService = new McpStatusService(

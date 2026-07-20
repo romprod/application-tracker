@@ -1,4 +1,5 @@
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,6 +26,7 @@ function appWith(authorizer: RemoteMcpAuthorizer, oauth = true) {
   const app = express();
   app.get(
     "/mcp",
+    rateLimit({ limit: 600, windowMs: 60_000 }),
     createRemoteMcpBearerAuth({
       authorizer,
       ...(oauth
