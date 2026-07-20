@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { ApplicationRecord } from "./applications.js";
@@ -72,7 +74,7 @@ const references: ReferenceValue[] = [
 function documentDependencies() {
   return {
     documents: {
-      getDocumentOriginal: vi.fn(),
+      getDocumentChunk: vi.fn(),
       importDocument: vi.fn(),
       listDocuments: vi.fn().mockReturnValue([]),
     },
@@ -213,6 +215,69 @@ describe("ApplicationMcpService", () => {
     });
     expect(applicationService.listApplications).toHaveBeenCalledWith(actor);
     expect(referenceReader.listReferenceValues).toHaveBeenCalledWith(actor);
+  });
+
+  it("exports one bounded document range with the stored whole-file digest", () => {
+    const { documents, imports } = documentDependencies();
+    const wholeBytes = Buffer.alloc(20_000, 7);
+    const chunk = wholeBytes.subarray(12_288);
+    const sha256 = createHash("sha256").update(wholeBytes).digest("hex");
+    const record = {
+      applications: [],
+      byteSize: wholeBytes.byteLength,
+      createdAt: "2026-07-19T10:00:00.000Z",
+      documentType: "CV",
+      documentTypeId: "11111111-1111-4111-8111-111111111111",
+      id: "22222222-2222-4222-8222-222222222222",
+      mediaType: "application/pdf",
+      originalFilename: "Product CV.pdf",
+      uploadedByDisplayName: "Alex Example",
+    };
+    documents.getDocumentChunk.mockReturnValue({
+      bytes: chunk,
+      document: record,
+      sha256,
+    });
+    const service = new ApplicationMcpService(
+      new LocalMcpActorProvider(
+        { findActiveActor: vi.fn(() => actor) },
+        { username: "alex", workspaceSlug: "default" },
+      ),
+      {
+        createApplication: vi.fn(),
+        deleteApplication: vi.fn(),
+        listApplicationEvents: vi.fn(),
+        listApplications: vi.fn().mockReturnValue([]),
+        updateApplication: vi.fn(),
+      },
+      { listReferenceValues: vi.fn().mockReturnValue([]) },
+      {
+        getAccessMode: vi.fn(() => "read_only"),
+        requireWriteAccess: vi.fn(),
+      },
+      documents,
+      imports,
+    );
+
+    expect(
+      service.exportDocumentChunk({ documentId: record.id, offset: 12_288 }),
+    ).toEqual({
+      byteSize: wholeBytes.byteLength,
+      chunkByteSize: chunk.byteLength,
+      chunkSha256: createHash("sha256").update(chunk).digest("hex"),
+      complete: true,
+      contentBase64: chunk.toString("base64"),
+      document: record,
+      nextOffset: null,
+      offset: 12_288,
+      sha256,
+    });
+    expect(documents.getDocumentChunk).toHaveBeenCalledWith(
+      actor,
+      record.id,
+      12_288,
+      12_288,
+    );
   });
 
   it("rechecks actor availability on every call", () => {

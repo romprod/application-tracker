@@ -39,11 +39,23 @@ export interface DocumentOriginal {
   document: DocumentRecord;
 }
 
+export interface DocumentContentChunk {
+  bytes: Uint8Array;
+  document: DocumentRecord;
+  sha256: string;
+}
+
 export interface DocumentsRepository {
   createDocument(input: CreateDocumentRecord): DocumentRecord;
   findEquivalentDocument(
     input: EquivalentDocumentInput,
   ): DocumentRecord | undefined;
+  getDocumentChunk(
+    workspaceId: string,
+    documentId: string,
+    offset: number,
+    maxBytes: number,
+  ): DocumentContentChunk | undefined;
   getDocumentOriginal(
     workspaceId: string,
     documentId: string,
@@ -156,6 +168,22 @@ export class DocumentLibraryService {
 
   public listDocuments(actor: AuthenticatedActor): DocumentRecord[] {
     return this.repository.listDocuments(actor.workspaceId);
+  }
+
+  public getDocumentChunk(
+    actor: AuthenticatedActor,
+    documentId: string,
+    offset: number,
+    maxBytes: number,
+  ): DocumentContentChunk {
+    const chunk = this.repository.getDocumentChunk(
+      actor.workspaceId,
+      documentId,
+      offset,
+      maxBytes,
+    );
+    if (!chunk) throw new DocumentNotFoundError();
+    return chunk;
   }
 
   public getDocumentOriginal(

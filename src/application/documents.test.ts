@@ -40,6 +40,13 @@ function repository() {
   const getDocumentOriginal = vi.fn<DocumentsRepository["getDocumentOriginal"]>(
     () => ({ bytes: Buffer.from("pdf-data"), document: documentRecord() }),
   );
+  const getDocumentChunk = vi.fn<DocumentsRepository["getDocumentChunk"]>(
+    () => ({
+      bytes: Buffer.from("data"),
+      document: documentRecord(),
+      sha256: createHash("sha256").update("pdf-data").digest("hex"),
+    }),
+  );
   const findEquivalentDocument = vi.fn<
     DocumentsRepository["findEquivalentDocument"]
   >(() => undefined);
@@ -49,11 +56,13 @@ function repository() {
   return {
     createDocument,
     findEquivalentDocument,
+    getDocumentChunk,
     getDocumentOriginal,
     listDocuments,
     repository: {
       createDocument,
       findEquivalentDocument,
+      getDocumentChunk,
       getDocumentOriginal,
       listDocuments,
     },
@@ -160,11 +169,26 @@ describe("DocumentLibraryService", () => {
       "workspace-1",
       "22222222-2222-4222-8222-222222222222",
     );
+    expect(
+      service.getDocumentChunk(
+        actor,
+        "22222222-2222-4222-8222-222222222222",
+        3,
+        4,
+      ),
+    ).toMatchObject({ bytes: Buffer.from("data") });
+    expect(store.getDocumentChunk).toHaveBeenCalledWith(
+      "workspace-1",
+      "22222222-2222-4222-8222-222222222222",
+      3,
+      4,
+    );
   });
 
   it("hides missing and cross-workspace originals behind one error", () => {
     const store = repository();
     store.getDocumentOriginal.mockReturnValue(undefined);
+    store.getDocumentChunk.mockReturnValue(undefined);
     const service = new DocumentLibraryService(store.repository, {
       maxUploadBytes: 1024,
     });
@@ -173,6 +197,14 @@ describe("DocumentLibraryService", () => {
       service.getDocumentOriginal(
         actor,
         "22222222-2222-4222-8222-222222222222",
+      ),
+    ).toThrow(DocumentNotFoundError);
+    expect(() =>
+      service.getDocumentChunk(
+        actor,
+        "22222222-2222-4222-8222-222222222222",
+        0,
+        4,
       ),
     ).toThrow(DocumentNotFoundError);
   });

@@ -194,6 +194,47 @@ describe("SqliteDocumentsRepository", () => {
     }
   });
 
+  it("reads only the requested document byte range with the stored digest", () => {
+    const { database, documentTypeId, repository, setup } = createRepository();
+    const bytes = Buffer.from("0123456789abcdefghijklmnopqrstuvwxyz");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+
+    try {
+      const document = repository.createDocument({
+        applicationIds: [],
+        bytes,
+        createdAt,
+        documentTypeId,
+        mediaType: "text/plain",
+        originalFilename: "alphabet.txt",
+        sha256,
+        uploadedByUserId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(
+        repository.getDocumentChunk(setup.workspace.id, document.id, 10, 7),
+      ).toEqual({
+        bytes: Buffer.from("abcdefg"),
+        document,
+        sha256,
+      });
+      expect(
+        repository.getDocumentChunk(
+          setup.workspace.id,
+          document.id,
+          bytes.byteLength,
+          7,
+        ),
+      ).toEqual({ bytes: Buffer.alloc(0), document, sha256 });
+      expect(
+        repository.getDocumentChunk("other-workspace", document.id, 0, 7),
+      ).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects unknown, cross-category, and removed application references", () => {
     const { application, database, documentTypeId, repository, setup } =
       createRepository();

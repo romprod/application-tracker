@@ -8,6 +8,7 @@ import {
   InvalidDocumentReferenceError,
   type CreateDocumentRecord,
   type DocumentApplicationAssociation,
+  type DocumentContentChunk,
   type EquivalentDocumentInput,
   type DocumentOriginal,
   type DocumentRecord,
@@ -24,6 +25,11 @@ interface StoredAssociation extends DocumentApplicationAssociation {
 interface StoredFileObject {
   byteSize: number;
   content: Buffer;
+}
+
+interface StoredDocumentChunk {
+  content: Buffer;
+  sha256: string;
 }
 
 interface StoredUsage {
@@ -331,6 +337,31 @@ export class SqliteDocumentsRepository implements DocumentsRepository {
       )
       .all(workspaceId) as StoredDocument[];
     return this.hydrate(workspaceId, stored);
+  }
+
+  public getDocumentChunk(
+    workspaceId: string,
+    documentId: string,
+    offset: number,
+    maxBytes: number,
+  ): DocumentContentChunk | undefined {
+    const stored = this.findStoredDocument(workspaceId, documentId);
+    if (!stored) return undefined;
+    const chunk = this.database
+      .prepare(
+        `SELECT
+           file_objects.sha256,
+           substr(file_objects.content, ?, ?) AS content
+         FROM documents
+         JOIN file_objects ON file_objects.sha256 = documents.file_sha256
+         WHERE documents.workspace_id = ? AND documents.id = ?`,
+      )
+      .get(offset + 1, maxBytes, workspaceId, documentId) as
+      StoredDocumentChunk | undefined;
+    if (!chunk || !Buffer.isBuffer(chunk.content)) return undefined;
+    const [document] = this.hydrate(workspaceId, [stored]);
+    if (!document) return undefined;
+    return { bytes: chunk.content, document, sha256: chunk.sha256 };
   }
 
   public getDocumentOriginal(

@@ -7,7 +7,7 @@ import {
 } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import type {
-  DocumentOriginal,
+  DocumentContentChunk,
   DocumentRecord,
   ImportDocumentInput,
 } from "./documents.js";
@@ -88,10 +88,12 @@ export interface McpReferenceValuesReader {
 }
 
 export interface McpDocumentsService {
-  getDocumentOriginal(
+  getDocumentChunk(
     actor: AuthenticatedActor,
     documentId: string,
-  ): DocumentOriginal;
+    offset: number,
+    maxBytes: number,
+  ): DocumentContentChunk;
   importDocument(
     actor: AuthenticatedActor,
     input: ImportDocumentInput,
@@ -415,30 +417,28 @@ export class ApplicationMcpService implements McpApplicationTools {
     offset: number;
   }): McpDocumentChunk {
     const actor = this.actorProvider.getActor();
-    const original = this.documents.getDocumentOriginal(
+    const offset = Math.max(0, input.offset);
+    const result = this.documents.getDocumentChunk(
       actor,
       input.documentId,
+      offset,
+      this.documentImports.maxChunkBytes,
     );
-    const bytes = Buffer.from(original.bytes);
-    const offset = Math.max(0, input.offset);
-    if (offset >= bytes.byteLength) {
+    const chunk = Buffer.from(result.bytes);
+    if (offset >= result.document.byteSize || chunk.byteLength === 0) {
       throw new InvalidMcpDocumentExportError();
     }
-    const chunk = bytes.subarray(
-      offset,
-      Math.min(bytes.byteLength, offset + this.documentImports.maxChunkBytes),
-    );
     const nextOffset = offset + chunk.byteLength;
     return {
-      byteSize: bytes.byteLength,
+      byteSize: result.document.byteSize,
       chunkByteSize: chunk.byteLength,
       chunkSha256: createHash("sha256").update(chunk).digest("hex"),
-      complete: nextOffset >= bytes.byteLength,
+      complete: nextOffset >= result.document.byteSize,
       contentBase64: chunk.toString("base64"),
-      document: original.document,
-      nextOffset: nextOffset < bytes.byteLength ? nextOffset : null,
+      document: result.document,
+      nextOffset: nextOffset < result.document.byteSize ? nextOffset : null,
       offset,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
+      sha256: result.sha256,
     };
   }
 
