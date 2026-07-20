@@ -4,6 +4,22 @@ Application Tracker always retains local password authentication. A local
 administrator created during first-run setup can sign in without an external
 identity provider.
 
+## HTTP request admission
+
+The server admits 600 requests per minute by default from each direct network
+source before parsing or authorizing a request. The process-local limiter
+covers website navigation, static fallback responses, API routes, and the
+outer remote MCP boundary. Limited requests receive `429` with `RateLimit` and
+`Retry-After` headers. Configure the bounded policy with
+`HTTP_RATE_LIMIT_REQUESTS` and `HTTP_RATE_LIMIT_WINDOW_SECONDS`.
+
+The limiter deliberately does not trust forwarded client headers. Clients
+behind one reverse proxy therefore share its direct-source bucket. Keep a
+trusted edge or proxy limit as a second layer, and use a shared rate-limit
+store if a future deployment runs more than one Application Tracker process.
+Login and remote MCP requests retain their stricter account, source, actor, and
+concurrency controls below this outer boundary.
+
 ## Password verification
 
 Passwords are stored as uniquely salted scrypt hashes. Login uses the same

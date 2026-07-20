@@ -200,6 +200,10 @@ async function startApplication(): Promise<void> {
         previewService: documentPreviewService,
         service: documentsService,
       },
+      httpRateLimit: {
+        requests: config.http.rateLimitRequests,
+        windowMs: config.http.rateLimitWindowMs,
+      },
       logger,
       mcpClientsService,
       ...(config.mcp.remote && config.mcp.oauth

@@ -36,6 +36,10 @@ describe("parseRuntimeConfig", () => {
         },
       },
       host: "0.0.0.0",
+      http: {
+        rateLimitRequests: 600,
+        rateLimitWindowMs: 60_000,
+      },
       mcp: {
         request: {
           maxConcurrentRequests: 8,
@@ -188,6 +192,24 @@ describe("parseRuntimeConfig", () => {
     expect(() =>
       parseRuntimeConfig({ LOGIN_RATE_LIMIT_MAX_KEYS: "99" }),
     ).toThrow("Invalid runtime configuration: LOGIN_RATE_LIMIT_MAX_KEYS");
+  });
+
+  it("accepts only bounded HTTP request limits", () => {
+    expect(
+      parseRuntimeConfig({
+        HTTP_RATE_LIMIT_REQUESTS: "1200",
+        HTTP_RATE_LIMIT_WINDOW_SECONDS: "120",
+      }).http,
+    ).toEqual({
+      rateLimitRequests: 1200,
+      rateLimitWindowMs: 120_000,
+    });
+    expect(() => parseRuntimeConfig({ HTTP_RATE_LIMIT_REQUESTS: "0" })).toThrow(
+      "Invalid runtime configuration: HTTP_RATE_LIMIT_REQUESTS",
+    );
+    expect(() =>
+      parseRuntimeConfig({ HTTP_RATE_LIMIT_WINDOW_SECONDS: "3601" }),
+    ).toThrow("Invalid runtime configuration: HTTP_RATE_LIMIT_WINDOW_SECONDS");
   });
 
   it("rejects a port outside the TCP range", () => {

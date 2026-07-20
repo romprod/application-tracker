@@ -163,6 +163,18 @@ const runtimeEnvironmentSchema = z.object({
     .max(10_000)
     .default(1500),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
+  HTTP_RATE_LIMIT_REQUESTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .default(600),
+  HTTP_RATE_LIMIT_WINDOW_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3600)
+    .default(60),
   LOGIN_MAX_CONCURRENT_VERIFICATIONS: z.coerce
     .number()
     .int()
@@ -353,6 +365,10 @@ export interface RuntimeConfig {
     };
   };
   host: string;
+  http: {
+    rateLimitRequests: number;
+    rateLimitWindowMs: number;
+  };
   mcp: {
     local?: {
       actorUsername: string;
@@ -607,6 +623,10 @@ export function parseRuntimeConfig(
       },
     },
     host: result.data.HOST,
+    http: {
+      rateLimitRequests: result.data.HTTP_RATE_LIMIT_REQUESTS,
+      rateLimitWindowMs: result.data.HTTP_RATE_LIMIT_WINDOW_SECONDS * 1000,
+    },
     mcp: {
       ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&
       result.data.MCP_LOCAL_WORKSPACE_SLUG

@@ -28,6 +28,7 @@ const jobPathPattern =
 const noisePattern =
   /(?:^|\/)(?:help|privacy|preferences|support|terms|unsubscribe)(?:\/|$)/i;
 const urlPattern = /https?:\/\/[^\s<>"'`]+/gi;
+const encodedAmpersandPattern = /(?:&amp;|&#38;|&#x26;)/gi;
 
 function decodeQuotedPrintable(value: string): string {
   if (!/^content-transfer-encoding:\s*quoted-printable\s*$/im.test(value)) {
@@ -42,9 +43,7 @@ function decodeQuotedPrintable(value: string): string {
 
 function cleanCandidate(value: string): string {
   return value
-    .replaceAll("&amp;", "&")
-    .replaceAll("&#38;", "&")
-    .replaceAll("&#x26;", "&")
+    .replace(encodedAmpersandPattern, "&")
     .replace(/[),.;:!?\]}]+$/g, "");
 }
 

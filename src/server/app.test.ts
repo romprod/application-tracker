@@ -31,6 +31,22 @@ describe("health endpoint", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.headers["x-request-id"]).toMatch(requestIdPattern);
   });
+
+  it("rate limits repeated requests from one network source", async () => {
+    const app = createApp({
+      httpRateLimit: { requests: 2, windowMs: 60_000 },
+    });
+
+    const first = await request(app).get("/api/health").expect(200);
+    await request(app).get("/api/health").expect(200);
+    const limited = await request(app).get("/api/health").expect(429);
+
+    expect(first.headers.ratelimit).toBeDefined();
+    expect(limited.headers["retry-after"]).toBeDefined();
+    expect(limited.body).toEqual({
+      error: { code: "request_rate_limited" },
+    });
+  });
 });
 
 describe("HTTP error and logging boundary", () => {

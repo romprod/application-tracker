@@ -53,6 +53,26 @@ describe("EmailLinkExtractionService", () => {
     ]);
   });
 
+  it("decodes one HTML entity layer without promoting nested query separators", () => {
+    const extracted = service.extract({
+      content: [
+        "https://careers.example.com/jobs/123?source=email&amp;campaign=weekly",
+        "https://careers.example.com/jobs/456?source=email&amp;#38;admin=true",
+        "https://careers.example.com/jobs/789?source=email&amp;#x26;admin=true",
+      ].join("\n"),
+    });
+
+    expect(extracted[0]).toEqual({
+      host: "careers.example.com",
+      url: "https://careers.example.com/jobs/123?source=email&campaign=weekly",
+    });
+    for (const candidate of extracted.slice(1)) {
+      const parsed = new URL(candidate.url);
+      expect(parsed.searchParams.get("source")).toBe("email");
+      expect(parsed.searchParams.has("admin")).toBe(false);
+    }
+  });
+
   it("rejects noise, credential-bearing URLs, and non-web schemes", () => {
     expect(
       service.extract({

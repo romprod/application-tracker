@@ -1,5 +1,6 @@
 import compression from "compression";
 import express, { type Express, type Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 
 import type { SetupService } from "../application/setup.js";
@@ -34,6 +35,7 @@ export interface AppOptions {
   authCookie?: AuthCookieOptions;
   authService?: AuthService;
   documents?: DocumentsRouteOptions;
+  httpRateLimit?: HttpRateLimitPolicy;
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
   mcpClientsService?: McpClientCredentialsService;
@@ -45,13 +47,50 @@ export interface AppOptions {
   usersService?: UserAdministrationService;
 }
 
+export interface HttpRateLimitPolicy {
+  requests: number;
+  windowMs: number;
+}
+
+const defaultHttpRateLimitPolicy: HttpRateLimitPolicy = {
+  requests: 600,
+  windowMs: 60_000,
+};
+
+function resolveHttpRateLimitPolicy(
+  configured: HttpRateLimitPolicy | undefined,
+): HttpRateLimitPolicy {
+  const policy = configured ?? defaultHttpRateLimitPolicy;
+  if (
+    !Number.isInteger(policy.requests) ||
+    policy.requests < 1 ||
+    !Number.isInteger(policy.windowMs) ||
+    policy.windowMs < 1
+  ) {
+    throw new Error("Invalid HTTP rate limit policy");
+  }
+  return policy;
+}
+
 export function createApp(options: AppOptions = {}): Express {
   const app = express();
   const logger = options.logger ?? noOpLogger;
+  const httpRateLimit = resolveHttpRateLimitPolicy(options.httpRateLimit);
 
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(compression());
+  app.use(
+    rateLimit({
+      identifier: "application-tracker-http",
+      legacyHeaders: false,
+      limit: httpRateLimit.requests,
+      message: { error: { code: "request_rate_limited" } },
+      standardHeaders: "draft-8",
+      validate: { xForwardedForHeader: false },
+      windowMs: httpRateLimit.windowMs,
+    }),
+  );
   app.use("/api", createApiRequestLogger(logger));
   app.use("/api", express.json({ limit: "256kb" }));
 
