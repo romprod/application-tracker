@@ -18,11 +18,13 @@ accepts that token once, creates the first local administrator, and permanently
 invalidates the token. The project will never ship `admin/admin` or another
 known default credential.
 
-Local password authentication is always available. An administrator may link
-an external identity to an existing user for remote MCP access. Optional
-OpenID Connect browser login and claim-based account creation remain separate
-future capabilities. External identity configuration must never disable
-recovery through a deliberately retained local administrator.
+Local password authentication is always available. The built-in remote MCP
+OAuth flow authenticates these local accounts directly and requires explicit
+consent. An administrator may additionally link an external identity to an
+existing user for remote MCP access. Optional OpenID Connect website login and
+claim-based account creation remain separate future capabilities. External
+identity configuration must never disable recovery through a deliberately
+retained local administrator.
 
 ## Authorization model
 
@@ -54,15 +56,17 @@ Lists but cannot change them.
 ## MCP contract
 
 Local stdio MCP runs only when an operator starts it and receives an explicit
-workspace and actor configuration. Remote MCP requires a named client
-credential bound to an active local workspace member. Administrators create,
-rotate, and revoke credentials in Settings → MCP. Optional OAuth tokens require
-issuer and audience binding, the configured scope, and an authorized workspace
-membership.
+workspace and actor configuration. Remote MCP accepts either a named bearer
+credential or a built-in OAuth grant bound to an active local workspace member.
+Administrators create, rotate, revoke, regenerate, and delete bearer
+credentials in Settings → MCP. Built-in OAuth uses public PKCE clients, local
+login and consent, exact resource binding, rotating refresh tokens, and
+hash-only token storage. Optional external OAuth tokens require issuer and
+audience binding, the configured scope, and an authorized workspace membership.
 
 MCP tools use the same application services, schemas, authorization checks,
 and transactions as HTTP requests. MCP mutations are disabled by default and
-can be enabled only by a workspace administrator from the website. Application
+can be enabled per connection by a workspace administrator. Application
 deletion is a soft delete, is advertised as destructive, and requires explicit
 confirmation in the tool input. A successful mutation and its audit event
 commit atomically.

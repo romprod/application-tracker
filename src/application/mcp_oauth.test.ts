@@ -52,6 +52,7 @@ describe("RemoteMcpAuthorizationService", () => {
     ]);
 
     await expect(service.authorize("signed-token")).resolves.toEqual({
+      accessMode: "read_only",
       actor,
       principalId:
         "oauth:https://identity.example/application/o/mcp/:identity-123",

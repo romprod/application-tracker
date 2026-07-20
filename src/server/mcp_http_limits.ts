@@ -1,6 +1,6 @@
 import type { RequestHandler, Response } from "express";
 
-import { remoteMcpActor } from "./mcp_http_auth.js";
+import { remoteMcpActor, remoteMcpPrincipal } from "./mcp_http_auth.js";
 
 export interface RemoteMcpRequestPolicy {
   maxConcurrentRequests: number;
@@ -55,8 +55,8 @@ export function createRemoteMcpRequestGuards(
 
   const rateLimit: RequestHandler = (_request, response, next) => {
     const nowMs = clock().getTime();
-    const actorId = remoteMcpActor(response).userId;
-    const current = rateWindows.get(actorId);
+    const connectionId = remoteMcpPrincipal(response).principalId;
+    const current = rateWindows.get(connectionId);
     const actorWindow =
       !current || nowMs - current.startedAtMs >= policy.rateLimitWindowMs
         ? { count: 0, startedAtMs: nowMs }
@@ -72,7 +72,7 @@ export function createRemoteMcpRequestGuards(
       return;
     }
     actorWindow.count += 1;
-    rateWindows.set(actorId, actorWindow);
+    rateWindows.set(connectionId, actorWindow);
 
     next();
   };

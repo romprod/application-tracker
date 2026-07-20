@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "./auth.js";
-import type { McpAccessMode } from "./mcp_access.js";
 import type { McpAuditReader } from "./mcp_audit.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
   McpStatusForbiddenError,
   McpStatusService,
 } from "./mcp_status.js";
-import type { McpAccessSettingsProvider } from "./mcp_status.js";
 
 const admin: AuthenticatedActor = {
   authenticated: true,
@@ -46,7 +44,6 @@ describe("McpStatusService", () => {
     const service = new McpStatusService(policy, provider, auditReader);
 
     expect(service.getStatus(admin)).toEqual({
-      access: { mode: "read_only" },
       availability: "available",
       capabilities: {
         auditEvents: true,
@@ -54,7 +51,7 @@ describe("McpStatusService", () => {
         oauthVerification: false,
         registeredTools: 15,
       },
-      clients: { actors: [], clients: [] },
+      clients: { actors: [], clients: [], oauthClients: [] },
       recentAuditEvents: [
         {
           action: "get_tracker_context",
@@ -76,7 +73,11 @@ describe("McpStatusService", () => {
       },
       transports: {
         local: { state: "ready", transport: "stdio" },
-        remote: { state: "disabled", transport: "streamable_http" },
+        remote: {
+          endpoint: null,
+          state: "disabled",
+          transport: "streamable_http",
+        },
       },
     });
     expect(snapshot).toHaveBeenCalledWith("workspace-1");
@@ -94,24 +95,30 @@ describe("McpStatusService", () => {
     expect(() => service.getStatus(member)).toThrow(McpStatusForbiddenError);
   });
 
-  it("updates the administrator-controlled access mode", () => {
-    let mode: McpAccessMode = "read_only";
-    const accessSettings: McpAccessSettingsProvider = {
-      getAdministratorAccessMode: () => mode,
-      setAdministratorAccessMode: (_actor, accessMode) => {
-        mode = accessMode;
+  it("includes authorized OAuth connections in the issued-client register", () => {
+    const listConnections = vi.fn(() => [
+      {
+        accessMode: "read_write" as const,
+        actor: { displayName: "Alex", id: "user-1", username: "alex" },
+        clientId: "atoc_abcdefghijklmnopqrstuvwx",
+        createdAt: "2026-01-01T10:00:00.000Z",
+        lastUsedAt: "2026-01-01T10:01:00.000Z",
+        name: "Claude",
+        state: "active" as const,
       },
-    };
+    ]);
     const service = new McpStatusService(
       policy,
       undefined,
       undefined,
-      accessSettings,
+      undefined,
+      { listConnections },
     );
 
-    expect(service.setAccessMode(admin, "read_write").access.mode).toBe(
-      "read_write",
-    );
+    expect(service.getStatus(admin).clients.oauthClients).toMatchObject([
+      { clientId: "atoc_abcdefghijklmnopqrstuvwx", name: "Claude" },
+    ]);
+    expect(listConnections).toHaveBeenCalledWith(admin);
   });
 
   it("reports OAuth verification only when an authorization service exists", () => {
@@ -128,9 +135,15 @@ describe("McpStatusService", () => {
     const provider = new ApplicationMcpRuntimeStatusProvider(
       undefined,
       undefined,
-      { isAvailable: () => true },
+      {
+        isAvailable: () => true,
+        resourceUrl: () => "https://tracker.example/mcp",
+      },
     );
 
     expect(provider.snapshot("workspace-1").remoteTransportState).toBe("ready");
+    expect(provider.snapshot("workspace-1").remoteEndpoint).toBe(
+      "https://tracker.example/mcp",
+    );
   });
 });

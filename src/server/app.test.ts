@@ -47,6 +47,26 @@ describe("health endpoint", () => {
       error: { code: "request_rate_limited" },
     });
   });
+
+  it("separates forwarded clients behind an explicitly trusted proxy", async () => {
+    const app = createApp({
+      httpRateLimit: { requests: 1, windowMs: 60_000 },
+      trustProxyHops: 1,
+    });
+
+    await request(app)
+      .get("/api/health")
+      .set("X-Forwarded-For", "203.0.113.10")
+      .expect(200);
+    await request(app)
+      .get("/api/health")
+      .set("X-Forwarded-For", "203.0.113.10")
+      .expect(429);
+    await request(app)
+      .get("/api/health")
+      .set("X-Forwarded-For", "203.0.113.11")
+      .expect(200);
+  });
 });
 
 describe("HTTP error and logging boundary", () => {

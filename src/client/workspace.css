@@ -2154,7 +2154,9 @@
   .workspace-main,
   .workspace-app-shell .settings-main {
     min-height: calc(100vh - 136px);
-    margin: 74px 0 62px;
+    padding-top: 74px;
+    padding-bottom: 62px;
+    margin: 0;
   }
 
   .workspace-page {

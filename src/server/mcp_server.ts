@@ -609,7 +609,7 @@ export function createApplicationMcpServer(
     {
       annotations: writeAnnotations,
       description:
-        "Create an application in the bound workspace when an administrator has enabled MCP write access. Call get_reference_data first and use stable reference IDs.",
+        "Create an application in the bound workspace when this connection has read-and-write access. Call get_reference_data first and use stable reference IDs.",
       inputSchema: createApplicationSchema,
       outputSchema: applicationRecordSchema,
       title: "Create application",
@@ -629,7 +629,7 @@ export function createApplicationMcpServer(
     {
       annotations: writeAnnotations,
       description:
-        "Update selected application fields in the bound workspace when MCP write access is enabled. Omitted fields remain unchanged; null clears nullable fields.",
+        "Update selected application fields in the bound workspace when this connection has read-and-write access. Omitted fields remain unchanged; null clears nullable fields.",
       inputSchema: z.strictObject({
         applicationId: applicationIdSchema,
         update: updateApplicationSchema,
@@ -652,7 +652,7 @@ export function createApplicationMcpServer(
     {
       annotations: deleteAnnotations,
       description:
-        "Soft-delete an application from the bound workspace when MCP write access is enabled. Pass confirm=true only after the user has explicitly approved this destructive action.",
+        "Soft-delete an application from the bound workspace when this connection has read-and-write access. Pass confirm=true only after the user has explicitly approved this destructive action.",
       inputSchema: z.strictObject({
         applicationId: applicationIdSchema,
         confirm: z.literal(true),
@@ -762,7 +762,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor and workspace. Call get_tracker_context before using workspace data. Mutation tools work only while a website administrator has enabled MCP write access, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. Call get_tracker_context before using workspace data. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

@@ -10,14 +10,13 @@ import {
   ApplicationMcpService,
   LocalMcpActorProvider,
 } from "../application/mcp.js";
-import { McpAccessService } from "../application/mcp_access.js";
+import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
-import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
@@ -59,11 +58,7 @@ describe("MCP write integration", () => {
       new SqliteMcpActorRepository(database),
       { username: "alex", workspaceSlug: "default" },
     );
-    const actor = actorProvider.getActor();
-    const access = new McpAccessService(
-      new SqliteMcpAccessRepository(database),
-      () => new Date("2026-07-19T15:00:00.000Z"),
-    );
+    const access = new McpConnectionAccessPolicy("read_only");
     const documents = new DocumentLibraryService(
       new SqliteDocumentsRepository(database, documentPolicy),
       documentPolicy,
@@ -124,7 +119,7 @@ describe("MCP write integration", () => {
       },
     ]);
 
-    access.setAdministratorAccessMode(actor, "read_write");
+    access.update("read_write");
 
     const created = await client.callTool({
       arguments: {
@@ -236,12 +231,7 @@ describe("MCP write integration", () => {
       new SqliteMcpActorRepository(database),
       { username: "alex", workspaceSlug: "default" },
     );
-    const actor = actorProvider.getActor();
-    const access = new McpAccessService(
-      new SqliteMcpAccessRepository(database),
-      () => new Date("2026-07-19T15:00:00.000Z"),
-    );
-    access.setAdministratorAccessMode(actor, "read_write");
+    const access = new McpConnectionAccessPolicy("read_write");
     const documents = new DocumentLibraryService(
       new SqliteDocumentsRepository(database, documentPolicy),
       documentPolicy,

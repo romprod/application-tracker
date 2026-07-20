@@ -24,9 +24,11 @@ function actorApp(
   const app = express();
   app.use((request, response, next) => {
     const actorId = request.get("X-Test-Actor") ?? "user-1";
+    const connectionId = request.get("X-Test-Connection") ?? "client:test";
     response.locals.remoteMcpPrincipal = {
+      accessMode: "read_only",
       actor: actor(actorId),
-      principalId: "client:test",
+      principalId: connectionId,
       workspaceSlug: "default",
     };
     next();
@@ -46,7 +48,7 @@ const policy = {
 };
 
 describe("remote MCP request guard", () => {
-  it("rate limits by resolved actor and resets after the fixed window", async () => {
+  it("rate limits by resolved connection and resets after the fixed window", async () => {
     let nowMs = 1_000;
     const app = actorApp(
       createRemoteMcpRequestGuards(policy, () => new Date(nowMs)),
@@ -64,6 +66,32 @@ describe("remote MCP request guard", () => {
 
     nowMs += 60_000;
     await request(app).get("/").expect(204);
+  });
+
+  it("keeps separate connection budgets for the same local actor", async () => {
+    const app = actorApp(createRemoteMcpRequestGuards(policy));
+
+    await request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-a")
+      .set("X-Test-Connection", "oauth:connection-a")
+      .expect(204);
+    await request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-a")
+      .set("X-Test-Connection", "oauth:connection-a")
+      .expect(204);
+    await request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-a")
+      .set("X-Test-Connection", "oauth:connection-a")
+      .expect(429);
+
+    await request(app)
+      .get("/")
+      .set("X-Test-Actor", "actor-a")
+      .set("X-Test-Connection", "oauth:connection-b")
+      .expect(204);
   });
 
   it("rejects concurrent work and releases capacity on completion", async () => {

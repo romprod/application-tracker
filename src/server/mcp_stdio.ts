@@ -10,14 +10,13 @@ import {
   LocalMcpActorProvider,
 } from "../application/mcp.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
-import { McpAccessService } from "../application/mcp_access.js";
+import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_repository.js";
-import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { parseRuntimeConfig } from "./config.js";
@@ -53,7 +52,7 @@ async function startLocalMcpServer(): Promise<void> {
       actorProvider,
       new ApplicationLedgerService(new SqliteApplicationsRepository(database)),
       new ReferenceValuesService(new SqliteReferenceValuesRepository(database)),
-      new McpAccessService(new SqliteMcpAccessRepository(database)),
+      new McpConnectionAccessPolicy(config.mcp.local.accessMode),
       new DocumentLibraryService(
         new SqliteDocumentsRepository(database, config.documents),
         config.documents,

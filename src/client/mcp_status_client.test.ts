@@ -6,7 +6,6 @@ import {
 } from "./mcp_status_client";
 
 const status = {
-  access: { mode: "read_only" },
   availability: "planned",
   capabilities: {
     auditEvents: true,
@@ -23,6 +22,7 @@ const status = {
       },
     ],
     clients: [],
+    oauthClients: [],
   },
   recentAuditEvents: [
     {
@@ -45,7 +45,11 @@ const status = {
   },
   transports: {
     local: { state: "unavailable", transport: "stdio" },
-    remote: { state: "disabled", transport: "streamable_http" },
+    remote: {
+      endpoint: null,
+      state: "disabled",
+      transport: "streamable_http",
+    },
   },
 } as const;
 
@@ -68,6 +72,38 @@ describe("browserMcpStatusClient", () => {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     });
+  });
+
+  it("accepts authorized OAuth connections in the issued-client register", async () => {
+    const oauthStatus = {
+      ...status,
+      clients: {
+        ...status.clients,
+        oauthClients: [
+          {
+            accessMode: "read_write" as const,
+            actor: status.clients.actors[0],
+            clientId: "atoc_abcdefghijklmnopqrstuvwx",
+            createdAt: "2026-01-01T10:00:00.000Z",
+            lastUsedAt: "2026-01-01T10:01:00.000Z",
+            name: "Claude",
+            state: "active" as const,
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: oauthStatus }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      oauthStatus,
+    );
   });
 
   it("accepts document-transfer audit actions and targets", async () => {
@@ -110,31 +146,37 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
-  it("updates the workspace access mode with a same-origin JSON request", async () => {
-    const writable = { ...status, access: { mode: "read_write" as const } };
+  it("updates one client's access mode with a same-origin JSON request", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
-        new Response(JSON.stringify({ status: writable }), { status: 200 }),
+        new Response(JSON.stringify({ status }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      browserMcpStatusClient.setAccessMode("read_write"),
-    ).resolves.toEqual(writable);
-    expect(fetchMock).toHaveBeenCalledWith("/api/settings/mcp", {
-      body: JSON.stringify({ accessMode: "read_write" }),
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+      browserMcpStatusClient.updateClientAccessMode(
+        "atmcp_abcdefghijklmnopqrstuvwx",
+        "read_write",
+      ),
+    ).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings/mcp/clients/atmcp_abcdefghijklmnopqrstuvwx",
+      {
+        body: JSON.stringify({ accessMode: "read_write" }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
       },
-      method: "PATCH",
-    });
+    );
   });
 
   it("creates a client and accepts the one-time bearer token response", async () => {
     const client = {
+      accessMode: "read_only",
       actor: status.clients.actors[0],
       clientId: "atmcp_abcdefghijklmnopqrstuvwx",
       createdAt: "2026-01-01T11:00:00.000Z",
@@ -157,12 +199,14 @@ describe("browserMcpStatusClient", () => {
 
     await expect(
       browserMcpStatusClient.createClient({
+        accessMode: "read_only",
         actorUserId: "user-0000000001",
         name: "Codex on laptop",
       }),
     ).resolves.toEqual({ credential, status });
     expect(fetchMock).toHaveBeenCalledWith("/api/settings/mcp/clients", {
       body: JSON.stringify({
+        accessMode: "read_only",
         actorUserId: "user-0000000001",
         name: "Codex on laptop",
       }),
@@ -193,6 +237,77 @@ describe("browserMcpStatusClient", () => {
         headers: { Accept: "application/json" },
         method: "DELETE",
       },
+    );
+  });
+
+  it("deletes an issued bearer client with an encoded same-origin request", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserMcpStatusClient.deleteClient("atmcp_abcdefghijklmnopqrstuvwx"),
+    ).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings/mcp/clients/atmcp_abcdefghijklmnopqrstuvwx/permanent",
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("deletes an OAuth connection for its bound local user", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserMcpStatusClient.deleteOAuthClient(
+        "atoc_abcdefghijklmnopqrstuvwx",
+        "user-0000000001",
+      ),
+    ).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings/mcp/oauth-clients/atoc_abcdefghijklmnopqrstuvwx/users/user-0000000001",
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("accepts the configured public MCP endpoint", async () => {
+    const configured = {
+      ...status,
+      transports: {
+        ...status.transports,
+        remote: {
+          endpoint: "https://tracker.example/mcp",
+          state: "ready" as const,
+          transport: "streamable_http" as const,
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ status: configured }), { status: 200 }),
+        ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      configured,
     );
   });
 

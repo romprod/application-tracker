@@ -12,6 +12,8 @@ import { rateLimit } from "express-rate-limit";
 
 import type { AuthenticatedActor } from "../application/auth.js";
 import type { McpActorProvider } from "../application/mcp.js";
+import type { McpAccessPolicy } from "../application/mcp.js";
+import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import type { RemoteMcpNetworkConfig } from "../application/mcp_oauth.js";
 import {
   McpActorSessionLimitError,
@@ -35,6 +37,7 @@ import {
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
 interface RemoteMcpSession {
+  accessPolicy: McpConnectionAccessPolicy;
   actorProvider: SessionActorProvider;
   actorUserId: string;
   principalId: string;
@@ -47,6 +50,7 @@ export interface RemoteMcpHttpEndpointOptions {
   createServer: (
     actorProvider: McpActorProvider,
     actor: AuthenticatedActor,
+    accessPolicy: McpAccessPolicy,
   ) => McpServer;
   logger?: ApplicationLogger;
   network: RemoteMcpNetworkConfig;
@@ -130,6 +134,10 @@ export class RemoteMcpHttpEndpoint {
 
   public isAvailable(): boolean {
     return true;
+  }
+
+  public resourceUrl(): string {
+    return this.network.resourceUrl;
   }
 
   public router(): Router {
@@ -273,6 +281,7 @@ export class RemoteMcpHttpEndpoint {
       sendProtocolError(response, 404, -32_001, "Session not found");
       return;
     }
+    session.accessPolicy.update(principal.accessMode);
     if (!(await this.sessionRegistry.touch(requestedSessionId))) {
       this.sessions.delete(requestedSessionId);
       sendProtocolError(response, 404, -32_001, "Session not found");
@@ -313,7 +322,8 @@ export class RemoteMcpHttpEndpoint {
       actor,
       principal.workspaceSlug,
     );
-    const server = this.createServer(actorProvider, actor);
+    const accessPolicy = new McpConnectionAccessPolicy(principal.accessMode);
+    const server = this.createServer(actorProvider, actor, accessPolicy);
     let closed = false;
     const close = async (): Promise<void> => {
       if (closed) return;
@@ -336,6 +346,7 @@ export class RemoteMcpHttpEndpoint {
         });
         if (!active) throw new Error("Remote MCP session reservation expired");
         this.sessions.set(reservation.id, {
+          accessPolicy,
           actorProvider,
           actorUserId: actor.userId,
           principalId: principal.principalId,

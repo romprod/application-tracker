@@ -132,6 +132,21 @@ The fifteenth migration adds workspace-scoped MCP clients. It stores the public
 client ID, local actor binding, lifecycle timestamps, and a SHA-256 hash of the
 high-entropy bearer secret. Plaintext bearer tokens never enter the database.
 
+The sixteenth migration extends the immutable MCP audit action allowlist for
+bounded document import and export tools while preserving existing audit rows.
+
+The seventeenth migration adds built-in MCP OAuth clients, short-lived
+authorization codes, and access and refresh token families. Redirect URIs are
+registered per public client, grants are bound to a local user, workspace, and
+exact MCP resource, and consumed or revoked state is persisted transactionally.
+Authorization codes and tokens are stored only as SHA-256 hashes; plaintext
+credentials never enter SQLite.
+
+The eighteenth migration adds an independent access mode to bearer
+credentials, OAuth authorization codes, and OAuth token families. Existing
+records inherit the previous workspace setting during migration; subsequent
+changes are connection-specific.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

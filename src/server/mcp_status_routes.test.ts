@@ -7,18 +7,22 @@ import {
   McpStatusService,
 } from "../application/mcp_status.js";
 import { McpAuditService } from "../application/mcp_audit.js";
-import { McpAccessService } from "../application/mcp_access.js";
 import { McpClientCredentialsService } from "../application/mcp_clients.js";
+import {
+  builtInMcpOAuthScope,
+  McpBuiltInOAuthService,
+} from "../application/mcp_builtin_oauth.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoMcpClientTokenManager } from "../infrastructure/auth/mcp_client_token_manager.js";
+import { CryptoMcpOAuthTokenManager } from "../infrastructure/auth/mcp_oauth_token_manager.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
-import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteMcpClientsRepository } from "../infrastructure/database/mcp_clients_repository.js";
+import { SqliteMcpBuiltInOAuthRepository } from "../infrastructure/database/mcp_builtin_oauth_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { UserAdministrationService } from "../application/users.js";
 import { createApp } from "./app.js";
@@ -112,24 +116,37 @@ async function createStatusApp() {
     new CryptoMcpClientTokenManager(),
     () => new Date("2026-01-01T04:00:00.000Z"),
   );
+  const mcpOAuthConnectionsService = new McpBuiltInOAuthService(
+    new SqliteMcpBuiltInOAuthRepository(database),
+    new CryptoMcpOAuthTokenManager(),
+    {
+      requiredScope: builtInMcpOAuthScope,
+      resourceUrl: "https://tracker.example.test/mcp",
+    },
+    () => new Date("2026-01-01T04:00:00.000Z"),
+  );
   const mcpStatusService = new McpStatusService(
     mcpPolicy,
     new ApplicationMcpRuntimeStatusProvider(sessionRegistry),
     auditService,
-    new McpAccessService(
-      new SqliteMcpAccessRepository(database),
-      () => new Date("2026-01-01T03:00:00.000Z"),
-    ),
     mcpClientsService,
+    mcpOAuthConnectionsService,
   );
   const app = createApp({
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
     mcpClientsService,
+    mcpOAuthConnectionsService,
     mcpStatusService,
     usersService,
   });
-  return { app, created, database, mcpClientsService };
+  return {
+    app,
+    created,
+    database,
+    mcpClientsService,
+    mcpOAuthConnectionsService,
+  };
 }
 
 async function login(
@@ -188,7 +205,6 @@ describe("MCP status route", () => {
     const body: unknown = response.body;
     expect(body).toEqual({
       status: {
-        access: { mode: "read_only" },
         availability: "available",
         capabilities: {
           auditEvents: true,
@@ -205,6 +221,7 @@ describe("MCP status route", () => {
             },
           ],
           clients: [],
+          oauthClients: [],
         },
         recentAuditEvents: [
           {
@@ -227,7 +244,11 @@ describe("MCP status route", () => {
         },
         transports: {
           local: { state: "ready", transport: "stdio" },
-          remote: { state: "disabled", transport: "streamable_http" },
+          remote: {
+            endpoint: null,
+            state: "disabled",
+            transport: "streamable_http",
+          },
         },
       },
     });
@@ -245,34 +266,17 @@ describe("MCP status route", () => {
     }
   });
 
-  it("lets an administrator change access mode with same-origin protection", async () => {
+  it("does not expose the removed workspace-wide access endpoint", async () => {
     const { app } = await createStatusApp();
     const cookie = await login(app, "alex", "correct horse battery staple");
 
     await request(app)
       .patch("/api/settings/mcp")
       .set("Cookie", cookie)
-      .send({ accessMode: "read_write" })
-      .expect(403, { error: { code: "csrf_rejected" } });
-
-    const changed = await request(app)
-      .patch("/api/settings/mcp")
-      .set("Cookie", cookie)
       .set("Host", "tracker.example.test")
       .set("Origin", "https://tracker.example.test")
       .send({ accessMode: "read_write" })
-      .expect(200);
-    expect(changed.body).toMatchObject({
-      status: { access: { mode: "read_write" } },
-    });
-
-    const refreshed = await request(app)
-      .get("/api/settings/mcp")
-      .set("Cookie", cookie)
-      .expect(200);
-    expect(refreshed.body).toMatchObject({
-      status: { access: { mode: "read_write" } },
-    });
+      .expect(404);
   });
 
   it("creates, rotates, and revokes a hash-only client credential", async () => {
@@ -289,6 +293,7 @@ describe("MCP status route", () => {
       .post("/api/settings/mcp/clients")
       .set(requestHeaders)
       .send({
+        accessMode: "read_only",
         actorUserId: created.administrator.id,
         name: "Codex on laptop",
       })
@@ -307,8 +312,26 @@ describe("MCP status route", () => {
     expect(stored.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(stored.tokenHash).not.toContain(firstToken);
     expect(mcpClientsService.authorize(firstToken)).toMatchObject({
+      accessMode: "read_only",
       actor: { userId: created.administrator.id },
       workspaceSlug: "default",
+    });
+
+    const permissionResponse = await request(app)
+      .patch(`/api/settings/mcp/clients/${clientId}`)
+      .set(requestHeaders)
+      .send({ accessMode: "read_write" })
+      .expect(200);
+    expect(permissionResponse.body).toMatchObject({
+      client: { accessMode: "read_write", clientId },
+      status: {
+        clients: {
+          clients: [{ accessMode: "read_write", clientId }],
+        },
+      },
+    });
+    expect(mcpClientsService.authorize(firstToken)).toMatchObject({
+      accessMode: "read_write",
     });
 
     const rotatedResponse = await request(app)
@@ -343,5 +366,91 @@ describe("MCP status route", () => {
     expect(statusBody.status.clients.clients).toMatchObject([
       { clientId, name: "Codex on laptop", state: "revoked" },
     ]);
+
+    const regeneratedResponse = await request(app)
+      .post(`/api/settings/mcp/clients/${clientId}/rotate`)
+      .set(requestHeaders)
+      .send({})
+      .expect(200);
+    const regeneratedBody = regeneratedResponse.body as unknown as {
+      credential: {
+        bearerToken: string;
+        client: { clientId: string; state: string };
+      };
+    };
+    expect(regeneratedBody.credential.client).toMatchObject({
+      clientId,
+      state: "active",
+    });
+    expect(
+      mcpClientsService.authorize(regeneratedBody.credential.bearerToken),
+    ).toMatchObject({ actor: { userId: created.administrator.id } });
+
+    await request(app)
+      .delete(`/api/settings/mcp/clients/${clientId}/permanent`)
+      .set(requestHeaders)
+      .expect(200);
+    const deletedStatus = await request(app)
+      .get("/api/settings/mcp")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(deletedStatus.body).toMatchObject({
+      status: { clients: { clients: [] } },
+    });
+  });
+
+  it("deletes an authorized OAuth connection within the selected workspace", async () => {
+    const { app, created, mcpOAuthConnectionsService } =
+      await createStatusApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const client = mcpOAuthConnectionsService.registerClient({
+      clientName: "Claude",
+      redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+    });
+    const authorization = mcpOAuthConnectionsService.beginAuthorization(
+      {
+        authenticated: true,
+        user: {
+          displayName: "Alex Example",
+          role: "admin",
+          username: "alex",
+        },
+        userId: created.administrator.id,
+        workspace: { name: "Applications" },
+        workspaceId: created.workspace.id,
+      },
+      {
+        accessMode: "read_only",
+        clientId: client.clientId,
+        codeChallenge: "c".repeat(43),
+        redirectUri: client.redirectUris[0]!,
+        resource: "https://tracker.example.test/mcp",
+        scopes: [builtInMcpOAuthScope],
+      },
+    );
+    const tokens = mcpOAuthConnectionsService.exchangeAuthorizationCode({
+      authorizationCode: authorization.code,
+      clientId: client.clientId,
+      redirectUri: client.redirectUris[0]!,
+      resource: "https://tracker.example.test/mcp",
+    });
+
+    const response = await request(app)
+      .delete(
+        `/api/settings/mcp/oauth-clients/${client.clientId}/users/${created.administrator.id}`,
+      )
+      .set({
+        Cookie: cookie,
+        Host: "tracker.example.test",
+        Origin: "https://tracker.example.test",
+      })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      status: { clients: { oauthClients: [] } },
+    });
+    expect(() =>
+      mcpOAuthConnectionsService.authorize(tokens.accessToken),
+    ).toThrow("invalid");
   });
 });

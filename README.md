@@ -22,8 +22,8 @@ default password.
 - Local stdio MCP and authenticated Streamable HTTP MCP with bounded application
   and document transfer, explicit actor binding, website-controlled write
   access, and immutable audit events
-- Administrator-managed MCP client IDs and one-time bearer tokens, with optional
-  strict OAuth token verification
+- Built-in remote MCP OAuth using local accounts, plus administrator-managed
+  client IDs and one-time bearer tokens and optional external token verification
 - Online SQLite backup, verification, non-overwriting restore, and forward
   migrations
 
@@ -93,6 +93,11 @@ file is not a valid backup.
 
 Local clients should follow the [stdio guide](docs/local-mcp.md). Remote clients
 should follow the [authenticated HTTPS guide](docs/remote-mcp.md).
+
+Settings → MCP provides copyable templates for Claude.ai, remote Codex, local
+Codex, and Claude Desktop. Remote interactive clients use the built-in OAuth
+flow and the same local username and password as the website; no Authentik or
+other external identity provider is required.
 
 Fresh workspaces are read-only through MCP. An administrator can enable
 **Read and write** under **Settings → MCP**. The server rechecks this policy on

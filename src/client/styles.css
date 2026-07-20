@@ -2210,29 +2210,367 @@ code {
 }
 
 .mcp-clients {
-  padding: 30px 0 36px;
+  padding: 34px 0 42px;
   border-bottom: 1px solid var(--line);
 }
 
-.mcp-clients-intro {
-  max-width: 760px;
-  margin: 22px 0 26px;
+.mcp-client-count {
+  padding: 7px 10px;
+  color: var(--evergreen);
+  background: #e0e6dc;
+  border: 1px solid #a9c0ad;
+}
+
+.mcp-oauth-readiness {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(320px, 1.3fr) auto;
+  gap: 24px;
+  align-items: center;
+  padding: 17px 20px;
+  margin-top: 24px;
+  background: #f3e7e1;
+  border-left: 3px solid var(--signal);
+}
+
+.mcp-oauth-readiness[data-ready="true"] {
+  background: #e0e6dc;
+  border-left-color: var(--moss);
+}
+
+.mcp-oauth-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.mcp-oauth-summary > span,
+.mcp-oauth-readiness > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-oauth-readiness strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.mcp-oauth-readiness p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.mcp-oauth-readiness > span {
+  padding: 6px 8px;
+  color: #8a3f2c;
+  border: 1px solid #cfb5aa;
+}
+
+.mcp-oauth-readiness[data-ready="true"] > span {
+  color: var(--moss);
+  border-color: #a9c0ad;
+}
+
+.mcp-endpoint-coordinate {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding-top: 13px;
+  border-top: 1px solid rgb(21 60 52 / 18%);
+}
+
+.mcp-endpoint-coordinate > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-endpoint-coordinate code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--evergreen);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
+.mcp-endpoint-coordinate button,
+.mcp-client-identity button {
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--evergreen);
+  background: transparent;
+  border: 1px solid #9bac9d;
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-endpoint-coordinate button:hover,
+.mcp-client-identity button:hover {
+  background: rgb(21 60 52 / 7%);
+}
+
+.mcp-endpoint-coordinate button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcp-endpoint-coordinate button:focus-visible,
+.mcp-client-identity button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-setup-guides {
+  display: grid;
+  gap: 22px;
+  margin-top: 26px;
+  padding: 28px;
+  background: #f7f3e9;
+  border: 1px solid var(--line);
+}
+
+.mcp-setup-guides-heading {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.75fr) minmax(320px, 1.25fr);
+  gap: 32px;
+  align-items: end;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mcp-setup-guides-heading h2 {
+  margin: 5px 0 0;
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: clamp(28px, 3vw, 39px);
+  font-weight: 560;
+  line-height: 0.98;
+}
+
+.mcp-setup-guides-heading > p {
+  max-width: 620px;
+  margin: 0;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.65;
 }
 
-.mcp-client-form {
+.mcp-setup-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: end;
-  padding: 20px;
-  background: var(--paper);
-  border: 1px solid var(--line);
 }
 
-.mcp-client-form label {
+.mcp-setup-grid article {
+  display: grid;
+  grid-template-rows: auto auto minmax(92px, 1fr) auto;
+  gap: 14px;
+  min-width: 0;
+  padding: 22px;
+  background: #fffdf7;
+  border: 1px solid #c8c5b8;
+  border-top: 3px solid var(--evergreen);
+}
+
+.mcp-setup-grid article:nth-child(2n) {
+  border-top-color: var(--signal);
+}
+
+.mcp-setup-card-heading {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.mcp-setup-card-heading span {
+  order: 2;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-setup-card-heading h3 {
+  margin: 0;
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 24px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.mcp-setup-grid article > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.mcp-setup-grid pre {
+  min-width: 0;
+  max-height: 230px;
+  margin: 0;
+  padding: 15px;
+  overflow: auto;
+  color: #edf2e9;
+  background: #153c34;
+  border: 1px solid #0d2f29;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-setup-grid code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.mcp-setup-grid button {
+  width: max-content;
+  min-height: 34px;
+  padding: 0 13px;
+  color: var(--evergreen);
+  background: transparent;
+  border: 1px solid var(--evergreen);
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-setup-grid button:hover {
+  color: #fffdf7;
+  background: var(--evergreen);
+}
+
+.mcp-setup-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcp-setup-grid button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-client-provision {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.7fr) minmax(520px, 1.3fr);
+  margin-top: 26px;
+  overflow: hidden;
+  border: 1px solid var(--evergreen);
+}
+
+.mcp-client-provision-copy {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  padding: 28px;
+  color: #fffdf7;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 6%), transparent 48%),
+    var(--evergreen);
+}
+
+.mcp-client-provision-copy > span {
+  color: #9eb29e;
+  font-family: "Archivo Variable", system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+}
+
+.mcp-client-provision-copy > div {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.mcp-client-provision-copy h3,
+.mcp-client-register-heading h3 {
+  margin: 0;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 25px;
+  font-weight: 560;
+  line-height: 1.05;
+}
+
+.mcp-client-provision-copy p {
+  max-width: 420px;
+  margin: 0;
+  color: #dbe3d8;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.mcp-client-provision-copy small {
+  max-width: 420px;
+  padding-top: 12px;
+  color: #aebdad;
+  font-size: 9px;
+  line-height: 1.55;
+  border-top: 1px solid rgb(255 255 255 / 18%);
+}
+
+.mcp-client-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 22px 16px;
+  align-items: end;
+  padding: 28px;
+  background: #f7f3e9;
+}
+
+.mcp-client-form-heading {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mcp-client-form-heading strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.mcp-client-form-heading span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.mcp-client-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.mcp-client-fields label,
+.mcp-client-permission-field {
   display: grid;
   gap: 8px;
   color: var(--muted);
@@ -2242,8 +2580,8 @@ code {
   text-transform: uppercase;
 }
 
-.mcp-client-form input,
-.mcp-client-form select {
+.mcp-client-fields input,
+.mcp-client-fields select {
   min-width: 0;
   min-height: 46px;
   padding: 0 13px;
@@ -2255,8 +2593,8 @@ code {
   font-size: 11px;
 }
 
-.mcp-client-form input:focus,
-.mcp-client-form select:focus {
+.mcp-client-fields input:focus,
+.mcp-client-fields select:focus {
   outline: 3px solid var(--signal);
   outline-offset: 2px;
 }
@@ -2291,19 +2629,75 @@ code {
   outline-offset: 3px;
 }
 
+.mcp-permission-control {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.82fr) minmax(96px, 1.18fr);
+  min-width: 168px;
+  overflow: hidden;
+  background: #ebe7dc;
+  border: 1px solid #aeb9aa;
+}
+
+.mcp-client-form .mcp-permission-control button,
+.mcp-permission-control button {
+  min-height: 30px;
+  padding: 0 9px;
+  color: var(--evergreen);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #aeb9aa;
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 680;
+  letter-spacing: 0.025em;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mcp-client-form .mcp-permission-control button {
+  min-height: 38px;
+}
+
+.mcp-permission-control button:last-child {
+  border-right: 0;
+}
+
+.mcp-permission-control button[aria-pressed="true"] {
+  color: #fffdf7;
+  background: var(--evergreen);
+}
+
+.mcp-permission-control button:hover:not(:disabled, [aria-pressed="true"]) {
+  background: #dfe5da;
+}
+
+.mcp-permission-control button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid var(--signal);
+  outline-offset: -3px;
+}
+
+.mcp-permission-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .mcp-token-reveal {
   display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1.3fr) auto;
-  gap: 18px;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(320px, 1.2fr) auto;
+  gap: 22px;
   align-items: center;
-  padding: 20px;
-  margin-top: 16px;
+  padding: 22px 24px;
+  margin-top: 18px;
   color: var(--evergreen);
-  background: #e0e6dc;
+  background: #e4eadf;
   border-left: 4px solid var(--moss);
 }
 
-.mcp-token-reveal > div {
+.mcp-token-reveal-copy {
   display: grid;
   gap: 5px;
 }
@@ -2320,20 +2714,78 @@ code {
   line-height: 1.5;
 }
 
-.mcp-token-reveal code,
-.mcp-client-list article > code {
+.mcp-token-reveal .mcp-token-kicker {
+  color: var(--moss);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-token-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  min-height: 48px;
+  padding-left: 15px;
+  overflow: hidden;
+  color: #fffdf7;
+  background: var(--evergreen);
+}
+
+.mcp-token-value code,
+.mcp-client-identity code {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--evergreen);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px;
 }
 
+.mcp-token-value .mcp-token-visibility {
+  min-width: 70px;
+  min-height: 48px;
+  padding: 0 12px;
+  color: #dbe3d8;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgb(255 255 255 / 24%);
+}
+
+.mcp-token-value .mcp-token-visibility:hover {
+  color: #fffdf7;
+  background: rgb(255 255 255 / 8%);
+}
+
+.mcp-token-copy {
+  white-space: nowrap;
+}
+
+.mcp-client-register-heading {
+  display: flex;
+  gap: 20px;
+  align-items: end;
+  justify-content: space-between;
+  padding-top: 34px;
+}
+
+.mcp-client-register-heading .eyebrow {
+  margin: 0 0 5px;
+}
+
+.mcp-client-register-heading h3 {
+  color: var(--evergreen);
+}
+
+.mcp-client-register-heading > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .mcp-client-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 22px;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .mcp-client-empty {
@@ -2348,64 +2800,171 @@ code {
 
 .mcp-client-list article {
   display: grid;
-  gap: 17px;
-  padding: 20px;
+  grid-template-areas: "connection identity endpoint status permission last actions";
+  grid-template-columns:
+    minmax(145px, 0.75fr) minmax(220px, 1.15fr) 78px 72px
+    minmax(168px, 0.85fr) minmax(80px, 0.45fr) auto;
+  gap: 14px;
+  align-items: stretch;
+  min-height: 76px;
+  padding: 12px 13px 12px 16px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-top: 3px solid var(--moss);
+  border-left: 3px solid var(--moss);
 }
 
 .mcp-client-list article[data-state="revoked"],
 .mcp-client-list article[data-state="unavailable"] {
-  border-top-color: var(--signal);
+  background: #f4efe5;
+  border-left-color: var(--signal);
 }
 
-.mcp-client-list article > div:first-child {
+.mcp-client-cell {
   display: grid;
   gap: 5px;
+  align-content: center;
+  min-width: 0;
 }
 
-.mcp-client-list article > div:first-child strong {
+.mcp-client-name {
+  grid-area: connection;
+  gap: 2px;
+}
+
+.mcp-client-identity {
+  grid-area: identity;
+}
+
+.mcp-client-endpoint-cell {
+  grid-area: endpoint;
+}
+
+.mcp-client-status {
+  grid-area: status;
+}
+
+.mcp-client-permission {
+  grid-area: permission;
+}
+
+.mcp-client-permission-value {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
   color: var(--evergreen);
-  font-family: "Newsreader Variable", Georgia, serif;
-  font-size: 21px;
-  font-weight: 560;
-}
-
-.mcp-client-list article > div:first-child span {
-  color: var(--muted);
   font-size: 9px;
+  font-weight: 720;
 }
 
-.mcp-client-list dl {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 0;
+.mcp-client-last-used {
+  grid-area: last;
 }
 
-.mcp-client-list dl > div {
-  display: grid;
-  gap: 5px;
-}
-
-.mcp-client-list dt {
+.mcp-client-label {
   color: var(--muted);
   font-size: 8px;
   font-weight: 720;
   letter-spacing: 0.09em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
-.mcp-client-list dd {
-  margin: 0;
+.mcp-client-name strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 17px;
+  font-weight: 560;
+  line-height: 1.05;
+}
+
+.mcp-client-name small {
+  color: var(--muted);
+  font-family: "Archivo Variable", system-ui, sans-serif;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.mcp-client-identity code {
+  color: var(--evergreen);
+}
+
+.mcp-client-identity > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.mcp-client-identity button {
+  width: 46px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.mcp-client-endpoint {
+  width: 78px;
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--evergreen);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-client-endpoint:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-client-endpoint:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcp-client-last-used > span:last-child {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
   color: var(--evergreen);
   font-size: 9px;
+  white-space: nowrap;
+}
+
+.mcp-client-status strong[data-state] {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  min-height: 30px;
+  padding: 0 7px;
+  color: var(--moss);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #e0e6dc;
+  border: 1px solid #a9c0ad;
+}
+
+.mcp-client-status strong[data-state="revoked"],
+.mcp-client-status strong[data-state="unavailable"] {
+  color: #8a3f2c;
+  background: #f3e7e1;
+  border-color: #cfb5aa;
 }
 
 .mcp-client-actions {
   display: flex;
+  flex-wrap: wrap;
+  grid-area: actions;
   gap: 9px;
+  align-self: end;
+  justify-content: flex-end;
 }
 
 .mcp-client-actions button {
@@ -2418,6 +2977,50 @@ code {
 .mcp-client-actions .danger-button {
   color: #8a3f2c;
   border-color: #cfb5aa;
+}
+
+.mcp-client-inline-token {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1.8fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  color: #eef2e9;
+  background: var(--evergreen);
+}
+
+.mcp-client-inline-token > div {
+  display: grid;
+  gap: 2px;
+}
+
+.mcp-client-inline-token span {
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mcp-client-inline-token small {
+  color: #c8d4c8;
+  font-size: 8px;
+}
+
+.mcp-client-inline-token code {
+  min-width: 0;
+  overflow: hidden;
+  color: #fffdf7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-client-inline-token button {
+  min-height: 30px;
+  padding: 0 10px;
+  color: #fffdf7;
+  background: transparent;
+  border-color: rgb(255 255 255 / 42%);
 }
 
 .mcp-access {
@@ -2728,6 +3331,495 @@ code {
   grid-column: 1 / -1;
 }
 
+/* Compact MCP connection console */
+.mcp-hero {
+  gap: clamp(28px, 5vw, 64px);
+  padding-top: clamp(30px, 4vw, 48px);
+  padding-bottom: 30px;
+}
+
+.mcp-hero h1 {
+  margin: 9px 0 12px;
+  font-size: clamp(42px, 5vw, 66px);
+}
+
+.mcp-hero .lede {
+  font-size: 12px;
+}
+
+.mcp-hero .settings-totals div {
+  gap: 4px;
+  padding-top: 12px;
+}
+
+.mcp-workspace {
+  grid-template-columns: 1fr;
+  gap: 18px;
+  padding-top: 30px;
+  padding-bottom: 54px;
+}
+
+.mcp-access,
+.mcp-clients,
+.mcp-disclosure {
+  grid-column: 1 / -1;
+}
+
+.mcp-access {
+  grid-template-columns: minmax(260px, 0.7fr) minmax(480px, 1.3fr);
+  gap: clamp(24px, 4vw, 54px);
+  padding: 20px 0 22px;
+}
+
+.mcp-access h2 {
+  margin: 5px 0 8px;
+  font-size: clamp(25px, 2.7vw, 35px);
+}
+
+.mcp-access > div:first-child > p:last-child {
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mcp-access-options button {
+  gap: 4px;
+  min-height: 68px;
+  padding: 12px 15px;
+}
+
+.mcp-access-options button strong {
+  font-size: 18px;
+}
+
+.mcp-access-options button span {
+  max-width: none;
+  line-height: 1.4;
+}
+
+.mcp-access-note,
+.mcp-access-error {
+  padding: 9px 11px;
+  margin-top: 9px;
+}
+
+.mcp-clients {
+  padding: 22px 0 26px;
+}
+
+.mcp-oauth-readiness {
+  grid-template-columns: minmax(150px, 0.55fr) minmax(300px, 1.45fr) auto;
+  gap: 16px;
+  padding: 13px 16px;
+  margin-top: 15px;
+}
+
+.mcp-endpoint-coordinate {
+  padding-top: 9px;
+}
+
+.mcp-setup-guides {
+  gap: 14px;
+  padding: 18px;
+  margin-top: 16px;
+}
+
+.mcp-setup-guides-heading {
+  grid-template-columns: minmax(230px, 0.65fr) minmax(320px, 1.35fr);
+  gap: 22px;
+  padding-bottom: 12px;
+}
+
+.mcp-setup-guides-heading h2 {
+  margin-top: 3px;
+  font-size: clamp(24px, 2.5vw, 31px);
+}
+
+.mcp-setup-console {
+  display: grid;
+  grid-template-columns:
+    minmax(170px, 0.55fr) minmax(180px, 0.65fr) minmax(360px, 1.8fr)
+    auto;
+  gap: 14px;
+  align-items: stretch;
+  min-width: 0;
+  padding: 14px;
+  background: #fffdf7;
+  border: 1px solid #c8c5b8;
+  border-left: 3px solid var(--evergreen);
+}
+
+.mcp-setup-profile {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-setup-profile select {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  color: var(--evergreen);
+  background: var(--paper-light);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mcp-setup-profile select:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-setup-profile-copy {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+}
+
+.mcp-setup-profile-copy > span {
+  color: var(--moss);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mcp-setup-profile-copy strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.mcp-setup-profile-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.mcp-setup-console pre {
+  min-width: 0;
+  max-height: 132px;
+  margin: 0;
+  padding: 11px 13px;
+  overflow: auto;
+  color: #edf2e9;
+  background: #153c34;
+  border: 1px solid #0d2f29;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-setup-console code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mcp-setup-console > button {
+  align-self: stretch;
+  min-width: 88px;
+  padding: 0 12px;
+  color: #fffdf7;
+  background: var(--evergreen);
+  border: 1px solid var(--evergreen);
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-setup-console > button:hover:not(:disabled) {
+  background: #285b50;
+}
+
+.mcp-setup-console > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcp-setup-console > button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-client-provision {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.65fr) minmax(520px, 1.35fr);
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--evergreen);
+}
+
+.mcp-client-provision-heading {
+  display: grid;
+  gap: 10px;
+  align-content: center;
+  padding: 20px;
+  color: #fffdf7;
+  background: var(--evergreen);
+}
+
+.mcp-client-provision-heading .eyebrow {
+  color: #aebdad;
+}
+
+.mcp-client-provision-heading h3 {
+  margin: 3px 0 0;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 23px;
+  font-weight: 560;
+}
+
+.mcp-client-provision-heading > p {
+  margin: 0;
+  color: #dbe3d8;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mcp-client-form {
+  gap: 10px 12px;
+  padding: 18px;
+}
+
+.mcp-client-fields {
+  gap: 10px;
+}
+
+.mcp-client-fields label,
+.mcp-client-permission-field {
+  gap: 6px;
+}
+
+.mcp-client-fields input,
+.mcp-client-fields select {
+  min-height: 40px;
+}
+
+.mcp-client-form > button {
+  min-height: 40px;
+}
+
+.mcp-client-form > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.mcp-credential-kit {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.65fr) minmax(0, 1.35fr);
+  margin-top: 12px;
+  overflow: hidden;
+  background: #e4eadf;
+  border: 1px solid #9eb29e;
+  border-left: 4px solid var(--moss);
+}
+
+.mcp-credential-kit-heading {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  padding: 16px 18px;
+  border-right: 1px solid #b8c5b4;
+}
+
+.mcp-credential-kit-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.mcp-credential-kit-heading strong {
+  color: var(--evergreen);
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 19px;
+  font-weight: 560;
+}
+
+.mcp-credential-kit-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.mcp-credential-permission {
+  width: max-content;
+  padding: 4px 7px;
+  color: var(--evergreen);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  background: #f5f7ef;
+  border: 1px solid #9eb29e;
+}
+
+.mcp-token-kicker {
+  color: var(--moss);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mcp-credential-coordinate {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: 145px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 7px 10px 7px 14px;
+  border-bottom: 1px solid #b8c5b4;
+}
+
+.mcp-credential-coordinate:last-child {
+  border-bottom: 0;
+}
+
+.mcp-credential-coordinate > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mcp-credential-coordinate code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--evergreen);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+}
+
+.mcp-credential-coordinate button {
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--evergreen);
+  background: transparent;
+  border: 1px solid #91a693;
+  border-radius: 0;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-credential-coordinate button:hover:not(:disabled) {
+  background: rgb(21 60 52 / 8%);
+}
+
+.mcp-credential-coordinate button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcp-credential-coordinate button:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.mcp-credential-token-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mcp-client-register-heading {
+  padding-top: 22px;
+}
+
+.mcp-client-list {
+  margin-top: 10px;
+}
+
+.mcp-client-list article {
+  grid-template-areas: "connection identity endpoint status permission last actions";
+  grid-template-columns:
+    minmax(145px, 0.75fr) minmax(220px, 1.15fr) 78px 72px
+    minmax(168px, 0.85fr) minmax(80px, 0.45fr) auto;
+  gap: 14px;
+  min-height: 76px;
+  padding: 12px 13px 12px 16px;
+}
+
+.mcp-client-name strong {
+  font-size: 17px;
+}
+
+.mcp-client-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.mcp-disclosure {
+  min-width: 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.mcp-disclosure > summary {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  color: var(--evergreen);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.mcp-disclosure > summary span {
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: 19px;
+  font-weight: 560;
+}
+
+.mcp-disclosure > summary strong {
+  font-size: 8px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mcp-disclosure > summary:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.mcp-diagnostics-grid {
+  display: grid;
+  grid-template-columns: minmax(500px, 1.25fr) minmax(330px, 0.75fr);
+  gap: clamp(28px, 5vw, 64px);
+  padding: 0 0 24px;
+}
+
+.mcp-disclosure .mcp-ledger,
+.mcp-disclosure .mcp-policy,
+.mcp-disclosure .mcp-audit {
+  border-top: 0;
+}
+
+.mcp-disclosure .mcp-audit {
+  padding-bottom: 18px;
+}
+
 @media (max-width: 1180px) {
   .application-hero {
     grid-template-columns: 1fr;
@@ -2769,9 +3861,65 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .mcp-client-form,
-  .mcp-token-reveal {
+  .mcp-client-provision,
+  .mcp-token-reveal,
+  .mcp-credential-kit {
     grid-template-columns: 1fr;
+  }
+
+  .mcp-credential-kit-heading {
+    border-right: 0;
+    border-bottom: 1px solid #b8c5b4;
+  }
+
+  .mcp-credential-coordinate {
+    grid-column: 1;
+  }
+
+  .mcp-setup-console {
+    grid-template-columns: minmax(180px, 0.6fr) minmax(220px, 0.8fr) minmax(
+        320px,
+        1.6fr
+      );
+  }
+
+  .mcp-setup-console > button {
+    grid-column: 3;
+    min-height: 36px;
+  }
+
+  .mcp-diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-client-provision-copy {
+    min-height: 210px;
+  }
+
+  .mcp-client-form {
+    grid-template-columns: 1fr auto;
+  }
+
+  .mcp-client-list article {
+    grid-template-areas:
+      "connection identity endpoint status"
+      "permission permission last actions";
+    grid-template-columns:
+      minmax(145px, 0.75fr) minmax(220px, 1.25fr)
+      78px minmax(154px, auto);
+    row-gap: 12px;
+  }
+
+  .mcp-client-actions {
+    justify-content: flex-start;
+  }
+
+  .mcp-client-inline-token {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .mcp-client-inline-token > div {
+    grid-column: 1 / -1;
   }
 
   .create-user-form {
@@ -2834,6 +3982,24 @@ code {
     min-height: calc(100vh - 152px);
   }
 
+  .mcp-setup-guides-heading {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .mcp-setup-console {
+    grid-template-columns: minmax(170px, 0.7fr) minmax(220px, 1fr);
+  }
+
+  .mcp-setup-console pre {
+    grid-column: 1 / -1;
+  }
+
+  .mcp-setup-console > button {
+    grid-column: 1 / -1;
+    min-height: 36px;
+  }
+
   .applications-main {
     min-height: calc(100vh - 152px);
   }
@@ -2844,8 +4010,92 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .mcp-client-list {
+  .mcp-oauth-readiness {
     grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .mcp-oauth-readiness > span {
+    width: max-content;
+  }
+
+  .mcp-endpoint-coordinate {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mcp-endpoint-coordinate > span {
+    grid-column: 1 / -1;
+  }
+
+  .mcp-setup-guides {
+    padding: 20px;
+  }
+
+  .mcp-setup-console {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-setup-console pre,
+  .mcp-setup-console > button {
+    grid-column: 1;
+  }
+
+  .mcp-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-client-form,
+  .mcp-client-fields,
+  .mcp-client-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-client-list article {
+    grid-template-areas:
+      "connection connection"
+      "identity identity"
+      "endpoint status"
+      "permission permission"
+      "last actions";
+    grid-template-columns: minmax(100px, 1fr) auto;
+  }
+
+  .mcp-client-permission .mcp-permission-control {
+    width: 100%;
+  }
+
+  .mcp-client-form-heading,
+  .mcp-client-register-heading {
+    display: grid;
+  }
+
+  .mcp-client-form button {
+    width: 100%;
+  }
+
+  .mcp-credential-coordinate {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mcp-credential-coordinate > span {
+    grid-column: 1 / -1;
+  }
+
+  .mcp-disclosure > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 0;
+  }
+
+  .mcp-client-inline-token {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mcp-client-inline-token code,
+  .mcp-client-inline-token > div {
+    grid-column: 1 / -1;
   }
 }
 

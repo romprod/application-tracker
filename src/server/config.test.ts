@@ -39,20 +39,21 @@ describe("parseRuntimeConfig", () => {
       http: {
         rateLimitRequests: 600,
         rateLimitWindowMs: 60_000,
+        trustProxyHops: 0,
       },
       mcp: {
         request: {
           maxConcurrentRequests: 8,
           maxConcurrentRequestsPerActor: 4,
           maxRequestBytes: 65_536,
-          rateLimitRequests: 60,
+          rateLimitRequests: 600,
           rateLimitWindowMs: 60_000,
         },
         session: {
           absoluteDurationMs: 14_400_000,
-          globalLimit: 6,
-          idleDurationMs: 900_000,
-          perActorLimit: 2,
+          globalLimit: 32,
+          idleDurationMs: 300_000,
+          perActorLimit: 8,
         },
       },
       nodeEnv: "development",
@@ -199,10 +200,12 @@ describe("parseRuntimeConfig", () => {
       parseRuntimeConfig({
         HTTP_RATE_LIMIT_REQUESTS: "1200",
         HTTP_RATE_LIMIT_WINDOW_SECONDS: "120",
+        HTTP_TRUST_PROXY_HOPS: "2",
       }).http,
     ).toEqual({
       rateLimitRequests: 1200,
       rateLimitWindowMs: 120_000,
+      trustProxyHops: 2,
     });
     expect(() => parseRuntimeConfig({ HTTP_RATE_LIMIT_REQUESTS: "0" })).toThrow(
       "Invalid runtime configuration: HTTP_RATE_LIMIT_REQUESTS",
@@ -210,6 +213,9 @@ describe("parseRuntimeConfig", () => {
     expect(() =>
       parseRuntimeConfig({ HTTP_RATE_LIMIT_WINDOW_SECONDS: "3601" }),
     ).toThrow("Invalid runtime configuration: HTTP_RATE_LIMIT_WINDOW_SECONDS");
+    expect(() => parseRuntimeConfig({ HTTP_TRUST_PROXY_HOPS: "9" })).toThrow(
+      "Invalid runtime configuration: HTTP_TRUST_PROXY_HOPS",
+    );
   });
 
   it("rejects a port outside the TCP range", () => {
@@ -307,7 +313,19 @@ describe("parseRuntimeConfig", () => {
         MCP_LOCAL_ACTOR_USERNAME: "alex",
         MCP_LOCAL_WORKSPACE_SLUG: "default",
       }).mcp.local,
-    ).toEqual({ actorUsername: "alex", workspaceSlug: "default" });
+    ).toEqual({
+      accessMode: "read_only",
+      actorUsername: "alex",
+      workspaceSlug: "default",
+    });
+
+    expect(
+      parseRuntimeConfig({
+        MCP_LOCAL_ACCESS_MODE: "read_write",
+        MCP_LOCAL_ACTOR_USERNAME: "alex",
+        MCP_LOCAL_WORKSPACE_SLUG: "default",
+      }).mcp.local,
+    ).toMatchObject({ accessMode: "read_write" });
 
     expect(() =>
       parseRuntimeConfig({ MCP_LOCAL_ACTOR_USERNAME: "alex" }),

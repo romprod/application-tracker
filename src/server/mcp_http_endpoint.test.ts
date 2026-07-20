@@ -65,6 +65,7 @@ function initializedEndpoint(
   sourceRateLimit = { requests: 600, windowMs: 60_000 },
 ) {
   const audit = vi.fn<(event: NewMcpAuditEvent) => void>();
+  let accessMode: "read_only" | "read_write" = "read_only";
   const registry = new RemoteMcpSessionRegistry({
     absoluteDurationMs: 14_400_000,
     globalLimit: policy.globalLimit,
@@ -76,6 +77,7 @@ function initializedEndpoint(
     authorizer: {
       authorize: (token) =>
         Promise.resolve({
+          accessMode,
           actor: token === "other.jwt.value" ? otherActor : actor,
           principalId:
             token === "other.jwt.value"
@@ -86,7 +88,7 @@ function initializedEndpoint(
           workspaceSlug: "default",
         }),
     },
-    createServer: (actorProvider, authenticatedActor) => {
+    createServer: (actorProvider, authenticatedActor, accessPolicy) => {
       const tools: McpApplicationTools = {
         appendDocumentChunk: () => {
           throw new Error("not used");
@@ -128,7 +130,9 @@ function initializedEndpoint(
         }),
         getReferenceData: () => ({ values: [] }),
         getTrackerContext: () => ({
-          access: "read_only",
+          access: accessPolicy.getAccessMode(
+            actorProvider.getActor().workspaceId,
+          ),
           actor: actorProvider.getActor().user,
           workspace: {
             name: actorProvider.getActor().workspace.name,
@@ -180,6 +184,9 @@ function initializedEndpoint(
     app: createApp({ remoteMcpRouter: endpoint.router() }),
     audit,
     registry,
+    setAccessMode: (next: "read_only" | "read_write") => {
+      accessMode = next;
+    },
   };
 }
 
@@ -225,7 +232,7 @@ describe("remote MCP HTTP endpoint", () => {
   });
 
   it("initializes, lists and calls tools, audits, and closes a bound session", async () => {
-    const { app, audit, registry } = initializedEndpoint();
+    const { app, audit, registry, setAccessMode } = initializedEndpoint();
     const initialization = await initialize(app);
 
     expect(initialization.status).toBe(200);
@@ -276,6 +283,21 @@ describe("remote MCP HTTP endpoint", () => {
       targetType: "workspace",
       transport: "remote_http",
       workspaceId: "workspace-1",
+    });
+
+    setAccessMode("read_write");
+    const changed = await request(app)
+      .post("/mcp")
+      .set({ ...protocolHeaders, "MCP-Session-Id": sessionId })
+      .send({
+        id: 4,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { arguments: {}, name: "get_tracker_context" },
+      })
+      .expect(200);
+    expect(responseBody(changed).result?.structuredContent).toMatchObject({
+      access: "read_write",
     });
 
     await request(app)

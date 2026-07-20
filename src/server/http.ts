@@ -9,8 +9,11 @@ import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
 import { ApplicationMcpService } from "../application/mcp.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
+import {
+  builtInMcpOAuthScope,
+  McpBuiltInOAuthService,
+} from "../application/mcp_builtin_oauth.js";
 import { McpClientCredentialsService } from "../application/mcp_clients.js";
-import { McpAccessService } from "../application/mcp_access.js";
 import {
   ApplicationMcpRuntimeStatusProvider,
   McpStatusService,
@@ -24,14 +27,15 @@ import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoMcpClientTokenManager } from "../infrastructure/auth/mcp_client_token_manager.js";
+import { CryptoMcpOAuthTokenManager } from "../infrastructure/auth/mcp_oauth_token_manager.js";
 import { JoseMcpAccessTokenVerifier } from "../infrastructure/auth/mcp_access_token_verifier.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
-import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
 import { SqliteMcpClientsRepository } from "../infrastructure/database/mcp_clients_repository.js";
+import { SqliteMcpBuiltInOAuthRepository } from "../infrastructure/database/mcp_builtin_oauth_repository.js";
 import { SqliteRemoteMcpActorRepository } from "../infrastructure/database/mcp_oauth_actor_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
@@ -44,6 +48,7 @@ import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
 import { RemoteMcpHttpEndpoint } from "./mcp_http_endpoint.js";
+import { createMcpBuiltInOAuthRouter } from "./mcp_builtin_oauth_routes.js";
 import { createApplicationMcpServer } from "./mcp_server.js";
 import { McpSessionRuntime } from "./mcp_session_runtime.js";
 
@@ -109,9 +114,6 @@ async function startApplication(): Promise<void> {
     const mcpAuditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),
     );
-    const mcpAccessService = new McpAccessService(
-      new SqliteMcpAccessRepository(database),
-    );
     const mcpSessionRegistry = new RemoteMcpSessionRegistry(config.mcp.session);
     const mcpDocumentImports = new McpDocumentImportManager(
       config.documents.maxUploadBytes,
@@ -120,7 +122,7 @@ async function startApplication(): Promise<void> {
       new SqliteMcpClientsRepository(database),
       new CryptoMcpClientTokenManager(),
     );
-    const oauthMcpAuthorization = config.mcp.oauth
+    const externalOauthMcpAuthorization = config.mcp.oauth
       ? new RemoteMcpAuthorizationService(
           new JoseMcpAccessTokenVerifier(config.mcp.oauth),
           new SqliteRemoteMcpActorRepository(database),
@@ -128,9 +130,20 @@ async function startApplication(): Promise<void> {
           config.mcp.oauth.workspaceSlug,
         )
       : undefined;
+    const builtInOauthMcpAuthorization = config.mcp.remote
+      ? new McpBuiltInOAuthService(
+          new SqliteMcpBuiltInOAuthRepository(database),
+          new CryptoMcpOAuthTokenManager(),
+          {
+            requiredScope: builtInMcpOAuthScope,
+            resourceUrl: config.mcp.remote.resourceUrl,
+          },
+        )
+      : undefined;
     const remoteMcpAuthorization = new CompositeRemoteMcpAuthorizer(
       mcpClientsService,
-      oauthMcpAuthorization,
+      builtInOauthMcpAuthorization,
+      externalOauthMcpAuthorization,
     );
     const mcpSessionRuntime = new McpSessionRuntime(
       mcpSessionRegistry,
@@ -143,13 +156,13 @@ async function startApplication(): Promise<void> {
     const remoteMcpEndpoint = config.mcp.remote
       ? new RemoteMcpHttpEndpoint({
           authorizer: remoteMcpAuthorization,
-          createServer: (actorProvider, actor) =>
+          createServer: (actorProvider, actor, accessPolicy) =>
             createApplicationMcpServer(
               new ApplicationMcpService(
                 actorProvider,
                 applicationsService,
                 referenceValuesService,
-                mcpAccessService,
+                accessPolicy,
                 documentsService,
                 mcpDocumentImports,
               ),
@@ -163,15 +176,13 @@ async function startApplication(): Promise<void> {
                   workspaceId: actor.workspaceId,
                 },
                 instructions:
-                  "This authenticated remote server is bound to the actor's Application Tracker workspace. Call get_tracker_context before using workspace data. Mutation tools work only while a website administrator has enabled MCP write access, and delete_application also requires explicit confirmation.",
+                  "This authenticated remote server is bound to one actor, workspace, and connection permission. Call get_tracker_context before using workspace data. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
                 logger,
               },
             ),
           logger,
           network: config.mcp.remote,
-          ...(config.mcp.oauth
-            ? { oauth: { requiredScope: config.mcp.oauth.requiredScope } }
-            : {}),
+          oauth: { requiredScope: builtInMcpOAuthScope },
           requestPolicy: config.mcp.request,
           sessions: mcpSessionRegistry,
           sourceRateLimit: {
@@ -184,13 +195,13 @@ async function startApplication(): Promise<void> {
       config.mcp.session,
       new ApplicationMcpRuntimeStatusProvider(
         mcpSessionRegistry,
-        oauthMcpAuthorization,
+        builtInOauthMcpAuthorization,
         remoteMcpEndpoint,
         true,
       ),
       mcpAuditService,
-      mcpAccessService,
       mcpClientsService,
+      builtInOauthMcpAuthorization,
     );
     const staticRoot =
       config.nodeEnv === "production"
@@ -214,15 +225,24 @@ async function startApplication(): Promise<void> {
         requests: config.http.rateLimitRequests,
         windowMs: config.http.rateLimitWindowMs,
       },
+      trustProxyHops: config.http.trustProxyHops,
       logger,
       mcpClientsService,
-      ...(config.mcp.remote && config.mcp.oauth
+      ...(builtInOauthMcpAuthorization
+        ? { mcpOAuthConnectionsService: builtInOauthMcpAuthorization }
+        : {}),
+      ...(config.mcp.remote && builtInOauthMcpAuthorization
         ? {
-            mcpProtectedResourceMetadata: {
-              authorizationServer: config.mcp.oauth.issuer,
-              requiredScope: config.mcp.oauth.requiredScope,
+            mcpOAuthRouter: createMcpBuiltInOAuthRouter({
+              authService,
+              cookieOptions: {
+                maxAgeSeconds: config.session.absoluteDurationMs / 1000,
+                secure: config.session.cookieSecure,
+              },
+              oauth: builtInOauthMcpAuthorization,
+              requiredScope: builtInMcpOAuthScope,
               resourceUrl: config.mcp.remote.resourceUrl,
-            },
+            }),
           }
         : {}),
       mcpStatusService,

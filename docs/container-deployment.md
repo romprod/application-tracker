@@ -65,7 +65,9 @@ docker compose -f compose.example.yml up --detach --force-recreate
 Keep the published port on loopback when a reverse proxy runs on the host. The
 proxy must terminate HTTPS, preserve the public `Host` header, and pass requests
 to `http://127.0.0.1:3333`. Set `SESSION_COOKIE_SECURE=true` before serving the
-site over HTTPS.
+site over HTTPS. Set `HTTP_TRUST_PROXY_HOPS` to the exact number of proxies
+between the client and Application Tracker only when the application has no
+shorter direct route. Leave it at `0` for direct access.
 
 To allow direct access from a trusted LAN, publish the port on every host
 interface explicitly:

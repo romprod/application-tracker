@@ -21,8 +21,26 @@ export class McpAccessForbiddenError extends Error {
 
 export class McpWriteAccessDisabledError extends Error {
   public constructor() {
-    super("MCP write access is disabled for this workspace");
+    super("MCP write access is disabled for this connection");
     this.name = "McpWriteAccessDisabledError";
+  }
+}
+
+export class McpConnectionAccessPolicy {
+  public constructor(private accessMode: McpAccessMode) {}
+
+  public getAccessMode(): McpAccessMode {
+    return this.accessMode;
+  }
+
+  public requireWriteAccess(): void {
+    if (this.accessMode !== "read_write") {
+      throw new McpWriteAccessDisabledError();
+    }
+  }
+
+  public update(accessMode: McpAccessMode): void {
+    this.accessMode = accessMode;
   }
 }
 

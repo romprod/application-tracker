@@ -13,12 +13,14 @@ outer remote MCP boundary. Limited requests receive `429` with `RateLimit` and
 `Retry-After` headers. Configure the bounded policy with
 `HTTP_RATE_LIMIT_REQUESTS` and `HTTP_RATE_LIMIT_WINDOW_SECONDS`.
 
-The limiter deliberately does not trust forwarded client headers. Clients
-behind one reverse proxy therefore share its direct-source bucket. Keep a
-trusted edge or proxy limit as a second layer, and use a shared rate-limit
-store if a future deployment runs more than one Application Tracker process.
-Login and remote MCP requests retain their stricter account, source, actor, and
-concurrency controls below this outer boundary.
+Forwarded client addresses are ignored by default. When the application is
+reachable only through one fixed proxy chain, set `HTTP_TRUST_PROXY_HOPS` to
+the exact number of trusted hops (range 0-8). This lets source limiters separate
+clients while preventing arbitrary forwarded headers from selecting a bucket.
+Keep an edge limit as a second layer, and use a shared rate-limit store if a
+future deployment runs more than one Application Tracker process. Login and
+remote MCP requests retain their account, source, connection, and concurrency
+controls below this outer boundary.
 
 The remote MCP router repeats the direct-source policy immediately before
 bearer authorization. This is intentional: it keeps invalid-token attempts
@@ -84,10 +86,10 @@ Configure password-verification admission with
 `SESSION_COOKIE_SECURE`. The absolute lifetime must exceed the idle lifetime,
 and the refresh interval must be shorter than the idle lifetime.
 
-The source bucket uses the direct socket address and does not trust forwarded
-client headers. A reverse proxy therefore shares one source bucket for its
-clients. Keep a proxy or edge login limit as a second layer and tune the
-application threshold for the expected login volume.
+The source bucket uses Express's resolved client address. It uses the direct
+socket address when `HTTP_TRUST_PROXY_HOPS=0` and the bounded trusted chain when
+the setting is nonzero. Keep a proxy or edge login limit as a second layer and
+tune the application threshold for the expected login volume.
 
 ## Transport boundary
 

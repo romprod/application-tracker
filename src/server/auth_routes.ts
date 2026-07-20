@@ -21,7 +21,10 @@ export function requestSessionToken(request: Request): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function sessionCookie(token: string, options: AuthCookieOptions): string {
+export function createSessionCookie(
+  token: string,
+  options: AuthCookieOptions,
+): string {
   return stringifySetCookie({
     httpOnly: true,
     maxAge: options.maxAgeSeconds,
@@ -74,7 +77,7 @@ export function createAuthRouter(
       );
       response.setHeader(
         "Set-Cookie",
-        sessionCookie(result.token, cookieOptions),
+        createSessionCookie(result.token, cookieOptions),
       );
       response.json(result.session);
     } catch (error) {

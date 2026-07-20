@@ -87,6 +87,7 @@ export class RemoteMcpAuthorizationService implements RemoteMcpAuthorizer {
     });
     if (!actor) throw new RemoteMcpActorUnavailableError();
     return {
+      accessMode: "read_only",
       actor,
       principalId: `oauth:${verified.issuer}:${verified.subject}`,
       workspaceSlug: this.workspaceSlug,

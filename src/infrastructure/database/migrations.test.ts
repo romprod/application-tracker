@@ -94,7 +94,9 @@ describe("migrateDatabase", () => {
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+      ).toEqual([
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+      ]);
       expect(
         database
           .prepare(
@@ -679,6 +681,184 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBe("mcp_clients_by_workspace");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates hash-only storage for built-in MCP OAuth grants", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations);
+
+      for (const table of [
+        "mcp_oauth_clients",
+        "mcp_oauth_authorization_codes",
+        "mcp_oauth_tokens",
+      ]) {
+        expect(
+          database
+            .prepare(
+              "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            )
+            .pluck()
+            .get(table),
+        ).toBe(table);
+      }
+      const codeSql = String(
+        database
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_oauth_authorization_codes'",
+          )
+          .pluck()
+          .get(),
+      );
+      const tokenSql = String(
+        database
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_oauth_tokens'",
+          )
+          .pluck()
+          .get(),
+      );
+      expect(codeSql).toContain("code_hash TEXT PRIMARY KEY");
+      expect(tokenSql).toContain("token_hash TEXT NOT NULL UNIQUE");
+      expect(`${codeSql}${tokenSql}`).not.toContain("access_token");
+      expect(`${codeSql}${tokenSql}`).not.toContain("refresh_token");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("moves the previous workspace permission onto existing MCP connections", () => {
+    const database = new Database(":memory:");
+    const workspaceId = "11111111-1111-4111-8111-111111111111";
+    const userId = "22222222-2222-4222-8222-222222222222";
+    const timestamp = "2026-07-20T12:00:00.000Z";
+    const bearerClientId = `atmcp_${"a".repeat(24)}`;
+    const oauthClientId = `atoc_${"b".repeat(24)}`;
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 17));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES (?, 'Applications', 'default', ?)`,
+        )
+        .run(workspaceId, timestamp);
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES (?, 'alex', 'Alex Example', 'active', ?, ?)`,
+        )
+        .run(userId, timestamp, timestamp);
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES (?, ?, 'admin', ?)`,
+        )
+        .run(workspaceId, userId, timestamp);
+      database
+        .prepare(
+          `INSERT INTO mcp_workspace_settings
+             (workspace_id, access_mode, updated_by_user_id, updated_at)
+           VALUES (?, 'read_write', ?, ?)`,
+        )
+        .run(workspaceId, userId, timestamp);
+      database
+        .prepare(
+          `INSERT INTO mcp_clients
+             (id, workspace_id, actor_user_id, name, token_hash,
+              created_by_user_id, created_at)
+           VALUES (?, ?, ?, 'Existing bearer', ?, ?, ?)`,
+        )
+        .run(
+          bearerClientId,
+          workspaceId,
+          userId,
+          "a".repeat(64),
+          userId,
+          timestamp,
+        );
+      database
+        .prepare(
+          `INSERT INTO mcp_oauth_clients
+             (id, name, redirect_uris_json, created_at)
+           VALUES (?, 'Claude', ?, ?)`,
+        )
+        .run(
+          oauthClientId,
+          JSON.stringify(["https://claude.ai/api/mcp/auth_callback"]),
+          timestamp,
+        );
+      database
+        .prepare(
+          `INSERT INTO mcp_oauth_authorization_codes
+             (code_hash, client_id, user_id, workspace_id, redirect_uri,
+              code_challenge, resource, scope, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "b".repeat(64),
+          oauthClientId,
+          userId,
+          workspaceId,
+          "https://claude.ai/api/mcp/auth_callback",
+          "c".repeat(43),
+          "https://tracker.example/mcp",
+          "application-tracker:tools",
+          timestamp,
+          "2026-07-20T12:05:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO mcp_oauth_tokens
+             (id, token_hash, token_kind, family_id, client_id, user_id,
+              workspace_id, resource, scope, issued_at, expires_at)
+           VALUES (?, ?, 'access', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "token-01",
+          "c".repeat(64),
+          "family-1",
+          oauthClientId,
+          userId,
+          workspaceId,
+          "https://tracker.example/mcp",
+          "application-tracker:tools",
+          timestamp,
+          "2026-07-20T12:15:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare("SELECT access_mode FROM mcp_clients WHERE id = ?")
+          .pluck()
+          .get(bearerClientId),
+      ).toBe("read_write");
+      expect(
+        database
+          .prepare(
+            "SELECT access_mode FROM mcp_oauth_authorization_codes WHERE client_id = ?",
+          )
+          .pluck()
+          .get(oauthClientId),
+      ).toBe("read_write");
+      expect(
+        database
+          .prepare(
+            "SELECT access_mode FROM mcp_oauth_tokens WHERE client_id = ?",
+          )
+          .pluck()
+          .get(oauthClientId),
+      ).toBe("read_write");
     } finally {
       database.close();
     }

@@ -54,10 +54,10 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Eight read tools and seven mutation tools are bounded and closed-world; fresh
-  workspaces block all mutations
-- Only a website administrator can enable the workspace-wide read-write policy
-- Every mutation rechecks the persisted policy, including existing sessions
+- Eight read tools and seven mutation tools are bounded and closed-world; new
+  connections block all mutations by default
+- Local stdio permissions are fixed per process by `MCP_LOCAL_ACCESS_MODE`
+- Every mutation rechecks the connection-bound policy
 - Deletion requires explicit tool confirmation and uses the ledger's audited
   soft-delete path
 - Every accepted tool invocation records an append-only outcome event; audit
@@ -70,10 +70,16 @@
 
 - High-entropy native bearer secrets stored only as SHA-256 hashes
 - Administrator-controlled client creation, actor binding, rotation, and
-  revocation
+  revocation, with an independent permission on every credential
+- Built-in OAuth authorization with local password authentication and explicit
+  user consent for that grant's read-only or read-and-write permission
+- Public PKCE clients, strict redirect allowlisting, exact resource binding,
+  short-lived authorization codes, and rotating refresh-token families
+- OAuth authorization codes, access tokens, and refresh tokens stored only as
+  SHA-256 hashes
 - Exact credential, actor, and workspace binding for every session
 - Signature algorithm, issuer, audience, expiry, scope, and subject verification
-  when optional OAuth is configured
+  when the optional external verifier is configured
 - Configurable group or claim policy mapped to a local membership
 - Host and origin allowlists
 - Per-actor and global session limits
@@ -82,18 +88,21 @@
 - One size-limited `application/json` parser and single-message JSON-RPC policy
 - Sanitized status that omits tokens, subjects, hostnames, and internal errors
 
-The server can verify signed JWT access tokens against a configured HTTPS JWKS,
-with a fixed algorithm, issuer, audience, expiry, subject, and exact scope. It
-maps the verified issuer-subject pair through `external_identities` to an active
-local user and a fixed workspace membership. Configuration is all-or-nothing,
-and the JWKS URL must share the issuer's origin. The verifier does not log or
-store tokens.
+The built-in authorization server is installed with the remote MCP endpoint. It
+uses the website's local login controls, requires consent, dynamically registers
+only trusted public redirect URIs, and stores only hashes of issued credentials.
+An optional external verifier can also validate signed JWT access tokens against
+a configured HTTPS JWKS with a fixed algorithm, issuer, audience, expiry,
+subject, and exact scope. It maps the verified issuer-subject pair through
+`external_identities` to an active local user and fixed workspace membership.
+External configuration is all-or-nothing, and the JWKS URL must share the
+issuer's origin. The verifier does not log or store tokens.
 
 The remote adapter exposes one authenticated Streamable HTTP route after all
 network settings pass startup validation. It checks the Host and optional
-Origin, verifies a native bearer token or optional OAuth token, resolves an
-active local membership, and then admits a session. OAuth configuration also
-publishes protected-resource metadata.
+Origin, verifies a native bearer token, built-in OAuth token, or optional
+external OAuth token, resolves an active local membership, and then admits a
+session. The remote endpoint always publishes OAuth discovery metadata.
 Initializing reservations consume capacity before asynchronous setup begins.
 The request boundary caps JSON size, global concurrent work, and requests per
 resolved actor. It rejects unsupported media types and JSON-RPC batches before

@@ -30,11 +30,22 @@ login but does not restore revoked sessions.
 
 All list and mutation queries include the authenticated workspace identifier.
 Responses include user identity, role, status, creation time, and whether a
-local credential exists. When an OAuth provider is configured, they also
-include the provider subjects linked to each user. They never include password
-hashes, session tokens, or the provider issuer.
+local credential exists. When an external OAuth verifier is configured, they
+also include the provider subjects linked to each user. They never include
+password hashes, session tokens, or the provider issuer.
 
-## External identity links
+## Built-in MCP OAuth
+
+Claude.ai and remote Codex authenticate through Application Tracker's built-in
+OAuth flow using an existing local username and password. The user reviews a
+consent page before access is granted. This path does not use external identity
+links and does not require Authentik or another identity provider.
+
+Disabling a local account immediately prevents its built-in OAuth access and
+refresh tokens from resolving an active principal. Existing website session
+revocation remains governed by the normal account-status flow.
+
+## Optional external identity links
 
 An administrator can link an exact OAuth `sub` claim to an existing workspace
 user. The server supplies the configured issuer; the browser cannot choose or
@@ -44,7 +55,7 @@ return `external_identity_unavailable` without identifying that user.
 Removing a link immediately stops that subject from resolving to the local
 user for new remote MCP requests. It does not disable the local account or
 revoke unrelated browser sessions. Identity linking remains unavailable until
-the operator configures all OAuth verifier settings.
+the operator configures all external OAuth verifier settings.
 
 ## HTTP boundary
 
@@ -70,8 +81,8 @@ exercised during local use.
 Administrators open **Settings → Users** to see account, active, and admin
 counts; inspect every workspace account; create a local user; or enable and
 disable another account. The current account is visibly marked and protected
-from disablement. When OAuth is configured, the same page links and removes
-exact provider subjects. Password fields are cleared after every
-account-creation response.
+from disablement. When the external OAuth verifier is configured, the same page
+links and removes exact provider subjects. Password fields are cleared after
+every account-creation response.
 
 The other Settings sections manage workspace Lists and sanitized MCP status.

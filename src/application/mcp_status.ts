@@ -3,8 +3,11 @@ import type {
   McpClientDirectory,
   McpClientCredentialsService,
 } from "./mcp_clients.js";
+import type {
+  McpBuiltInOAuthService,
+  McpOAuthConnection,
+} from "./mcp_builtin_oauth.js";
 import { applicationMcpToolNames } from "./mcp.js";
-import type { McpAccessMode } from "./mcp_access.js";
 import {
   emptyMcpAuditReader,
   type McpAuditEvent,
@@ -21,6 +24,7 @@ export interface McpRuntimeSnapshot {
   clientCredentialsAvailable: boolean;
   oauthVerificationAvailable: boolean;
   registeredTools: number;
+  remoteEndpoint: string | null;
   remoteTransportState: "disabled" | "ready" | "unavailable";
   sessionEnforcement: "active" | "inactive";
 }
@@ -34,17 +38,15 @@ export interface McpSessionCountsProvider {
 }
 
 export interface McpOAuthAuthorizationProvider {
-  authorize(token: string): Promise<unknown>;
+  authorize(token: string): unknown;
 }
 
 export interface McpRemoteTransportCapability {
   isAvailable(): boolean;
+  resourceUrl(): string;
 }
 
 export interface McpStatus {
-  access: {
-    mode: McpAccessMode;
-  };
   availability: McpRuntimeSnapshot["availability"];
   capabilities: {
     auditEvents: boolean;
@@ -52,7 +54,7 @@ export interface McpStatus {
     oauthVerification: boolean;
     registeredTools: number;
   };
-  clients: McpClientDirectory;
+  clients: McpClientDirectory & { oauthClients: McpOAuthConnection[] };
   recentAuditEvents: McpAuditEvent[];
   sessions: {
     absoluteLifetimeSeconds: number;
@@ -69,26 +71,12 @@ export interface McpStatus {
       transport: "stdio";
     };
     remote: {
+      endpoint: string | null;
       state: McpRuntimeSnapshot["remoteTransportState"];
       transport: "streamable_http";
     };
   };
 }
-
-export interface McpAccessSettingsProvider {
-  getAdministratorAccessMode(actor: AuthenticatedActor): McpAccessMode;
-  setAdministratorAccessMode(
-    actor: AuthenticatedActor,
-    accessMode: McpAccessMode,
-  ): void;
-}
-
-const defaultReadOnlyAccessSettings: McpAccessSettingsProvider = {
-  getAdministratorAccessMode: () => "read_only",
-  setAdministratorAccessMode: () => {
-    throw new Error("MCP access settings are unavailable");
-  },
-};
 
 export class McpStatusForbiddenError extends Error {
   public constructor() {
@@ -118,6 +106,7 @@ export class ApplicationMcpRuntimeStatusProvider implements McpRuntimeStatusProv
       localTransportState: "ready",
       oauthVerificationAvailable: this.oauthAuthorization !== undefined,
       registeredTools: applicationMcpToolNames.length,
+      remoteEndpoint: this.remoteTransport?.resourceUrl() ?? null,
       remoteTransportState: this.remoteTransport?.isAvailable()
         ? "ready"
         : "disabled",
@@ -131,10 +120,13 @@ export class McpStatusService {
     private readonly policy: McpSessionPolicy,
     private readonly provider: McpRuntimeStatusProvider = new ApplicationMcpRuntimeStatusProvider(),
     private readonly auditReader: McpAuditReader = emptyMcpAuditReader,
-    private readonly accessSettings: McpAccessSettingsProvider = defaultReadOnlyAccessSettings,
     private readonly clientCredentials?: Pick<
       McpClientCredentialsService,
       "getDirectory"
+    >,
+    private readonly oauthConnections?: Pick<
+      McpBuiltInOAuthService,
+      "listConnections"
     >,
   ) {}
 
@@ -143,9 +135,6 @@ export class McpStatusService {
 
     const runtime = this.provider.snapshot(actor.workspaceId);
     return {
-      access: {
-        mode: this.accessSettings.getAdministratorAccessMode(actor),
-      },
       availability: runtime.availability,
       capabilities: {
         auditEvents: runtime.auditEventsAvailable,
@@ -153,9 +142,12 @@ export class McpStatusService {
         oauthVerification: runtime.oauthVerificationAvailable,
         registeredTools: runtime.registeredTools,
       },
-      clients: this.clientCredentials?.getDirectory(actor) ?? {
-        actors: [],
-        clients: [],
+      clients: {
+        ...(this.clientCredentials?.getDirectory(actor) ?? {
+          actors: [],
+          clients: [],
+        }),
+        oauthClients: this.oauthConnections?.listConnections(actor) ?? [],
       },
       recentAuditEvents: this.auditReader.listRecent(actor.workspaceId, 20),
       sessions: {
@@ -170,20 +162,12 @@ export class McpStatusService {
       transports: {
         local: { state: runtime.localTransportState, transport: "stdio" },
         remote: {
+          endpoint: runtime.remoteEndpoint,
           state: runtime.remoteTransportState,
           transport: "streamable_http",
         },
       },
     };
-  }
-
-  public setAccessMode(
-    actor: AuthenticatedActor,
-    accessMode: McpAccessMode,
-  ): McpStatus {
-    this.requireAdministrator(actor);
-    this.accessSettings.setAdministratorAccessMode(actor, accessMode);
-    return this.getStatus(actor);
   }
 
   private requireAdministrator(actor: AuthenticatedActor): void {

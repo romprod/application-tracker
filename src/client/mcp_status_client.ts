@@ -1,7 +1,4 @@
 export interface McpStatus {
-  access: {
-    mode: "read_only" | "read_write";
-  };
   availability: "available" | "degraded" | "planned";
   capabilities: {
     auditEvents: boolean;
@@ -26,6 +23,7 @@ export interface McpStatus {
       transport: "stdio";
     };
     remote: {
+      endpoint: string | null;
       state: "disabled" | "ready" | "unavailable";
       transport: "streamable_http";
     };
@@ -39,6 +37,7 @@ export interface McpClientActor {
 }
 
 export interface McpClientRecord {
+  accessMode: "read_only" | "read_write";
   actor: McpClientActor;
   clientId: string;
   createdAt: string;
@@ -48,9 +47,20 @@ export interface McpClientRecord {
   state: "active" | "revoked" | "unavailable";
 }
 
+export interface McpOAuthClientRecord {
+  accessMode: "read_only" | "read_write";
+  actor: McpClientActor;
+  clientId: string;
+  createdAt: string;
+  lastUsedAt: string;
+  name: string;
+  state: "active" | "revoked";
+}
+
 export interface McpClientDirectory {
   actors: McpClientActor[];
   clients: McpClientRecord[];
+  oauthClients: McpOAuthClientRecord[];
 }
 
 export interface IssuedMcpClientCredential {
@@ -100,13 +110,19 @@ export interface McpAuditEvent {
 
 export interface McpStatusClient {
   createClient(input: {
+    accessMode: "read_only" | "read_write";
     actorUserId: string;
     name: string;
   }): Promise<McpCredentialResult>;
+  deleteClient(clientId: string): Promise<McpStatus>;
+  deleteOAuthClient(clientId: string, actorUserId: string): Promise<McpStatus>;
   getStatus(): Promise<McpStatus>;
   revokeClient(clientId: string): Promise<McpStatus>;
   rotateClient(clientId: string): Promise<McpCredentialResult>;
-  setAccessMode(accessMode: "read_only" | "read_write"): Promise<McpStatus>;
+  updateClientAccessMode(
+    clientId: string,
+    accessMode: "read_only" | "read_write",
+  ): Promise<McpStatus>;
 }
 
 export class McpStatusClientError extends Error {
@@ -122,6 +138,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isMcpEndpoint(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  try {
+    const endpoint = new URL(value);
+    return (
+      endpoint.protocol === "https:" &&
+      endpoint.pathname === "/mcp" &&
+      !endpoint.username &&
+      !endpoint.password &&
+      !endpoint.search &&
+      !endpoint.hash
+    );
+  } catch {
+    return false;
+  }
 }
 
 function parseAuditEvent(value: unknown): McpAuditEvent {
@@ -196,6 +230,7 @@ function parseClient(value: unknown): McpClientRecord {
   if (
     !isRecord(value) ||
     !isRecord(value.actor) ||
+    (value.accessMode !== "read_only" && value.accessMode !== "read_write") ||
     typeof value.clientId !== "string" ||
     typeof value.createdAt !== "string" ||
     Number.isNaN(Date.parse(value.createdAt)) ||
@@ -213,6 +248,7 @@ function parseClient(value: unknown): McpClientRecord {
     throw new McpStatusClientError("invalid_response");
   }
   return {
+    accessMode: value.accessMode,
     actor: parseClientActor(value.actor),
     clientId: value.clientId,
     createdAt: value.createdAt,
@@ -223,11 +259,35 @@ function parseClient(value: unknown): McpClientRecord {
   };
 }
 
+function parseOAuthClient(value: unknown): McpOAuthClientRecord {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.actor) ||
+    (value.accessMode !== "read_only" && value.accessMode !== "read_write") ||
+    typeof value.clientId !== "string" ||
+    typeof value.createdAt !== "string" ||
+    Number.isNaN(Date.parse(value.createdAt)) ||
+    typeof value.lastUsedAt !== "string" ||
+    Number.isNaN(Date.parse(value.lastUsedAt)) ||
+    typeof value.name !== "string" ||
+    (value.state !== "active" && value.state !== "revoked")
+  ) {
+    throw new McpStatusClientError("invalid_response");
+  }
+  return {
+    accessMode: value.accessMode,
+    actor: parseClientActor(value.actor),
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    lastUsedAt: value.lastUsedAt,
+    name: value.name,
+    state: value.state,
+  };
+}
+
 function parseStatus(value: unknown): McpStatus {
   if (
     !isRecord(value) ||
-    !isRecord(value.access) ||
-    (value.access.mode !== "read_only" && value.access.mode !== "read_write") ||
     (value.availability !== "available" &&
       value.availability !== "degraded" &&
       value.availability !== "planned") ||
@@ -241,6 +301,7 @@ function parseStatus(value: unknown): McpStatus {
     !isRecord(value.clients) ||
     !Array.isArray(value.clients.actors) ||
     !Array.isArray(value.clients.clients) ||
+    !Array.isArray(value.clients.oauthClients) ||
     !isRecord(value.sessions) ||
     !isNonNegativeInteger(value.sessions.absoluteLifetimeSeconds) ||
     !isNonNegativeInteger(value.sessions.active) ||
@@ -256,6 +317,7 @@ function parseStatus(value: unknown): McpStatus {
       value.transports.local.state !== "unavailable") ||
     value.transports.local.transport !== "stdio" ||
     !isRecord(value.transports.remote) ||
+    !isMcpEndpoint(value.transports.remote.endpoint) ||
     (value.transports.remote.state !== "disabled" &&
       value.transports.remote.state !== "ready" &&
       value.transports.remote.state !== "unavailable") ||
@@ -265,7 +327,6 @@ function parseStatus(value: unknown): McpStatus {
   }
 
   return {
-    access: { mode: value.access.mode },
     availability: value.availability,
     capabilities: {
       auditEvents: value.capabilities.auditEvents,
@@ -276,6 +337,7 @@ function parseStatus(value: unknown): McpStatus {
     clients: {
       actors: value.clients.actors.map(parseClientActor),
       clients: value.clients.clients.map(parseClient),
+      oauthClients: value.clients.oauthClients.map(parseOAuthClient),
     },
     recentAuditEvents: value.recentAuditEvents.map(parseAuditEvent),
     sessions: {
@@ -293,6 +355,7 @@ function parseStatus(value: unknown): McpStatus {
         transport: value.transports.local.transport,
       },
       remote: {
+        endpoint: value.transports.remote.endpoint,
         state: value.transports.remote.state,
         transport: value.transports.remote.transport,
       },
@@ -323,6 +386,34 @@ export const browserMcpStatusClient: McpStatusClient = {
     if (!response.ok) throw new McpStatusClientError("request_failed");
     return parseCredentialResult(body);
   },
+  async deleteClient(clientId) {
+    const response = await fetch(
+      `/api/settings/mcp/clients/${encodeURIComponent(clientId)}/permanent`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
+    return parseStatus(body.status);
+  },
+  async deleteOAuthClient(clientId, actorUserId) {
+    const response = await fetch(
+      `/api/settings/mcp/oauth-clients/${encodeURIComponent(clientId)}/users/${encodeURIComponent(actorUserId)}`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+    const body = await responseBody(response);
+    if (!response.ok) throw new McpStatusClientError("request_failed");
+    if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
+    return parseStatus(body.status);
+  },
   async getStatus() {
     const response = await fetch("/api/settings/mcp", {
       cache: "no-store",
@@ -334,16 +425,19 @@ export const browserMcpStatusClient: McpStatusClient = {
     if (!isRecord(body)) throw new McpStatusClientError("invalid_response");
     return parseStatus(body.status);
   },
-  async setAccessMode(accessMode) {
-    const response = await fetch("/api/settings/mcp", {
-      body: JSON.stringify({ accessMode }),
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+  async updateClientAccessMode(clientId, accessMode) {
+    const response = await fetch(
+      `/api/settings/mcp/clients/${encodeURIComponent(clientId)}`,
+      {
+        body: JSON.stringify({ accessMode }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
       },
-      method: "PATCH",
-    });
+    );
     const body = await responseBody(response);
     if (!response.ok) throw new McpStatusClientError("request_failed");
     if (!isRecord(body)) throw new McpStatusClientError("invalid_response");

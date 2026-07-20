@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from "./auth.js";
+import type { McpAccessMode } from "./mcp_access.js";
 import { InvalidMcpAccessTokenError } from "./mcp_oauth.js";
 import type {
   RemoteMcpAuthorizer,
@@ -12,6 +13,7 @@ export interface McpClientActor {
 }
 
 export interface McpClient {
+  accessMode: McpAccessMode;
   actor: McpClientActor;
   clientId: string;
   createdAt: string;
@@ -46,6 +48,7 @@ export interface McpClientTokenManager {
 }
 
 export interface CreateMcpClientRecord {
+  accessMode: McpAccessMode;
   actorUserId: string;
   clientId: string;
   createdAt: string;
@@ -56,6 +59,7 @@ export interface CreateMcpClientRecord {
 }
 
 export interface McpClientCredentialRecord {
+  accessMode: McpAccessMode;
   actor: AuthenticatedActor;
   clientId: string;
   tokenHash: string;
@@ -65,6 +69,7 @@ export interface McpClientCredentialRecord {
 export interface McpClientsRepository {
   countActive(workspaceId: string): number;
   create(input: CreateMcpClientRecord): McpClient;
+  delete(input: { clientId: string; workspaceId: string }): void;
   findCredential(clientId: string): McpClientCredentialRecord | undefined;
   listActors(workspaceId: string): McpClientActor[];
   listClients(workspaceId: string): McpClient[];
@@ -79,6 +84,11 @@ export interface McpClientsRepository {
     clientId: string;
     rotatedAt: string;
     tokenHash: string;
+    workspaceId: string;
+  }): McpClient;
+  updateAccessMode(input: {
+    accessMode: McpAccessMode;
+    clientId: string;
     workspaceId: string;
   }): McpClient;
 }
@@ -134,7 +144,11 @@ export class McpClientCredentialsService implements RemoteMcpAuthorizer {
 
   public create(
     actor: AuthenticatedActor,
-    input: { actorUserId: string; name: string },
+    input: {
+      accessMode: McpAccessMode;
+      actorUserId: string;
+      name: string;
+    },
   ): IssuedMcpClientCredential {
     requireAdministrator(actor);
     if (
@@ -144,6 +158,7 @@ export class McpClientCredentialsService implements RemoteMcpAuthorizer {
     }
     const credential = this.tokens.issue();
     const client = this.repository.create({
+      accessMode: input.accessMode,
       actorUserId: input.actorUserId,
       clientId: credential.clientId,
       createdAt: this.clock().toISOString(),
@@ -153,6 +168,14 @@ export class McpClientCredentialsService implements RemoteMcpAuthorizer {
       workspaceId: actor.workspaceId,
     });
     return { bearerToken: credential.bearerToken, client };
+  }
+
+  public delete(actor: AuthenticatedActor, clientId: string): void {
+    requireAdministrator(actor);
+    this.repository.delete({
+      clientId,
+      workspaceId: actor.workspaceId,
+    });
   }
 
   public rotate(
@@ -180,6 +203,19 @@ export class McpClientCredentialsService implements RemoteMcpAuthorizer {
     });
   }
 
+  public updateAccessMode(
+    actor: AuthenticatedActor,
+    clientId: string,
+    accessMode: McpAccessMode,
+  ): McpClient {
+    requireAdministrator(actor);
+    return this.repository.updateAccessMode({
+      accessMode,
+      clientId,
+      workspaceId: actor.workspaceId,
+    });
+  }
+
   public authorize(token: string): RemoteMcpPrincipal {
     const parsed = this.tokens.parse(token);
     if (!parsed) throw new InvalidMcpAccessTokenError();
@@ -192,6 +228,7 @@ export class McpClientCredentialsService implements RemoteMcpAuthorizer {
     }
     this.repository.markUsed(credential.clientId, this.clock().toISOString());
     return {
+      accessMode: credential.accessMode,
       actor: credential.actor,
       principalId: `client:${credential.clientId}:${credential.tokenHash}`,
       workspaceSlug: credential.workspaceSlug,

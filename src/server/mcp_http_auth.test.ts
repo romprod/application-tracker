@@ -113,6 +113,7 @@ describe("remote MCP bearer authorization", () => {
   it("passes the resolved actor without retaining the bearer token", async () => {
     const authorize = vi.fn(() =>
       Promise.resolve({
+        accessMode: "read_only" as const,
         actor,
         principalId: "oauth:test:alex",
         workspaceSlug: "default",

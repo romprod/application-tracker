@@ -203,7 +203,6 @@ const documentRecord: DocumentRecord = {
 };
 
 const mcpStatus: McpStatus = {
-  access: { mode: "read_only" },
   availability: "available",
   capabilities: {
     auditEvents: true,
@@ -220,6 +219,7 @@ const mcpStatus: McpStatus = {
       },
     ],
     clients: [],
+    oauthClients: [],
   },
   recentAuditEvents: [
     {
@@ -242,7 +242,11 @@ const mcpStatus: McpStatus = {
   },
   transports: {
     local: { state: "ready", transport: "stdio" },
-    remote: { state: "disabled", transport: "streamable_http" },
+    remote: {
+      endpoint: null,
+      state: "disabled",
+      transport: "streamable_http",
+    },
   },
 };
 
@@ -327,6 +331,7 @@ function createMcpStatusClient(status: McpStatus = mcpStatus) {
     bearerToken:
       "atmcp_abcdefghijklmnopqrstuvwx.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
     client: {
+      accessMode: "read_only" as const,
       actor: status.clients.actors[0]!,
       clientId: "atmcp_abcdefghijklmnopqrstuvwx",
       createdAt: "2026-01-01T10:00:00.000Z",
@@ -340,6 +345,12 @@ function createMcpStatusClient(status: McpStatus = mcpStatus) {
     createClient: vi
       .fn<McpStatusClient["createClient"]>()
       .mockResolvedValue({ credential, status }),
+    deleteClient: vi
+      .fn<McpStatusClient["deleteClient"]>()
+      .mockResolvedValue(status),
+    deleteOAuthClient: vi
+      .fn<McpStatusClient["deleteOAuthClient"]>()
+      .mockResolvedValue(status),
     getStatus: vi.fn<McpStatusClient["getStatus"]>().mockResolvedValue(status),
     revokeClient: vi
       .fn<McpStatusClient["revokeClient"]>()
@@ -347,11 +358,9 @@ function createMcpStatusClient(status: McpStatus = mcpStatus) {
     rotateClient: vi
       .fn<McpStatusClient["rotateClient"]>()
       .mockResolvedValue({ credential, status }),
-    setAccessMode: vi
-      .fn<McpStatusClient["setAccessMode"]>()
-      .mockImplementation((accessMode) =>
-        Promise.resolve({ ...status, access: { mode: accessMode } }),
-      ),
+    updateClientAccessMode: vi
+      .fn<McpStatusClient["updateClientAccessMode"]>()
+      .mockResolvedValue(status),
   } satisfies McpStatusClient;
 }
 
@@ -1194,20 +1203,20 @@ describe("application shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "MCP" }));
 
     expect(
-      await screen.findByRole("heading", { name: "MCP, without blind spots." }),
+      await screen.findByRole("heading", { name: "MCP connections." }),
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
     expect(screen.getByText("15 tools registered")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /Read only/ })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(
+      screen.queryByRole("radiogroup", { name: "MCP access mode" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Registry ready")).toBeInTheDocument();
     expect(screen.getByText("6 session ceiling")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Recent MCP activity" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("OAuth setup required")).toBeInTheDocument();
     expect(screen.getByText("Get Tracker Context")).toBeInTheDocument();
     expect(screen.getAllByText("Alex Example · @alex")).not.toHaveLength(0);
     expect(screen.getByText("Success")).toBeInTheDocument();
@@ -1218,7 +1227,7 @@ describe("application shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("lets an administrator enable MCP writes from Settings", async () => {
+  it("does not render a global MCP access setting or copy-ready setup panel", async () => {
     const mcpStatusClient = createMcpStatusClient();
     render(
       <App
@@ -1233,21 +1242,41 @@ describe("application shell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "MCP" }));
-    fireEvent.click(
-      await screen.findByRole("radio", { name: /Read and write/ }),
-    );
-
-    await waitFor(() =>
-      expect(mcpStatusClient.setAccessMode).toHaveBeenCalledWith("read_write"),
-    );
+    await screen.findByRole("heading", { name: "Connect every client." });
+    expect(screen.queryByText("Workspace authority")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: /Read and write/ }),
-    ).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(/Write access is active/)).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "Choose a setup profile." }),
+    ).not.toBeInTheDocument();
   });
 
-  it("creates an HTTPS MCP client and reveals its bearer token once", async () => {
-    const mcpStatusClient = createMcpStatusClient();
+  it("shows an authorized Claude OAuth connector in Issued clients", async () => {
+    const actor = mcpStatus.clients.actors[0]!;
+    const configuredStatus: McpStatus = {
+      ...mcpStatus,
+      clients: {
+        ...mcpStatus.clients,
+        oauthClients: [
+          {
+            accessMode: "read_write",
+            actor,
+            clientId: "atoc_abcdefghijklmnopqrstuvwx",
+            createdAt: "2026-01-01T10:00:00.000Z",
+            lastUsedAt: "2026-01-01T10:01:00.000Z",
+            name: "Claude",
+            state: "active",
+          },
+        ],
+      },
+      transports: {
+        ...mcpStatus.transports,
+        remote: {
+          endpoint: "https://applicationtracker.example.com/mcp",
+          state: "ready",
+          transport: "streamable_http",
+        },
+      },
+    };
+    const mcpStatusClient = createMcpStatusClient(configuredStatus);
     render(
       <App
         authClient={createAuthClient(authenticatedSession)}
@@ -1261,25 +1290,289 @@ describe("application shell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "MCP" }));
-    fireEvent.change(await screen.findByLabelText("Client name"), {
+    const connection = await screen.findByRole("listitem", {
+      name: "Claude, Active",
+    });
+    expect(
+      within(connection).getByText("OAuth · Alex Example · @alex"),
+    ).toBeInTheDocument();
+    expect(within(connection).getByText("Read Write")).toBeInTheDocument();
+    const deleteButton = within(connection).getByRole("button", {
+      name: "Delete Claude",
+    });
+    fireEvent.click(deleteButton);
+    expect(mcpStatusClient.deleteOAuthClient).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(connection).getByRole("button", {
+        name: "Confirm deletion of Claude",
+      }),
+    );
+    await waitFor(() =>
+      expect(mcpStatusClient.deleteOAuthClient).toHaveBeenCalledWith(
+        "atoc_abcdefghijklmnopqrstuvwx",
+        actor.id,
+      ),
+    );
+    expect(
+      within(connection).queryByRole("button", { name: "Rotate token" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("1 connections active")).toBeInTheDocument();
+  });
+
+  it("creates an HTTPS MCP client and keeps its one-time token masked until requested", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const mcpStatusClient = createMcpStatusClient({
+      ...mcpStatus,
+      transports: {
+        ...mcpStatus.transports,
+        remote: {
+          endpoint: "https://tracker.example/mcp",
+          state: "ready",
+          transport: "streamable_http",
+        },
+      },
+    });
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.change(await screen.findByLabelText("Connection name"), {
       target: { value: "Codex on laptop" },
     });
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "Connection permission" }),
+      ).getByRole("button", { name: "Read and write" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Create client" }));
 
     await waitFor(() =>
       expect(mcpStatusClient.createClient).toHaveBeenCalledWith({
+        accessMode: "read_write",
         actorUserId: "user-0000000001",
         name: "Codex on laptop",
       }),
     );
-    expect(screen.getByText("Copy this bearer token now.")).toBeInTheDocument();
+    const credential = screen.getByRole("status", {
+      name: "New MCP credential",
+    });
+    expect(
+      within(credential).getByText(/Keep these three values together/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/atmcp_abcdefghijklmnopqrstuvwx\./),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(credential).getByRole("button", {
+        name: "Copy connection address",
+      }),
+    );
+    fireEvent.click(
+      within(credential).getByRole("button", { name: "Copy client ID" }),
+    );
+    fireEvent.click(
+      within(credential).getByRole("button", { name: "Copy bearer token" }),
+    );
+    expect(writeText).toHaveBeenNthCalledWith(1, "https://tracker.example/mcp");
+    expect(writeText).toHaveBeenNthCalledWith(
+      2,
+      "atmcp_abcdefghijklmnopqrstuvwx",
+    );
+    expect(writeText).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("atmcp_abcdefghijklmnopqrstuvwx."),
+    );
+    fireEvent.click(
+      within(credential).getByRole("button", { name: "Reveal token" }),
+    );
     expect(
       screen.getByText(/atmcp_abcdefghijklmnopqrstuvwx\./),
     ).toBeInTheDocument();
+    fireEvent.click(
+      within(credential).getByRole("button", { name: "Hide token" }),
+    );
     expect(
-      screen.getByText(
-        "It is shown once. Application Tracker stores only its hash.",
+      screen.queryByText(/atmcp_abcdefghijklmnopqrstuvwx\./),
+    ).not.toBeInTheDocument();
+    expect(
+      within(credential).getByText(/Application Tracker stores its hash/),
+    ).toBeInTheDocument();
+  });
+
+  it("uses temporary copy feedback and manages issued bearer clients in two clicks", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const actor = mcpStatus.clients.actors[0]!;
+    const configuredStatus: McpStatus = {
+      ...mcpStatus,
+      clients: {
+        actors: [actor],
+        clients: [
+          {
+            accessMode: "read_only",
+            actor,
+            clientId: "atmcp_abcdefghijklmnopqrstuvwx",
+            createdAt: "2026-01-01T10:00:00.000Z",
+            lastUsedAt: null,
+            name: "Claude ai",
+            rotatedAt: null,
+            state: "active",
+          },
+          {
+            accessMode: "read_only",
+            actor,
+            clientId: "atmcp_zyxwvutsrqponmlkjihgfedc",
+            createdAt: "2026-01-01T09:00:00.000Z",
+            lastUsedAt: null,
+            name: "Claude old",
+            rotatedAt: null,
+            state: "revoked",
+          },
+        ],
+        oauthClients: [],
+      },
+      transports: {
+        ...mcpStatus.transports,
+        remote: {
+          endpoint: "https://applicationtracker.example.com/mcp",
+          state: "ready",
+          transport: "streamable_http",
+        },
+      },
+    };
+    const mcpStatusClient = createMcpStatusClient(configuredStatus);
+    const revokedClient = configuredStatus.clients.clients[1]!;
+    const regeneratedCredential = {
+      bearerToken:
+        "atmcp_zyxwvutsrqponmlkjihgfedc.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+      client: {
+        ...revokedClient,
+        rotatedAt: "2026-01-01T11:00:00.000Z",
+        state: "active" as const,
+      },
+    };
+    mcpStatusClient.rotateClient.mockResolvedValue({
+      credential: regeneratedCredential,
+      status: {
+        ...configuredStatus,
+        clients: {
+          ...configuredStatus.clients,
+          clients: configuredStatus.clients.clients.map((client) =>
+            client.clientId === revokedClient.clientId
+              ? regeneratedCredential.client
+              : client,
+          ),
+        },
+      },
+    });
+    render(
+      <App
+        authClient={createAuthClient(authenticatedSession)}
+        mcpStatusClient={mcpStatusClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    const endpointButton = await screen.findByRole("button", {
+      name: "Copy MCP endpoint for Claude ai",
+    });
+    fireEvent.click(endpointButton);
+    expect(writeText).toHaveBeenCalledWith(
+      "https://applicationtracker.example.com/mcp",
+    );
+    await waitFor(() => expect(endpointButton).toHaveTextContent("Copied"));
+    expect(endpointButton).not.toHaveAttribute("data-copied");
+    await waitFor(() => expect(endpointButton).toHaveTextContent("Endpoint"), {
+      timeout: 3500,
+    });
+
+    const clientIdButton = screen.getByRole("button", {
+      name: "Copy client ID for Claude ai",
+    });
+    fireEvent.click(clientIdButton);
+    expect(writeText).toHaveBeenCalledWith("atmcp_abcdefghijklmnopqrstuvwx");
+    await waitFor(() => expect(clientIdButton).toHaveTextContent("Copied"));
+
+    const permissionControl = screen.getByRole("group", {
+      name: "Permission for Claude ai",
+    });
+    expect(
+      screen.queryByRole("combobox", { name: "Permission for Claude ai" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(permissionControl).getByRole("button", { name: "Read only" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(
+      within(permissionControl).getByRole("button", {
+        name: "Read and write",
+      }),
+    );
+    await waitFor(() =>
+      expect(mcpStatusClient.updateClientAccessMode).toHaveBeenCalledWith(
+        "atmcp_abcdefghijklmnopqrstuvwx",
+        "read_write",
       ),
+    );
+
+    const activeDeleteButton = screen.getByRole("button", {
+      name: "Delete Claude ai",
+    });
+    fireEvent.click(activeDeleteButton);
+    expect(mcpStatusClient.deleteClient).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Confirm deletion of Claude ai",
+      }),
+    );
+    await waitFor(() =>
+      expect(mcpStatusClient.deleteClient).toHaveBeenCalledWith(
+        "atmcp_abcdefghijklmnopqrstuvwx",
+      ),
+    );
+
+    const generateButton = screen.getByRole("button", {
+      name: "Generate new token for Claude old",
+    });
+    fireEvent.click(generateButton);
+    expect(mcpStatusClient.rotateClient).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Confirm new token for Claude old",
+      }),
+    );
+    await waitFor(() =>
+      expect(mcpStatusClient.rotateClient).toHaveBeenCalledWith(
+        "atmcp_zyxwvutsrqponmlkjihgfedc",
+      ),
+    );
+    const regeneratedRow = screen.getByRole("listitem", {
+      name: "Claude old, Active",
+    });
+    expect(
+      within(regeneratedRow).getByRole("status", {
+        name: "New token for Claude old",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -1289,7 +1582,11 @@ describe("application shell", () => {
       capabilities: { ...mcpStatus.capabilities, oauthVerification: true },
       transports: {
         ...mcpStatus.transports,
-        remote: { state: "ready", transport: "streamable_http" },
+        remote: {
+          endpoint: "https://tracker.example/mcp",
+          state: "ready",
+          transport: "streamable_http",
+        },
       },
     });
     render(
@@ -1315,6 +1612,7 @@ describe("application shell", () => {
         );
       }),
     ).toBeInTheDocument();
+    expect(screen.getByText("OAuth connector ready")).toBeInTheDocument();
     expect(screen.getByText(/authenticated HTTP sessions/)).toBeInTheDocument();
   });
 

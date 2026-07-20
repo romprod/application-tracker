@@ -12,6 +12,7 @@ import {
 } from "../../application/mcp_clients.js";
 
 interface McpClientRow {
+  accessMode: McpClient["accessMode"];
   actorDisplayName: string;
   actorId: string;
   actorUsername: string;
@@ -24,6 +25,7 @@ interface McpClientRow {
 }
 
 interface McpClientCredentialRow {
+  accessMode: McpClient["accessMode"];
   actorDisplayName: string;
   actorRole: "admin" | "member";
   actorUsername: string;
@@ -37,6 +39,7 @@ interface McpClientCredentialRow {
 
 function client(row: McpClientRow): McpClient {
   return {
+    accessMode: row.accessMode,
     actor: {
       displayName: row.actorDisplayName,
       id: row.actorId,
@@ -54,6 +57,7 @@ function client(row: McpClientRow): McpClient {
 const clientSelect = `
   SELECT
     mcp_clients.id AS clientId,
+    mcp_clients.access_mode AS accessMode,
     mcp_clients.name,
     mcp_clients.created_at AS createdAt,
     mcp_clients.rotated_at AS rotatedAt,
@@ -100,15 +104,16 @@ export class SqliteMcpClientsRepository implements McpClientsRepository {
       this.database
         .prepare(
           `INSERT INTO mcp_clients
-             (id, workspace_id, actor_user_id, name, token_hash,
+             (id, workspace_id, actor_user_id, name, access_mode, token_hash,
               created_by_user_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.clientId,
           input.workspaceId,
           input.actorUserId,
           input.name,
+          input.accessMode,
           input.tokenHash,
           input.createdByUserId,
           input.createdAt,
@@ -118,6 +123,28 @@ export class SqliteMcpClientsRepository implements McpClientsRepository {
     return create.immediate();
   }
 
+  public delete(input: { clientId: string; workspaceId: string }): void {
+    const remove = this.database.transaction(() => {
+      const record = this.database
+        .prepare(
+          `SELECT 1
+           FROM mcp_clients
+           WHERE id = ? AND workspace_id = ?`,
+        )
+        .get(input.clientId, input.workspaceId);
+      if (!record) throw new McpClientNotFoundError();
+
+      const result = this.database
+        .prepare(
+          `DELETE FROM mcp_clients
+           WHERE id = ? AND workspace_id = ?`,
+        )
+        .run(input.clientId, input.workspaceId);
+      if (result.changes !== 1) throw new McpClientNotFoundError();
+    });
+    remove.immediate();
+  }
+
   public findCredential(
     clientId: string,
   ): McpClientCredentialRecord | undefined {
@@ -125,6 +152,7 @@ export class SqliteMcpClientsRepository implements McpClientsRepository {
       .prepare(
         `SELECT
            mcp_clients.id AS clientId,
+           mcp_clients.access_mode AS accessMode,
            mcp_clients.token_hash AS tokenHash,
            users.id AS actorUserId,
            users.username AS actorUsername,
@@ -157,6 +185,7 @@ export class SqliteMcpClientsRepository implements McpClientsRepository {
       workspaceId: row.workspaceId,
     };
     return {
+      accessMode: row.accessMode,
       actor,
       clientId: row.clientId,
       tokenHash: row.tokenHash,
@@ -231,10 +260,30 @@ export class SqliteMcpClientsRepository implements McpClientsRepository {
     const result = this.database
       .prepare(
         `UPDATE mcp_clients
-         SET token_hash = ?, rotated_at = ?, last_used_at = NULL
-         WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`,
+         SET token_hash = ?,
+             rotated_at = ?,
+             last_used_at = NULL,
+             revoked_at = NULL,
+             revoked_by_user_id = NULL
+         WHERE id = ? AND workspace_id = ?`,
       )
       .run(input.tokenHash, input.rotatedAt, input.clientId, input.workspaceId);
+    if (result.changes !== 1) throw new McpClientNotFoundError();
+    return this.findClient(input.workspaceId, input.clientId);
+  }
+
+  public updateAccessMode(input: {
+    accessMode: McpClient["accessMode"];
+    clientId: string;
+    workspaceId: string;
+  }): McpClient {
+    const result = this.database
+      .prepare(
+        `UPDATE mcp_clients
+         SET access_mode = ?
+         WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`,
+      )
+      .run(input.accessMode, input.clientId, input.workspaceId);
     if (result.changes !== 1) throw new McpClientNotFoundError();
     return this.findClient(input.workspaceId, input.clientId);
   }

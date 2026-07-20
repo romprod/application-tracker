@@ -22,6 +22,7 @@ import {
 } from "./email_links_client";
 import {
   browserMcpStatusClient,
+  type IssuedMcpClientCredential,
   type McpStatus,
   type McpStatusClient,
 } from "./mcp_status_client";
@@ -1780,6 +1781,43 @@ function formatAuditTime(value: string): string {
   return `${value.slice(0, 16).replace("T", " ")} UTC`;
 }
 
+function McpPermissionControl({
+  disabled = false,
+  label,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  label: string;
+  onChange: (value: "read_only" | "read_write") => void;
+  value: "read_only" | "read_write";
+}) {
+  return (
+    <div aria-label={label} className="mcp-permission-control" role="group">
+      <button
+        aria-pressed={value === "read_only"}
+        disabled={disabled}
+        onClick={() => {
+          if (value !== "read_only") onChange("read_only");
+        }}
+        type="button"
+      >
+        Read only
+      </button>
+      <button
+        aria-pressed={value === "read_write"}
+        disabled={disabled}
+        onClick={() => {
+          if (value !== "read_write") onChange("read_write");
+        }}
+        type="button"
+      >
+        Read and write
+      </button>
+    </div>
+  );
+}
+
 function McpSettingsView({
   mcpStatusClient,
   navigate,
@@ -1789,16 +1827,23 @@ function McpSettingsView({
 }) {
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
-  const [accessError, setAccessError] = useState(false);
-  const [savingAccess, setSavingAccess] = useState(false);
   const [clientName, setClientName] = useState("");
   const [clientActorId, setClientActorId] = useState("");
+  const [clientAccessMode, setClientAccessMode] = useState<
+    "read_only" | "read_write"
+  >("read_only");
   const [clientError, setClientError] = useState(false);
   const [clientBusy, setClientBusy] = useState(false);
-  const [issuedToken, setIssuedToken] = useState<string>();
+  const [issuedCredential, setIssuedCredential] =
+    useState<IssuedMcpClientCredential>();
+  const [issuedCredentialLocation, setIssuedCredentialLocation] = useState<
+    "existing" | "new"
+  >();
+  const [issuedTokenVisible, setIssuedTokenVisible] = useState(false);
+  const [copiedCoordinate, setCopiedCoordinate] = useState<string>();
   const [confirmation, setConfirmation] = useState<{
-    action: "revoke" | "rotate";
-    clientId: string;
+    action: "delete" | "revoke" | "rotate";
+    connectionKey: string;
   }>();
   const localReady = status?.transports.local.state === "ready";
   const remoteReady = status?.transports.remote.state === "ready";
@@ -1824,50 +1869,91 @@ function McpSettingsView({
     };
   }, [mcpStatusClient]);
 
-  function setAccessMode(accessMode: "read_only" | "read_write") {
-    if (!status || status.access.mode === accessMode || savingAccess) return;
-    setAccessError(false);
-    setSavingAccess(true);
-    void mcpStatusClient
-      .setAccessMode(accessMode)
-      .then(setStatus)
-      .catch(() => setAccessError(true))
-      .finally(() => setSavingAccess(false));
-  }
+  useEffect(() => {
+    if (!copiedCoordinate) return;
+    const timeout = window.setTimeout(
+      () => setCopiedCoordinate(undefined),
+      2000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [copiedCoordinate]);
 
   function createClient(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!clientName.trim() || !clientActorId || clientBusy) return;
     setClientError(false);
-    setIssuedToken(undefined);
+    setIssuedCredential(undefined);
+    setIssuedTokenVisible(false);
     setClientBusy(true);
     void mcpStatusClient
-      .createClient({ actorUserId: clientActorId, name: clientName.trim() })
+      .createClient({
+        accessMode: clientAccessMode,
+        actorUserId: clientActorId,
+        name: clientName.trim(),
+      })
       .then(({ credential, status: updatedStatus }) => {
         setStatus(updatedStatus);
-        setIssuedToken(credential.bearerToken);
+        setIssuedCredential(credential);
+        setIssuedCredentialLocation("new");
+        setIssuedTokenVisible(false);
+        setCopiedCoordinate(undefined);
         setClientName("");
+        setClientAccessMode("read_only");
       })
       .catch(() => setClientError(true))
       .finally(() => setClientBusy(false));
   }
 
-  function manageClient(action: "revoke" | "rotate", clientId: string) {
+  function updateClientAccessMode(
+    clientId: string,
+    accessMode: "read_only" | "read_write",
+  ) {
     if (clientBusy) return;
-    if (confirmation?.action !== action || confirmation.clientId !== clientId) {
-      setConfirmation({ action, clientId });
+    setClientError(false);
+    setClientBusy(true);
+    void mcpStatusClient
+      .updateClientAccessMode(clientId, accessMode)
+      .then(setStatus)
+      .catch(() => setClientError(true))
+      .finally(() => setClientBusy(false));
+  }
+
+  function manageClient(
+    action: "delete" | "revoke" | "rotate",
+    clientId: string,
+    credentialType: "bearer" | "oauth",
+    actorUserId: string,
+  ) {
+    if (clientBusy) return;
+    const connectionKey = `${credentialType}:${clientId}:${actorUserId}`;
+    if (
+      confirmation?.action !== action ||
+      confirmation.connectionKey !== connectionKey
+    ) {
+      setConfirmation({ action, connectionKey });
       return;
     }
     setClientError(false);
-    setIssuedToken(undefined);
+    setIssuedCredential(undefined);
+    setIssuedCredentialLocation(undefined);
+    setIssuedTokenVisible(false);
     setClientBusy(true);
     const operation =
       action === "rotate"
         ? mcpStatusClient.rotateClient(clientId).then((result) => {
             setStatus(result.status);
-            setIssuedToken(result.credential.bearerToken);
+            setIssuedCredential(result.credential);
+            setIssuedCredentialLocation("existing");
+            setIssuedTokenVisible(false);
+            setCopiedCoordinate(undefined);
           })
-        : mcpStatusClient.revokeClient(clientId).then(setStatus);
+        : action === "delete"
+          ? credentialType === "oauth"
+            ? mcpStatusClient
+                .deleteOAuthClient(clientId, actorUserId)
+                .then(setStatus)
+            : mcpStatusClient.deleteClient(clientId).then(setStatus)
+          : mcpStatusClient.revokeClient(clientId).then(setStatus);
     void operation
       .catch(() => setClientError(true))
       .finally(() => {
@@ -1876,21 +1962,38 @@ function McpSettingsView({
       });
   }
 
-  function copyIssuedToken() {
-    if (!issuedToken) return;
-    void navigator.clipboard?.writeText(issuedToken);
+  function copyCoordinate(value: string, coordinate: string) {
+    const write = navigator.clipboard?.writeText(value);
+    if (write === undefined) return;
+    void write
+      .then(() => setCopiedCoordinate(coordinate))
+      .catch(() => setCopiedCoordinate(undefined));
   }
+
+  const remoteEndpoint =
+    status?.transports.remote.endpoint ?? "https://your-host.example/mcp";
+  const registeredClients = status
+    ? [
+        ...status.clients.oauthClients.map((client) => ({
+          ...client,
+          credentialType: "oauth" as const,
+        })),
+        ...status.clients.clients.map((client) => ({
+          ...client,
+          credentialType: "bearer" as const,
+        })),
+      ]
+    : [];
 
   return (
     <main id="main-content" tabIndex={-1} className="settings-main">
       <section className="settings-hero mcp-hero" aria-labelledby="mcp-title">
         <div>
-          <p className="eyebrow">Settings · Protocol boundary</p>
-          <h1 id="mcp-title">MCP, without blind spots.</h1>
+          <p className="eyebrow">Settings</p>
+          <h1 id="mcp-title">MCP connections.</h1>
           <p className="lede">
-            Inspect the Model Context Protocol boundary without revealing
-            deployment addresses, identity claims, credentials, or internal
-            topology.
+            Connect local and remote clients, issue credentials, and control
+            their workspace access.
           </p>
         </div>
         <dl className="settings-totals" aria-label="MCP summary">
@@ -1901,10 +2004,8 @@ function McpSettingsView({
             </dd>
           </div>
           <div>
-            <dt>Access</dt>
-            <dd className="status-word">
-              {status ? statusLabel(status.access.mode) : "—"}
-            </dd>
+            <dt>Connections</dt>
+            <dd>{status ? registeredClients.length : "—"}</dd>
           </div>
           <div>
             <dt>Tools</dt>
@@ -1931,128 +2032,198 @@ function McpSettingsView({
 
       {status && (
         <div className="mcp-workspace">
-          <section className="mcp-access" aria-labelledby="mcp-access-title">
-            <div>
-              <p className="eyebrow">Workspace authority</p>
-              <h2 id="mcp-access-title">Choose what MCP clients can change.</h2>
-              <p>
-                This policy applies immediately to local and remote MCP
-                sessions. It never changes website permissions or the actor and
-                workspace bound to a client.
-              </p>
-            </div>
-            <div>
-              <div
-                className="mcp-access-options"
-                role="radiogroup"
-                aria-label="MCP access mode"
-              >
-                <button
-                  aria-checked={status.access.mode === "read_only"}
-                  disabled={savingAccess}
-                  onClick={() => setAccessMode("read_only")}
-                  role="radio"
-                  type="button"
-                >
-                  <strong>Read only</strong>
-                  <span>Inspect workspace data; block every mutation.</span>
-                </button>
-                <button
-                  aria-checked={status.access.mode === "read_write"}
-                  disabled={savingAccess}
-                  onClick={() => setAccessMode("read_write")}
-                  role="radio"
-                  type="button"
-                >
-                  <strong>Read and write</strong>
-                  <span>Change applications and import documents.</span>
-                </button>
-              </div>
-              <p className="mcp-access-note" data-mode={status.access.mode}>
-                {status.access.mode === "read_write"
-                  ? "Write access is active. MCP clients can change shared workspace records until an administrator switches this back."
-                  : "Safe default active. Write tools remain discoverable but return write_access_disabled without changing data."}
-              </p>
-              {accessError && (
-                <p className="mcp-access-error" role="alert">
-                  MCP access could not be changed. The previous policy remains
-                  active.
-                </p>
-              )}
-            </div>
-          </section>
-
           <section className="mcp-clients" aria-labelledby="mcp-clients-title">
             <div className="panel-heading">
-              <div>
-                <p className="eyebrow">HTTPS client credentials</p>
-                <h2 id="mcp-clients-title">
-                  Name and bind every remote client.
-                </h2>
+              <div className="mcp-oauth-summary">
+                <p className="eyebrow">MCP connections</p>
+                <h2 id="mcp-clients-title">Connect every client.</h2>
               </div>
-              <span>
+              <span className="mcp-client-count">
                 {
-                  status.clients.clients.filter(
-                    ({ state }) => state === "active",
-                  ).length
+                  registeredClients.filter(({ state }) => state === "active")
+                    .length
                 }{" "}
-                active
+                connections active
               </span>
             </div>
-            <p className="mcp-clients-intro">
-              Create a client ID and bearer token for Streamable HTTPS. Tokens
-              inherit the selected local user and the workspace access policy
-              above. OAuth remains optional when configured by an operator.
-            </p>
 
-            <form className="mcp-client-form" onSubmit={createClient}>
-              <label>
-                Client name
-                <input
-                  autoComplete="off"
-                  maxLength={80}
-                  onChange={(event) => setClientName(event.target.value)}
-                  placeholder="Codex on laptop"
-                  required
-                  value={clientName}
-                />
-              </label>
-              <label>
-                Act as
-                <select
-                  onChange={(event) => setClientActorId(event.target.value)}
-                  required
-                  value={clientActorId}
-                >
-                  {status.clients.actors.map((actor) => (
-                    <option key={actor.id} value={actor.id}>
-                      {actor.displayName} · @{actor.username}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="primary-button"
-                disabled={clientBusy || status.clients.actors.length === 0}
-                type="submit"
-              >
-                {clientBusy ? "Working…" : "Create client"}
-              </button>
-            </form>
+            <aside
+              className="mcp-oauth-readiness"
+              data-ready={status.capabilities.oauthVerification}
+            >
+              <div className="mcp-oauth-summary">
+                <span>Remote OAuth</span>
+                <strong>
+                  {status.capabilities.oauthVerification
+                    ? "OAuth connector ready"
+                    : "OAuth setup required"}
+                </strong>
+              </div>
+              <p>
+                Remote clients register automatically, then ask the user to sign
+                in with an existing local Application Tracker username and
+                password. No Authentik account, client ID, or client secret is
+                required.
+              </p>
+              <span>
+                {status.capabilities.oauthVerification
+                  ? "Discovery active"
+                  : "Operator action"}
+              </span>
+            </aside>
 
-            {issuedToken && (
-              <div className="mcp-token-reveal" role="status">
+            <section
+              aria-labelledby="mcp-new-client-title"
+              className="mcp-client-provision"
+            >
+              <div className="mcp-client-provision-heading">
                 <div>
-                  <strong>Copy this bearer token now.</strong>
-                  <span>
-                    It is shown once. Application Tracker stores only its hash.
+                  <p className="eyebrow">Bearer credentials</p>
+                  <h3 id="mcp-new-client-title">Create a connection key.</h3>
+                </div>
+                <p>
+                  Use this only for clients that accept a bearer header.
+                  Browser-based Claude connectors use OAuth instead.
+                </p>
+              </div>
+              <form className="mcp-client-form" onSubmit={createClient}>
+                <div className="mcp-client-fields">
+                  <label>
+                    Connection name
+                    <input
+                      autoComplete="off"
+                      maxLength={80}
+                      onChange={(event) => setClientName(event.target.value)}
+                      placeholder="Codex on laptop"
+                      required
+                      value={clientName}
+                    />
+                  </label>
+                  <label>
+                    Act as local account
+                    <select
+                      onChange={(event) => setClientActorId(event.target.value)}
+                      required
+                      value={clientActorId}
+                    >
+                      {status.clients.actors.map((actor) => (
+                        <option key={actor.id} value={actor.id}>
+                          {actor.displayName} · @{actor.username}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="mcp-client-permission-field">
+                    <span>Connection permission</span>
+                    <McpPermissionControl
+                      disabled={clientBusy}
+                      label="Connection permission"
+                      onChange={setClientAccessMode}
+                      value={clientAccessMode}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="primary-button"
+                  disabled={clientBusy || status.clients.actors.length === 0}
+                  type="submit"
+                >
+                  {clientBusy ? "Creating…" : "Create client"}
+                </button>
+                <small>
+                  The selected local account sets the connection identity. Its
+                  permission applies only to this credential. The secret is
+                  shown once.
+                </small>
+              </form>
+            </section>
+
+            {issuedCredential && issuedCredentialLocation === "new" && (
+              <section
+                aria-label="New MCP credential"
+                className="mcp-credential-kit"
+                role="status"
+              >
+                <div className="mcp-credential-kit-heading">
+                  <div>
+                    <span className="mcp-token-kicker">Connection ready</span>
+                    <strong>{issuedCredential.client.name}</strong>
+                  </div>
+                  <p>
+                    Keep these three values together. The token is shown only
+                    now; Application Tracker stores its hash.
+                  </p>
+                  <span className="mcp-credential-permission">
+                    {statusLabel(issuedCredential.client.accessMode)}
                   </span>
                 </div>
-                <code>{issuedToken}</code>
-                <button onClick={copyIssuedToken} type="button">
-                  Copy token
-                </button>
-              </div>
+                <div className="mcp-credential-coordinate">
+                  <span>Connection address</span>
+                  <code>{remoteEndpoint}</code>
+                  <button
+                    aria-label="Copy connection address"
+                    disabled={!status.transports.remote.endpoint}
+                    onClick={() =>
+                      copyCoordinate(remoteEndpoint, "issued:endpoint")
+                    }
+                    type="button"
+                  >
+                    {copiedCoordinate === "issued:endpoint" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <div className="mcp-credential-coordinate">
+                  <span>Client ID</span>
+                  <code>{issuedCredential.client.clientId}</code>
+                  <button
+                    aria-label="Copy client ID"
+                    onClick={() =>
+                      copyCoordinate(
+                        issuedCredential.client.clientId,
+                        "issued:client-id",
+                      )
+                    }
+                    type="button"
+                  >
+                    {copiedCoordinate === "issued:client-id"
+                      ? "Copied"
+                      : "Copy"}
+                  </button>
+                </div>
+                <div className="mcp-credential-coordinate">
+                  <span>Bearer token</span>
+                  <code>
+                    {issuedTokenVisible
+                      ? issuedCredential.bearerToken
+                      : "••••••••••••••••••••••••••••••••••••"}
+                  </code>
+                  <div className="mcp-credential-token-actions">
+                    <button
+                      aria-label={
+                        issuedTokenVisible ? "Hide token" : "Reveal token"
+                      }
+                      className="mcp-token-visibility"
+                      onClick={() =>
+                        setIssuedTokenVisible((current) => !current)
+                      }
+                      type="button"
+                    >
+                      {issuedTokenVisible ? "Hide" : "Reveal"}
+                    </button>
+                    <button
+                      aria-label="Copy bearer token"
+                      onClick={() =>
+                        copyCoordinate(
+                          issuedCredential.bearerToken,
+                          "issued:token",
+                        )
+                      }
+                      type="button"
+                    >
+                      {copiedCoordinate === "issued:token" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              </section>
             )}
 
             {clientError && (
@@ -2062,64 +2233,310 @@ function McpSettingsView({
               </p>
             )}
 
-            <div className="mcp-client-list">
-              {status.clients.clients.length === 0 ? (
+            <div className="mcp-client-register-heading">
+              <div>
+                <p className="eyebrow">Credential register</p>
+                <h3>Issued clients</h3>
+              </div>
+              <p>
+                {registeredClients.length} total · OAuth and bearer connections
+              </p>
+            </div>
+
+            <div className="mcp-client-list" role="list">
+              {registeredClients.length === 0 ? (
                 <p className="mcp-client-empty">
-                  No HTTPS client credentials have been created yet.
+                  No HTTPS connections have been authorized or created yet.
                 </p>
               ) : (
-                status.clients.clients.map((client) => {
-                  const confirming = confirmation?.clientId === client.clientId;
+                registeredClients.map((client) => {
+                  const connectionKey = `${client.credentialType}:${client.clientId}:${client.actor.id}`;
+                  const confirming =
+                    confirmation?.connectionKey === connectionKey;
                   return (
-                    <article key={client.clientId} data-state={client.state}>
-                      <div>
+                    <article
+                      aria-label={`${client.name}, ${statusLabel(client.state)}`}
+                      data-state={client.state}
+                      key={client.clientId}
+                      role="listitem"
+                    >
+                      <div className="mcp-client-name mcp-client-cell">
+                        <span className="mcp-client-label">Connection</span>
                         <strong>{client.name}</strong>
-                        <span>
-                          {client.actor.displayName} · @{client.actor.username}
-                        </span>
+                        <small>
+                          {client.credentialType === "oauth"
+                            ? "OAuth"
+                            : "Bearer"}{" "}
+                          · {client.actor.displayName} · @
+                          {client.actor.username}
+                        </small>
                       </div>
-                      <code>{client.clientId}</code>
-                      <dl>
+                      <div className="mcp-client-identity mcp-client-cell">
+                        <span className="mcp-client-label">Client ID</span>
                         <div>
-                          <dt>Status</dt>
-                          <dd>{statusLabel(client.state)}</dd>
-                        </div>
-                        <div>
-                          <dt>Last used</dt>
-                          <dd>
-                            {client.lastUsedAt
-                              ? formatAuditTime(client.lastUsedAt)
-                              : "Never"}
-                          </dd>
-                        </div>
-                      </dl>
-                      {client.state !== "revoked" && (
-                        <div className="mcp-client-actions">
+                          <code>{client.clientId}</code>
                           <button
-                            disabled={clientBusy}
+                            aria-label={`${
+                              copiedCoordinate === `client:${client.clientId}`
+                                ? "Copied"
+                                : "Copy"
+                            } client ID for ${client.name}`}
                             onClick={() =>
-                              manageClient("rotate", client.clientId)
+                              copyCoordinate(
+                                client.clientId,
+                                `client:${client.clientId}`,
+                              )
                             }
                             type="button"
                           >
-                            {confirming && confirmation.action === "rotate"
-                              ? "Confirm rotation"
-                              : "Rotate token"}
+                            {copiedCoordinate === `client:${client.clientId}`
+                              ? "Copied"
+                              : "Copy"}
                           </button>
+                        </div>
+                      </div>
+                      <div className="mcp-client-endpoint-cell mcp-client-cell">
+                        <span className="mcp-client-label">Address</span>
+                        <button
+                          aria-label={`${
+                            copiedCoordinate === `endpoint:${client.clientId}`
+                              ? "Copied"
+                              : "Copy"
+                          } MCP endpoint for ${client.name}`}
+                          className="mcp-client-endpoint"
+                          disabled={!status.transports.remote.endpoint}
+                          onClick={() =>
+                            copyCoordinate(
+                              remoteEndpoint,
+                              `endpoint:${client.clientId}`,
+                            )
+                          }
+                          type="button"
+                        >
+                          {copiedCoordinate === `endpoint:${client.clientId}`
+                            ? "Copied"
+                            : "Endpoint"}
+                        </button>
+                      </div>
+                      <div className="mcp-client-status mcp-client-cell">
+                        <span className="mcp-client-label">Status</span>
+                        <strong data-state={client.state}>
+                          {statusLabel(client.state)}
+                        </strong>
+                      </div>
+                      <div className="mcp-client-permission mcp-client-cell">
+                        <span className="mcp-client-label">Permission</span>
+                        {client.credentialType === "bearer" ? (
+                          <McpPermissionControl
+                            disabled={clientBusy || client.state === "revoked"}
+                            label={`Permission for ${client.name}`}
+                            onChange={(accessMode) =>
+                              updateClientAccessMode(
+                                client.clientId,
+                                accessMode,
+                              )
+                            }
+                            value={client.accessMode}
+                          />
+                        ) : (
+                          <strong className="mcp-client-permission-value">
+                            {statusLabel(client.accessMode)}
+                          </strong>
+                        )}
+                      </div>
+                      <div className="mcp-client-last-used mcp-client-cell">
+                        <span className="mcp-client-label">Last used</span>
+                        <span>
+                          {client.lastUsedAt
+                            ? formatAuditTime(client.lastUsedAt)
+                            : "Never"}
+                        </span>
+                      </div>
+                      {client.credentialType === "oauth" && (
+                        <div className="mcp-client-actions">
                           <button
+                            aria-label={
+                              confirming && confirmation.action === "delete"
+                                ? `Confirm deletion of ${client.name}`
+                                : `Delete ${client.name}`
+                            }
                             className="danger-button"
                             disabled={clientBusy}
                             onClick={() =>
-                              manageClient("revoke", client.clientId)
+                              manageClient(
+                                "delete",
+                                client.clientId,
+                                client.credentialType,
+                                client.actor.id,
+                              )
                             }
                             type="button"
                           >
-                            {confirming && confirmation.action === "revoke"
-                              ? "Confirm revoke"
-                              : "Revoke"}
+                            {confirming && confirmation.action === "delete"
+                              ? "Confirm delete"
+                              : "Delete"}
                           </button>
                         </div>
                       )}
+                      {client.credentialType === "bearer" &&
+                        client.state !== "revoked" && (
+                          <div className="mcp-client-actions">
+                            <button
+                              disabled={clientBusy}
+                              onClick={() =>
+                                manageClient(
+                                  "rotate",
+                                  client.clientId,
+                                  client.credentialType,
+                                  client.actor.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              {confirming && confirmation.action === "rotate"
+                                ? "Confirm rotation"
+                                : "Rotate token"}
+                            </button>
+                            <button
+                              className="danger-button"
+                              disabled={clientBusy}
+                              onClick={() =>
+                                manageClient(
+                                  "revoke",
+                                  client.clientId,
+                                  client.credentialType,
+                                  client.actor.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              {confirming && confirmation.action === "revoke"
+                                ? "Confirm revoke"
+                                : "Revoke"}
+                            </button>
+                            <button
+                              aria-label={
+                                confirming && confirmation.action === "delete"
+                                  ? `Confirm deletion of ${client.name}`
+                                  : `Delete ${client.name}`
+                              }
+                              className="danger-button"
+                              disabled={clientBusy}
+                              onClick={() =>
+                                manageClient(
+                                  "delete",
+                                  client.clientId,
+                                  client.credentialType,
+                                  client.actor.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              {confirming && confirmation.action === "delete"
+                                ? "Confirm delete"
+                                : "Delete"}
+                            </button>
+                          </div>
+                        )}
+                      {client.credentialType === "bearer" &&
+                        client.state === "revoked" && (
+                          <div className="mcp-client-actions">
+                            <button
+                              aria-label={
+                                confirming && confirmation.action === "rotate"
+                                  ? `Confirm new token for ${client.name}`
+                                  : `Generate new token for ${client.name}`
+                              }
+                              disabled={clientBusy}
+                              onClick={() =>
+                                manageClient(
+                                  "rotate",
+                                  client.clientId,
+                                  client.credentialType,
+                                  client.actor.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              {confirming && confirmation.action === "rotate"
+                                ? "Confirm new token"
+                                : "Generate token"}
+                            </button>
+                            <button
+                              aria-label={
+                                confirming && confirmation.action === "delete"
+                                  ? `Confirm deletion of ${client.name}`
+                                  : `Delete ${client.name}`
+                              }
+                              className="danger-button"
+                              disabled={clientBusy}
+                              onClick={() =>
+                                manageClient(
+                                  "delete",
+                                  client.clientId,
+                                  client.credentialType,
+                                  client.actor.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              {confirming && confirmation.action === "delete"
+                                ? "Confirm delete"
+                                : "Delete"}
+                            </button>
+                          </div>
+                        )}
+                      {issuedCredential &&
+                        issuedCredentialLocation === "existing" &&
+                        issuedCredential.client.clientId ===
+                          client.clientId && (
+                          <div
+                            aria-label={`New token for ${client.name}`}
+                            className="mcp-client-inline-token"
+                            role="status"
+                          >
+                            <div>
+                              <span>New bearer token</span>
+                              <small>
+                                Copy it now. Only its hash will remain after you
+                                leave this screen.
+                              </small>
+                            </div>
+                            <code>
+                              {issuedTokenVisible
+                                ? issuedCredential.bearerToken
+                                : "••••••••••••••••••••••••••••••••••••"}
+                            </code>
+                            <button
+                              aria-label={
+                                issuedTokenVisible
+                                  ? "Hide regenerated token"
+                                  : "Reveal regenerated token"
+                              }
+                              onClick={() =>
+                                setIssuedTokenVisible((current) => !current)
+                              }
+                              type="button"
+                            >
+                              {issuedTokenVisible ? "Hide" : "Reveal"}
+                            </button>
+                            <button
+                              aria-label={`Copy regenerated token for ${client.name}`}
+                              onClick={() =>
+                                copyCoordinate(
+                                  issuedCredential.bearerToken,
+                                  `regenerated:${client.clientId}`,
+                                )
+                              }
+                              type="button"
+                            >
+                              {copiedCoordinate ===
+                              `regenerated:${client.clientId}`
+                                ? "Copied"
+                                : "Copy token"}
+                            </button>
+                          </div>
+                        )}
                     </article>
                   );
                 })
@@ -2127,172 +2544,197 @@ function McpSettingsView({
             </div>
           </section>
 
-          <section className="mcp-ledger" aria-labelledby="transport-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Transport register</p>
-                <h2 id="transport-title">
-                  {localReady
-                    ? "Local tools ready"
-                    : "Closed until implemented"}
-                </h2>
-              </div>
-              <span data-state={status.availability}>
-                {statusLabel(status.availability)}
-              </span>
-            </div>
-            <p className="mcp-boundary-note">
-              {localReady ? (
-                <>
-                  <strong>
-                    {status.capabilities.registeredTools} tools registered
-                  </strong>{" "}
-                  over local stdio
-                  {remoteReady
-                    ? " and authenticated Streamable HTTP."
-                    : " with an explicit actor and workspace binding."}{" "}
-                  {status.access.mode === "read_write"
-                    ? "Workspace mutations are enabled."
-                    : "Workspace mutations are blocked."}
-                </>
-              ) : (
-                "The status boundary is ready. No MCP transport or tool is active in this build."
-              )}
-            </p>
-            <dl className="transport-list">
-              <div>
-                <dt>
-                  <span>01</span>
-                  Local process
-                  <small>stdio</small>
-                </dt>
-                <dd data-state={status.transports.local.state}>
-                  {statusLabel(status.transports.local.state)}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  <span>02</span>
-                  Remote clients
-                  <small>Streamable HTTP</small>
-                </dt>
-                <dd data-state={status.transports.remote.state}>
-                  {statusLabel(status.transports.remote.state)}
-                </dd>
-              </div>
-            </dl>
-          </section>
+          <details className="mcp-disclosure">
+            <summary>
+              <span>Runtime and security</span>
+              <strong>
+                {statusLabel(status.availability)} · {status.sessions.active}{" "}
+                active sessions
+              </strong>
+            </summary>
+            <div className="mcp-diagnostics-grid">
+              <section className="mcp-ledger" aria-labelledby="transport-title">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">Transport register</p>
+                    <h2 id="transport-title">
+                      {localReady
+                        ? "Local tools ready"
+                        : "Closed until implemented"}
+                    </h2>
+                  </div>
+                  <span data-state={status.availability}>
+                    {statusLabel(status.availability)}
+                  </span>
+                </div>
+                <p className="mcp-boundary-note">
+                  {localReady ? (
+                    <>
+                      <strong>
+                        {status.capabilities.registeredTools} tools registered
+                      </strong>{" "}
+                      over local stdio
+                      {remoteReady
+                        ? " and authenticated Streamable HTTP."
+                        : " with an explicit actor and workspace binding."}{" "}
+                      Permissions are enforced independently for each MCP
+                      connection.
+                    </>
+                  ) : (
+                    "The status boundary is ready. No MCP transport or tool is active in this build."
+                  )}
+                </p>
+                <dl className="transport-list">
+                  <div>
+                    <dt>
+                      <span>01</span>
+                      Local process
+                      <small>stdio</small>
+                    </dt>
+                    <dd data-state={status.transports.local.state}>
+                      {statusLabel(status.transports.local.state)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <span>02</span>
+                      Remote clients
+                      <small>Streamable HTTP</small>
+                    </dt>
+                    <dd data-state={status.transports.remote.state}>
+                      {statusLabel(status.transports.remote.state)}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
 
-          <aside className="mcp-policy" aria-labelledby="policy-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Remote session policy</p>
-                <h2 id="policy-title">
+              <aside className="mcp-policy" aria-labelledby="policy-title">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">Remote session policy</p>
+                    <h2 id="policy-title">
+                      {registryReady
+                        ? "Registry ready"
+                        : "Configured, not enforced"}
+                    </h2>
+                  </div>
+                  <span>{status.sessions.globalLimit} session ceiling</span>
+                </div>
+                <p>
                   {registryReady
-                    ? "Registry ready"
-                    : "Configured, not enforced"}
-                </h2>
-              </div>
-              <span>{status.sessions.globalLimit} session ceiling</span>
-            </div>
-            <p>
-              {registryReady
-                ? remoteReady
-                  ? "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup for authenticated HTTP sessions."
-                  : "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. HTTPS activates after the operator configures its public network boundary."
-                : "These limits remain reserved for the remote session registry. Local stdio processes rely on operating-system access and their configured actor binding."}
-            </p>
-            <dl className="policy-list">
-              <div>
-                <dt>Global limit</dt>
-                <dd>{status.sessions.globalLimit}</dd>
-              </div>
-              <div>
-                <dt>Per actor</dt>
-                <dd>{status.sessions.perActorLimit}</dd>
-              </div>
-              <div>
-                <dt>Idle expiry</dt>
-                <dd>{formatDuration(status.sessions.idleTimeoutSeconds)}</dd>
-              </div>
-              <div>
-                <dt>Absolute expiry</dt>
-                <dd>
-                  {formatDuration(status.sessions.absoluteLifetimeSeconds)}
-                </dd>
-              </div>
-            </dl>
-            <ul className="capability-list" aria-label="MCP security controls">
-              <li data-ready={status.capabilities.clientCredentials}>
-                <span>Client credentials</span>
-                <strong>
-                  {status.capabilities.clientCredentials ? "Ready" : "Pending"}
-                </strong>
-              </li>
-              <li data-ready={status.capabilities.oauthVerification}>
-                <span>OAuth verification</span>
-                <strong>
-                  {status.capabilities.oauthVerification ? "Ready" : "Optional"}
-                </strong>
-              </li>
-              <li data-ready={status.capabilities.auditEvents}>
-                <span>Audit events</span>
-                <strong>
-                  {status.capabilities.auditEvents ? "Ready" : "Pending"}
-                </strong>
-              </li>
-              <li data-ready={status.sessions.enforcement === "active"}>
-                <span>Session enforcement</span>
-                <strong>
-                  {status.sessions.enforcement === "active"
-                    ? "Active"
-                    : "Pending"}
-                </strong>
-              </li>
-            </ul>
-          </aside>
-
-          <section className="mcp-audit" aria-labelledby="mcp-audit-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Append-only security record</p>
-                <h2 id="mcp-audit-title">Recent MCP activity</h2>
-              </div>
-              <span>{status.recentAuditEvents.length} shown</span>
-            </div>
-            {status.recentAuditEvents.length === 0 ? (
-              <p className="mcp-audit-empty">
-                No MCP tool calls have been recorded for this workspace.
-              </p>
-            ) : (
-              <ol className="mcp-audit-list">
-                {status.recentAuditEvents.map((event, index) => (
-                  <li
-                    key={`${event.occurredAt}-${event.action}-${String(index)}`}
-                  >
-                    <div>
-                      <strong>{statusLabel(event.action)}</strong>
-                      <span>
-                        {event.actor.displayName} · @{event.actor.username}
-                      </span>
-                    </div>
-                    <div>
-                      <span data-result={event.result}>
-                        {statusLabel(event.result)}
-                      </span>
-                      <small>
-                        {statusLabel(event.targetType)} ·{" "}
-                        {statusLabel(event.transport)}
-                      </small>
-                      <time dateTime={event.occurredAt}>
-                        {formatAuditTime(event.occurredAt)}
-                      </time>
-                    </div>
+                    ? remoteReady
+                      ? "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup for authenticated HTTP sessions."
+                      : "The remote registry enforces admission, idle and absolute expiry, explicit close, and shutdown cleanup. HTTPS activates after the operator configures its public network boundary."
+                    : "These limits remain reserved for the remote session registry. Local stdio processes rely on operating-system access and their configured actor binding."}
+                </p>
+                <dl className="policy-list">
+                  <div>
+                    <dt>Global limit</dt>
+                    <dd>{status.sessions.globalLimit}</dd>
+                  </div>
+                  <div>
+                    <dt>Per actor</dt>
+                    <dd>{status.sessions.perActorLimit}</dd>
+                  </div>
+                  <div>
+                    <dt>Idle expiry</dt>
+                    <dd>
+                      {formatDuration(status.sessions.idleTimeoutSeconds)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Absolute expiry</dt>
+                    <dd>
+                      {formatDuration(status.sessions.absoluteLifetimeSeconds)}
+                    </dd>
+                  </div>
+                </dl>
+                <ul
+                  className="capability-list"
+                  aria-label="MCP security controls"
+                >
+                  <li data-ready={status.capabilities.clientCredentials}>
+                    <span>Client credentials</span>
+                    <strong>
+                      {status.capabilities.clientCredentials
+                        ? "Ready"
+                        : "Pending"}
+                    </strong>
                   </li>
-                ))}
-              </ol>
-            )}
-          </section>
+                  <li data-ready={status.capabilities.oauthVerification}>
+                    <span>OAuth verification</span>
+                    <strong>
+                      {status.capabilities.oauthVerification
+                        ? "Ready"
+                        : "Optional"}
+                    </strong>
+                  </li>
+                  <li data-ready={status.capabilities.auditEvents}>
+                    <span>Audit events</span>
+                    <strong>
+                      {status.capabilities.auditEvents ? "Ready" : "Pending"}
+                    </strong>
+                  </li>
+                  <li data-ready={status.sessions.enforcement === "active"}>
+                    <span>Session enforcement</span>
+                    <strong>
+                      {status.sessions.enforcement === "active"
+                        ? "Active"
+                        : "Pending"}
+                    </strong>
+                  </li>
+                </ul>
+              </aside>
+            </div>
+          </details>
+
+          <details className="mcp-disclosure">
+            <summary>
+              <span>Recent MCP activity</span>
+              <strong>{status.recentAuditEvents.length} shown</strong>
+            </summary>
+            <section className="mcp-audit" aria-labelledby="mcp-audit-title">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Append-only security record</p>
+                  <h2 id="mcp-audit-title">Recent MCP activity</h2>
+                </div>
+                <span>{status.recentAuditEvents.length} shown</span>
+              </div>
+              {status.recentAuditEvents.length === 0 ? (
+                <p className="mcp-audit-empty">
+                  No MCP tool calls have been recorded for this workspace.
+                </p>
+              ) : (
+                <ol className="mcp-audit-list">
+                  {status.recentAuditEvents.map((event, index) => (
+                    <li
+                      key={`${event.occurredAt}-${event.action}-${String(index)}`}
+                    >
+                      <div>
+                        <strong>{statusLabel(event.action)}</strong>
+                        <span>
+                          {event.actor.displayName} · @{event.actor.username}
+                        </span>
+                      </div>
+                      <div>
+                        <span data-result={event.result}>
+                          {statusLabel(event.result)}
+                        </span>
+                        <small>
+                          {statusLabel(event.targetType)} ·{" "}
+                          {statusLabel(event.transport)}
+                        </small>
+                        <time dateTime={event.occurredAt}>
+                          {formatAuditTime(event.occurredAt)}
+                        </time>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </details>
         </div>
       )}
     </main>

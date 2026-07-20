@@ -1,5 +1,9 @@
 import compression from "compression";
-import express, { type Express, type Router } from "express";
+import express, {
+  type Express,
+  type RequestHandler,
+  type Router,
+} from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 
@@ -8,6 +12,7 @@ import type { ApplicationLedgerService } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
 import type { McpClientCredentialsService } from "../application/mcp_clients.js";
+import type { McpBuiltInOAuthService } from "../application/mcp_builtin_oauth.js";
 import type { UserAdministrationService } from "../application/users.js";
 import type { ReferenceValuesService } from "../application/reference_values.js";
 import type { DocumentsRouteOptions } from "./documents_routes.js";
@@ -39,11 +44,14 @@ export interface AppOptions {
   logger?: ApplicationLogger;
   mcpStatusService?: McpStatusService;
   mcpClientsService?: McpClientCredentialsService;
+  mcpOAuthConnectionsService?: McpBuiltInOAuthService;
+  mcpOAuthRouter?: RequestHandler;
   mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
   remoteMcpRouter?: Router;
   referenceValuesService?: ReferenceValuesService;
   setupService?: SetupService;
   staticRoot?: string;
+  trustProxyHops?: number;
   usersService?: UserAdministrationService;
 }
 
@@ -76,8 +84,17 @@ export function createApp(options: AppOptions = {}): Express {
   const app = express();
   const logger = options.logger ?? noOpLogger;
   const httpRateLimit = resolveHttpRateLimitPolicy(options.httpRateLimit);
+  const trustProxyHops = options.trustProxyHops ?? 0;
+  if (
+    !Number.isInteger(trustProxyHops) ||
+    trustProxyHops < 0 ||
+    trustProxyHops > 8
+  ) {
+    throw new Error("Invalid trusted proxy hop count");
+  }
 
   app.disable("x-powered-by");
+  if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
   app.use(helmet());
   app.use(compression());
   app.use(
@@ -100,6 +117,10 @@ export function createApp(options: AppOptions = {}): Express {
       status: "ok",
     });
   });
+
+  if (options.mcpOAuthRouter) {
+    app.use(options.mcpOAuthRouter);
+  }
 
   if (options.mcpProtectedResourceMetadata) {
     app.use(
@@ -168,6 +189,7 @@ export function createApp(options: AppOptions = {}): Express {
         options.authService,
         options.mcpStatusService,
         options.mcpClientsService,
+        options.mcpOAuthConnectionsService,
       ),
     );
   }

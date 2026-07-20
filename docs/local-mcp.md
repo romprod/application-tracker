@@ -50,11 +50,10 @@ active workspace member.
 
 ## Access mode
 
-Fresh and migrated workspaces default to **Read only**. An administrator can
-select **Read and write** in Settings → MCP. The server reads this database
-policy before every mutation, so an existing process observes changes
-immediately. Switching back to read-only blocks the next write without
-restarting the client.
+Each local process has its own permission through `MCP_LOCAL_ACCESS_MODE`.
+Omit it or use `read_only` to block mutations. Use `read_write` only in the
+specific protected client configuration that needs mutation tools. Changing
+the value requires restarting that local MCP process.
 
 ## Tools
 
@@ -100,4 +99,4 @@ rolls back and the tool returns `internal_error`.
 
 Deployments that need authenticated remote access can configure the separate
 Streamable HTTP endpoint described in [`remote-mcp.md`](remote-mcp.md). Both
-transports expose the same tool contracts and workspace access policy.
+transports expose the same tool contracts and connection-bound access policy.

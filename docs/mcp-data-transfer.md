@@ -7,7 +7,7 @@ to MCP input.
 
 ## Document import
 
-Call `get_tracker_context` first. The bound workspace must be in `read_write`
+Call `get_tracker_context` first. The bound connection must be in `read_write`
 mode. Then:
 
 1. Call `get_reference_data` and `list_applications` to resolve target IDs.

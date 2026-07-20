@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import type { AuthService } from "../application/auth.js";
 import {
+  McpOAuthConnectionForbiddenError,
+  McpOAuthConnectionNotFoundError,
+  type McpBuiltInOAuthService,
+} from "../application/mcp_builtin_oauth.js";
+import {
   McpClientActorUnavailableError,
   McpClientForbiddenError,
   McpClientLimitError,
@@ -19,6 +24,7 @@ export function createMcpStatusRouter(
   authService: AuthService,
   mcpStatusService: McpStatusService,
   mcpClientsService?: McpClientCredentialsService,
+  mcpOAuthConnectionsService?: McpBuiltInOAuthService,
 ): Router {
   const router = Router();
 
@@ -60,32 +66,6 @@ export function createMcpStatusRouter(
     }
   });
 
-  router.patch("/", (request, response, next) => {
-    const actor = authService.getActor(requestSessionToken(request));
-    if (!actor) {
-      response.status(401).json({ error: { code: "authentication_required" } });
-      return;
-    }
-    const parsed = z
-      .strictObject({ accessMode: z.enum(["read_only", "read_write"]) })
-      .safeParse(request.body);
-    if (!parsed.success) {
-      response.status(400).json({ error: { code: "validation_error" } });
-      return;
-    }
-    try {
-      response.json({
-        status: mcpStatusService.setAccessMode(actor, parsed.data.accessMode),
-      });
-    } catch (error) {
-      if (error instanceof McpStatusForbiddenError) {
-        response.status(403).json({ error: { code: "forbidden" } });
-        return;
-      }
-      next(error);
-    }
-  });
-
   router.post("/clients", (request, response, next) => {
     const actor = authService.getActor(requestSessionToken(request));
     if (!actor) {
@@ -100,6 +80,7 @@ export function createMcpStatusRouter(
     }
     const parsed = z
       .strictObject({
+        accessMode: z.enum(["read_only", "read_write"]),
         actorUserId: z.string().min(8).max(64),
         name: z.string().trim().min(1).max(80),
       })
@@ -111,6 +92,41 @@ export function createMcpStatusRouter(
     try {
       response.status(201).json({
         credential: mcpClientsService.create(actor, parsed.data),
+        status: mcpStatusService.getStatus(actor),
+      });
+    } catch (error) {
+      if (sendMcpClientError(response, error)) return;
+      next(error);
+    }
+  });
+
+  router.patch("/clients/:clientId", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    if (!mcpClientsService) {
+      response
+        .status(503)
+        .json({ error: { code: "client_credentials_unavailable" } });
+      return;
+    }
+    const clientId = clientIdSchema.safeParse(request.params.clientId);
+    const body = z
+      .strictObject({ accessMode: z.enum(["read_only", "read_write"]) })
+      .safeParse(request.body);
+    if (!clientId.success || !body.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        client: mcpClientsService.updateAccessMode(
+          actor,
+          clientId.data,
+          body.data.accessMode,
+        ),
         status: mcpStatusService.getStatus(actor),
       });
     } catch (error) {
@@ -175,10 +191,76 @@ export function createMcpStatusRouter(
     }
   });
 
+  router.delete("/clients/:clientId/permanent", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    if (!mcpClientsService) {
+      response
+        .status(503)
+        .json({ error: { code: "client_credentials_unavailable" } });
+      return;
+    }
+    const clientId = clientIdSchema.safeParse(request.params.clientId);
+    if (!clientId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      mcpClientsService.delete(actor, clientId.data);
+      response.json({ status: mcpStatusService.getStatus(actor) });
+    } catch (error) {
+      if (sendMcpClientError(response, error)) return;
+      next(error);
+    }
+  });
+
+  router.delete(
+    "/oauth-clients/:clientId/users/:actorUserId",
+    (request, response, next) => {
+      const actor = authService.getActor(requestSessionToken(request));
+      if (!actor) {
+        response
+          .status(401)
+          .json({ error: { code: "authentication_required" } });
+        return;
+      }
+      if (!mcpOAuthConnectionsService) {
+        response
+          .status(503)
+          .json({ error: { code: "oauth_connections_unavailable" } });
+        return;
+      }
+      const clientId = oauthClientIdSchema.safeParse(request.params.clientId);
+      const actorUserId = actorUserIdSchema.safeParse(
+        request.params.actorUserId,
+      );
+      if (!clientId.success || !actorUserId.success) {
+        response.status(400).json({ error: { code: "validation_error" } });
+        return;
+      }
+      try {
+        mcpOAuthConnectionsService.deleteConnection(
+          actor,
+          clientId.data,
+          actorUserId.data,
+        );
+        response.json({ status: mcpStatusService.getStatus(actor) });
+      } catch (error) {
+        if (sendMcpOAuthConnectionError(response, error)) return;
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 
 const clientIdSchema = z.string().regex(/^atmcp_[A-Za-z0-9_-]{24}$/);
+const oauthClientIdSchema = z.string().regex(/^atoc_[A-Za-z0-9_-]{24}$/);
+const actorUserIdSchema = z.string().min(8).max(64);
 
 function sendMcpClientError(response: Response, error: unknown): boolean {
   if (error instanceof McpClientForbiddenError) {
@@ -195,6 +277,21 @@ function sendMcpClientError(response: Response, error: unknown): boolean {
   }
   if (error instanceof McpClientNotFoundError) {
     response.status(404).json({ error: { code: "client_not_found" } });
+    return true;
+  }
+  return false;
+}
+
+function sendMcpOAuthConnectionError(
+  response: Response,
+  error: unknown,
+): boolean {
+  if (error instanceof McpOAuthConnectionForbiddenError) {
+    response.status(403).json({ error: { code: "forbidden" } });
+    return true;
+  }
+  if (error instanceof McpOAuthConnectionNotFoundError) {
+    response.status(404).json({ error: { code: "connection_not_found" } });
     return true;
   }
   return false;

@@ -315,7 +315,7 @@ describe("ApplicationMcpService", () => {
     );
   });
 
-  it("rechecks the workspace access mode before every mutation", () => {
+  it("rechecks the connection access mode before every mutation", () => {
     let accessMode: "read_only" | "read_write" = "read_only";
     const created = application({
       id: "application-created",

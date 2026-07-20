@@ -175,6 +175,7 @@ const runtimeEnvironmentSchema = z.object({
     .min(1)
     .max(3600)
     .default(60),
+  HTTP_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(8).default(0),
   LOGIN_MAX_CONCURRENT_VERIFICATIONS: z.coerce
     .number()
     .int()
@@ -205,19 +206,24 @@ const runtimeEnvironmentSchema = z.object({
     .min(900)
     .max(604_800)
     .default(14_400),
-  MCP_SESSION_GLOBAL_LIMIT: z.coerce.number().int().min(1).max(1000).default(6),
+  MCP_SESSION_GLOBAL_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(32),
   MCP_SESSION_IDLE_SECONDS: z.coerce
     .number()
     .int()
     .min(60)
     .max(86_400)
-    .default(900),
+    .default(300),
   MCP_SESSION_PER_ACTOR_LIMIT: z.coerce
     .number()
     .int()
     .min(1)
     .max(100)
-    .default(2),
+    .default(8),
   MCP_LOCAL_ACTOR_USERNAME: z.preprocess(
     blankToUndefined,
     z
@@ -227,6 +233,10 @@ const runtimeEnvironmentSchema = z.object({
       .max(64)
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
       .optional(),
+  ),
+  MCP_LOCAL_ACCESS_MODE: z.preprocess(
+    blankToUndefined,
+    z.enum(["read_only", "read_write"]).default("read_only"),
   ),
   MCP_LOCAL_WORKSPACE_SLUG: z.preprocess(
     blankToUndefined,
@@ -306,7 +316,7 @@ const runtimeEnvironmentSchema = z.object({
     .int()
     .min(1)
     .max(10_000)
-    .default(60),
+    .default(600),
   MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS: z.coerce
     .number()
     .int()
@@ -368,9 +378,11 @@ export interface RuntimeConfig {
   http: {
     rateLimitRequests: number;
     rateLimitWindowMs: number;
+    trustProxyHops: number;
   };
   mcp: {
     local?: {
+      accessMode: "read_only" | "read_write";
       actorUsername: string;
       workspaceSlug: string;
     };
@@ -626,12 +638,14 @@ export function parseRuntimeConfig(
     http: {
       rateLimitRequests: result.data.HTTP_RATE_LIMIT_REQUESTS,
       rateLimitWindowMs: result.data.HTTP_RATE_LIMIT_WINDOW_SECONDS * 1000,
+      trustProxyHops: result.data.HTTP_TRUST_PROXY_HOPS,
     },
     mcp: {
       ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&
       result.data.MCP_LOCAL_WORKSPACE_SLUG
         ? {
             local: {
+              accessMode: result.data.MCP_LOCAL_ACCESS_MODE,
               actorUsername: result.data.MCP_LOCAL_ACTOR_USERNAME,
               workspaceSlug: result.data.MCP_LOCAL_WORKSPACE_SLUG,
             },
