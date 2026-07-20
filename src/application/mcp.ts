@@ -1,9 +1,21 @@
+import { createHash } from "node:crypto";
+
 import {
   ApplicationNotFoundError,
   type ApplicationEvent,
   type ApplicationRecord,
 } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
+import type {
+  DocumentOriginal,
+  DocumentRecord,
+  ImportDocumentInput,
+} from "./documents.js";
+import {
+  type BeginMcpDocumentImportInput,
+  type McpDocumentImportManager,
+  type McpDocumentImportProgress,
+} from "./mcp_document_imports.js";
 import type {
   CreateApplicationInput,
   UpdateApplicationInput,
@@ -17,9 +29,16 @@ export const applicationMcpToolNames = [
   "list_applications",
   "get_application",
   "get_reference_data",
+  "get_document_import_capabilities",
+  "list_documents",
+  "export_document_chunk",
   "create_application",
   "update_application",
   "delete_application",
+  "begin_document_import",
+  "append_document_chunk",
+  "complete_document_import",
+  "cancel_document_import",
 ] as const;
 
 export interface LocalMcpActorBinding {
@@ -68,6 +87,18 @@ export interface McpReferenceValuesReader {
   listReferenceValues(actor: AuthenticatedActor): ReferenceValue[];
 }
 
+export interface McpDocumentsService {
+  getDocumentOriginal(
+    actor: AuthenticatedActor,
+    documentId: string,
+  ): DocumentOriginal;
+  importDocument(
+    actor: AuthenticatedActor,
+    input: ImportDocumentInput,
+  ): DocumentRecord;
+  listDocuments(actor: AuthenticatedActor): DocumentRecord[];
+}
+
 export interface LocalMcpTrackerContext {
   access: McpAccessMode;
   actor: AuthenticatedActor["user"];
@@ -111,6 +142,8 @@ export interface McpApplicationSummary {
 
 export interface McpApplicationList {
   applications: McpApplicationSummary[];
+  nextOffset: number | null;
+  offset: number;
   returned: number;
   total: number;
 }
@@ -126,20 +159,61 @@ export interface McpReferenceData {
 
 export interface ListMcpApplicationsInput {
   limit: number;
+  offset: number;
   statusId?: string;
 }
 
+export interface McpDocumentList {
+  documents: DocumentRecord[];
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export interface McpDocumentChunk {
+  byteSize: number;
+  chunkByteSize: number;
+  chunkSha256: string;
+  complete: boolean;
+  contentBase64: string;
+  document: DocumentRecord;
+  nextOffset: number | null;
+  offset: number;
+  sha256: string;
+}
+
 export interface McpApplicationTools {
+  appendDocumentChunk(input: {
+    chunkSha256: string;
+    contentBase64: string;
+    offset: number;
+    uploadId: string;
+  }): McpDocumentImportProgress;
+  beginDocumentImport(
+    input: BeginMcpDocumentImportInput,
+  ): McpDocumentImportProgress;
+  cancelDocumentImport(uploadId: string): { cancelled: true };
+  completeDocumentImport(uploadId: string): DocumentRecord;
   createApplication(input: CreateApplicationInput): ApplicationRecord;
   deleteApplication(applicationId: string): {
     applicationId: string;
     deleted: true;
   };
+  exportDocumentChunk(input: {
+    documentId: string;
+    offset: number;
+  }): McpDocumentChunk;
   getApplication(applicationId: string): McpApplicationDetail;
+  getDocumentImportCapabilities(): {
+    maxDocumentBytes: number;
+    maxDocumentChunkBytes: number;
+  };
   getJobSearchSummary(): McpJobSearchSummary;
   getReferenceData(): McpReferenceData;
   getTrackerContext(): LocalMcpTrackerContext;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
+  listDocuments(input: { limit: number; offset: number }): McpDocumentList;
   updateApplication(
     applicationId: string,
     input: UpdateApplicationInput,
@@ -150,6 +224,13 @@ export class LocalMcpActorUnavailableError extends Error {
   public constructor() {
     super("The configured local MCP actor is unavailable");
     this.name = "LocalMcpActorUnavailableError";
+  }
+}
+
+export class InvalidMcpDocumentExportError extends Error {
+  public constructor() {
+    super("The document export offset is invalid");
+    this.name = "InvalidMcpDocumentExportError";
   }
 }
 
@@ -194,6 +275,8 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly applications: McpApplicationsService,
     private readonly referenceValues: McpReferenceValuesReader,
     private readonly accessPolicy: McpAccessPolicy,
+    private readonly documents: McpDocumentsService,
+    private readonly documentImports: McpDocumentImportManager,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -266,9 +349,15 @@ export class ApplicationMcpService implements McpApplicationTools {
           input.statusId === undefined || statusId === input.statusId,
       );
     const limit = Math.max(1, Math.min(input.limit, 100));
-    const applications = filtered.slice(0, limit).map(applicationSummary);
+    const offset = Math.max(0, input.offset);
+    const applications = filtered
+      .slice(offset, offset + limit)
+      .map(applicationSummary);
+    const nextOffset = offset + applications.length;
     return {
       applications,
+      nextOffset: nextOffset < filtered.length ? nextOffset : null,
+      offset,
       returned: applications.length,
       total: filtered.length,
     };
@@ -289,6 +378,102 @@ export class ApplicationMcpService implements McpApplicationTools {
   public getReferenceData(): McpReferenceData {
     const actor = this.actorProvider.getActor();
     return { values: this.referenceValues.listReferenceValues(actor) };
+  }
+
+  public getDocumentImportCapabilities(): {
+    maxDocumentBytes: number;
+    maxDocumentChunkBytes: number;
+  } {
+    this.actorProvider.getActor();
+    return {
+      maxDocumentBytes: this.documentImports.maximumUploadBytes,
+      maxDocumentChunkBytes: this.documentImports.maxChunkBytes,
+    };
+  }
+
+  public listDocuments(input: {
+    limit: number;
+    offset: number;
+  }): McpDocumentList {
+    const actor = this.actorProvider.getActor();
+    const allDocuments = this.documents.listDocuments(actor);
+    const limit = Math.max(1, Math.min(input.limit, 100));
+    const offset = Math.max(0, input.offset);
+    const documents = allDocuments.slice(offset, offset + limit);
+    const nextOffset = offset + documents.length;
+    return {
+      documents,
+      nextOffset: nextOffset < allDocuments.length ? nextOffset : null,
+      offset,
+      returned: documents.length,
+      total: allDocuments.length,
+    };
+  }
+
+  public exportDocumentChunk(input: {
+    documentId: string;
+    offset: number;
+  }): McpDocumentChunk {
+    const actor = this.actorProvider.getActor();
+    const original = this.documents.getDocumentOriginal(
+      actor,
+      input.documentId,
+    );
+    const bytes = Buffer.from(original.bytes);
+    const offset = Math.max(0, input.offset);
+    if (offset >= bytes.byteLength) {
+      throw new InvalidMcpDocumentExportError();
+    }
+    const chunk = bytes.subarray(
+      offset,
+      Math.min(bytes.byteLength, offset + this.documentImports.maxChunkBytes),
+    );
+    const nextOffset = offset + chunk.byteLength;
+    return {
+      byteSize: bytes.byteLength,
+      chunkByteSize: chunk.byteLength,
+      chunkSha256: createHash("sha256").update(chunk).digest("hex"),
+      complete: nextOffset >= bytes.byteLength,
+      contentBase64: chunk.toString("base64"),
+      document: original.document,
+      nextOffset: nextOffset < bytes.byteLength ? nextOffset : null,
+      offset,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+
+  public beginDocumentImport(
+    input: BeginMcpDocumentImportInput,
+  ): McpDocumentImportProgress {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.documentImports.begin(actor, input);
+  }
+
+  public appendDocumentChunk(input: {
+    chunkSha256: string;
+    contentBase64: string;
+    offset: number;
+    uploadId: string;
+  }): McpDocumentImportProgress {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.documentImports.append(actor, input);
+  }
+
+  public completeDocumentImport(uploadId: string): DocumentRecord {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.documents.importDocument(
+      actor,
+      this.documentImports.prepareCompletion(actor, uploadId),
+    );
+  }
+
+  public cancelDocumentImport(uploadId: string): { cancelled: true } {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.documentImports.cancel(actor, uploadId);
   }
 
   public createApplication(input: CreateApplicationInput): ApplicationRecord {

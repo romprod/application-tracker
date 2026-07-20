@@ -1965,7 +1965,7 @@ function McpSettingsView({
                   type="button"
                 >
                   <strong>Read and write</strong>
-                  <span>Create, update, and soft-delete applications.</span>
+                  <span>Change applications and import documents.</span>
                 </button>
               </div>
               <p className="mcp-access-note" data-mode={status.access.mode}>

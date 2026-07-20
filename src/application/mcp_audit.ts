@@ -7,6 +7,9 @@ export type McpAuditResult = "denied" | "error" | "not_found" | "success";
 export type McpAuditTargetType =
   | "application"
   | "application_collection"
+  | "document"
+  | "document_collection"
+  | "document_transfer"
   | "job_search"
   | "reference_data"
   | "workspace";

@@ -8,6 +8,7 @@ import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
 import { ApplicationMcpService } from "../application/mcp.js";
+import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
 import { McpClientCredentialsService } from "../application/mcp_clients.js";
 import { McpAccessService } from "../application/mcp_access.js";
 import {
@@ -112,6 +113,9 @@ async function startApplication(): Promise<void> {
       new SqliteMcpAccessRepository(database),
     );
     const mcpSessionRegistry = new RemoteMcpSessionRegistry(config.mcp.session);
+    const mcpDocumentImports = new McpDocumentImportManager(
+      config.documents.maxUploadBytes,
+    );
     const mcpClientsService = new McpClientCredentialsService(
       new SqliteMcpClientsRepository(database),
       new CryptoMcpClientTokenManager(),
@@ -146,6 +150,8 @@ async function startApplication(): Promise<void> {
                 applicationsService,
                 referenceValuesService,
                 mcpAccessService,
+                documentsService,
+                mcpDocumentImports,
               ),
               {
                 audit: {

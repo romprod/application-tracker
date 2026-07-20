@@ -17,6 +17,7 @@ import { documentPreviewsMigration } from "./migrations/012_document_previews.js
 import { mcpWorkspaceSettingsMigration } from "./migrations/013_mcp_workspace_settings.js";
 import { mcpWriteAuditActionsMigration } from "./migrations/014_mcp_write_audit_actions.js";
 import { mcpClientsMigration } from "./migrations/015_mcp_clients.js";
+import { mcpDocumentTransferAuditActionsMigration } from "./migrations/016_mcp_document_transfer_audit_actions.js";
 
 export interface Migration {
   name: string;
@@ -53,6 +54,7 @@ export const applicationMigrations: readonly Migration[] = [
   mcpWorkspaceSettingsMigration,
   mcpWriteAuditActionsMigration,
   mcpClientsMigration,
+  mcpDocumentTransferAuditActionsMigration,
 ];
 
 const createMigrationTable = `

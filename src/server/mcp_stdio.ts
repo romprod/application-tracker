@@ -4,14 +4,17 @@ import { resolve } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { ApplicationLedgerService } from "../application/applications.js";
+import { DocumentLibraryService } from "../application/documents.js";
 import {
   ApplicationMcpService,
   LocalMcpActorProvider,
 } from "../application/mcp.js";
+import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
 import { McpAccessService } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
+import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
 import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_repository.js";
 import { SqliteMcpAccessRepository } from "../infrastructure/database/mcp_access_repository.js";
@@ -51,6 +54,11 @@ async function startLocalMcpServer(): Promise<void> {
       new ApplicationLedgerService(new SqliteApplicationsRepository(database)),
       new ReferenceValuesService(new SqliteReferenceValuesRepository(database)),
       new McpAccessService(new SqliteMcpAccessRepository(database)),
+      new DocumentLibraryService(
+        new SqliteDocumentsRepository(database, config.documents),
+        config.documents,
+      ),
+      new McpDocumentImportManager(config.documents.maxUploadBytes),
     );
     const auditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),

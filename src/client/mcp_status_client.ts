@@ -65,14 +65,21 @@ export interface McpCredentialResult {
 
 export interface McpAuditEvent {
   action:
+    | "append_document_chunk"
+    | "begin_document_import"
+    | "cancel_document_import"
+    | "complete_document_import"
+    | "create_application"
+    | "delete_application"
+    | "export_document_chunk"
     | "get_application"
+    | "get_document_import_capabilities"
     | "get_job_search_summary"
     | "get_reference_data"
     | "get_tracker_context"
     | "list_applications"
-    | "create_application"
-    | "update_application"
-    | "delete_application";
+    | "list_documents"
+    | "update_application";
   actor: {
     displayName: string;
     username: string;
@@ -82,6 +89,9 @@ export interface McpAuditEvent {
   targetType:
     | "application"
     | "application_collection"
+    | "document"
+    | "document_collection"
+    | "document_transfer"
     | "job_search"
     | "reference_data"
     | "workspace";
@@ -117,14 +127,21 @@ function isNonNegativeInteger(value: unknown): value is number {
 function parseAuditEvent(value: unknown): McpAuditEvent {
   if (
     !isRecord(value) ||
-    (value.action !== "get_application" &&
+    (value.action !== "append_document_chunk" &&
+      value.action !== "begin_document_import" &&
+      value.action !== "cancel_document_import" &&
+      value.action !== "complete_document_import" &&
+      value.action !== "create_application" &&
+      value.action !== "delete_application" &&
+      value.action !== "export_document_chunk" &&
+      value.action !== "get_application" &&
+      value.action !== "get_document_import_capabilities" &&
       value.action !== "get_job_search_summary" &&
       value.action !== "get_reference_data" &&
       value.action !== "get_tracker_context" &&
       value.action !== "list_applications" &&
-      value.action !== "create_application" &&
-      value.action !== "update_application" &&
-      value.action !== "delete_application") ||
+      value.action !== "list_documents" &&
+      value.action !== "update_application") ||
     !isRecord(value.actor) ||
     typeof value.actor.displayName !== "string" ||
     typeof value.actor.username !== "string" ||
@@ -136,6 +153,9 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.result !== "success") ||
     (value.targetType !== "application" &&
       value.targetType !== "application_collection" &&
+      value.targetType !== "document" &&
+      value.targetType !== "document_collection" &&
+      value.targetType !== "document_transfer" &&
       value.targetType !== "job_search" &&
       value.targetType !== "reference_data" &&
       value.targetType !== "workspace") ||

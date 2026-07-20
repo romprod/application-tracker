@@ -40,14 +40,23 @@ function repository() {
   const getDocumentOriginal = vi.fn<DocumentsRepository["getDocumentOriginal"]>(
     () => ({ bytes: Buffer.from("pdf-data"), document: documentRecord() }),
   );
+  const findEquivalentDocument = vi.fn<
+    DocumentsRepository["findEquivalentDocument"]
+  >(() => undefined);
   const listDocuments = vi.fn<DocumentsRepository["listDocuments"]>(() => [
     documentRecord(),
   ]);
   return {
     createDocument,
+    findEquivalentDocument,
     getDocumentOriginal,
     listDocuments,
-    repository: { createDocument, getDocumentOriginal, listDocuments },
+    repository: {
+      createDocument,
+      findEquivalentDocument,
+      getDocumentOriginal,
+      listDocuments,
+    },
   };
 }
 
@@ -102,6 +111,35 @@ describe("DocumentLibraryService", () => {
       service.uploadDocument(actor, { ...input, bytes: Buffer.alloc(9) }),
     ).toThrow(InvalidDocumentContentError);
     expect(store.createDocument).not.toHaveBeenCalled();
+  });
+
+  it("imports hash-verified documents idempotently", () => {
+    const store = repository();
+    const service = new DocumentLibraryService(
+      store.repository,
+      { maxUploadBytes: 1024 },
+      () => new Date("2026-07-19T10:00:00.000Z"),
+    );
+    const bytes = Buffer.from("pdf-data");
+    const input = {
+      applicationIds: [],
+      bytes,
+      documentTypeId,
+      mediaType: "application/pdf",
+      originalFilename: "Product CV.pdf",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+
+    store.findEquivalentDocument.mockReturnValue(documentRecord());
+    expect(service.importDocument(actor, input)).toEqual(documentRecord());
+    expect(store.createDocument).not.toHaveBeenCalled();
+
+    store.findEquivalentDocument.mockReturnValue(undefined);
+    expect(service.importDocument(actor, input)).toEqual(documentRecord());
+    expect(store.createDocument).toHaveBeenCalledOnce();
+    expect(() =>
+      service.importDocument(actor, { ...input, sha256: "0".repeat(64) }),
+    ).toThrow(InvalidDocumentContentError);
   });
 
   it("lists and downloads only through the actor's workspace scope", () => {

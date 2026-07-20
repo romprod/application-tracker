@@ -23,8 +23,13 @@ afterEach(async () => {
 
 function fakeTools(): McpApplicationTools {
   return {
+    appendDocumentChunk: vi.fn(),
+    beginDocumentImport: vi.fn(),
+    cancelDocumentImport: vi.fn(),
+    completeDocumentImport: vi.fn(),
     createApplication: vi.fn(),
     deleteApplication: vi.fn(),
+    exportDocumentChunk: vi.fn(),
     getApplication: vi.fn(() => {
       throw new ApplicationNotFoundError();
     }),
@@ -38,6 +43,10 @@ function fakeTools(): McpApplicationTools {
       terminalApplications: 0,
       totalApplications: 0,
     })),
+    getDocumentImportCapabilities: vi.fn(() => ({
+      maxDocumentBytes: 1024 * 1024,
+      maxDocumentChunkBytes: 12 * 1024,
+    })),
     getReferenceData: vi.fn(() => ({ values: [] })),
     getTrackerContext: vi.fn(() => ({
       access: "read_only" as const,
@@ -50,6 +59,15 @@ function fakeTools(): McpApplicationTools {
     })),
     listApplications: vi.fn(() => ({
       applications: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
+    listDocuments: vi.fn(() => ({
+      documents: [],
+      nextOffset: null,
+      offset: 0,
       returned: 0,
       total: 0,
     })),
@@ -83,7 +101,7 @@ describe("local MCP server", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual(
       applicationMcpToolNames,
     );
-    for (const tool of listed.tools.slice(0, 5)) {
+    for (const tool of listed.tools.slice(0, 8)) {
       expect(tool.annotations).toMatchObject({
         destructiveHint: false,
         idempotentHint: true,
@@ -91,9 +109,16 @@ describe("local MCP server", () => {
         readOnlyHint: true,
       });
     }
-    for (const tool of listed.tools.slice(5)) {
+    for (const tool of listed.tools.slice(8, 11)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      });
+    }
+    for (const tool of listed.tools.slice(11)) {
+      expect(tool.annotations).toMatchObject({
+        idempotentHint: true,
         openWorldHint: false,
         readOnlyHint: false,
       });
@@ -127,7 +152,7 @@ describe("local MCP server", () => {
       name: "list_applications",
     });
     expect(applications.isError).not.toBe(true);
-    expect(listApplications).toHaveBeenCalledWith({ limit: 50 });
+    expect(listApplications).toHaveBeenCalledWith({ limit: 50, offset: 0 });
 
     const referenceData = await client.callTool({
       arguments: {},

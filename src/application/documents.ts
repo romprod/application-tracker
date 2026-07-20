@@ -29,6 +29,11 @@ export interface CreateDocumentRecord extends DocumentUploadMetadata {
   workspaceId: string;
 }
 
+export interface EquivalentDocumentInput extends DocumentUploadMetadata {
+  sha256: string;
+  workspaceId: string;
+}
+
 export interface DocumentOriginal {
   bytes: Uint8Array;
   document: DocumentRecord;
@@ -36,6 +41,9 @@ export interface DocumentOriginal {
 
 export interface DocumentsRepository {
   createDocument(input: CreateDocumentRecord): DocumentRecord;
+  findEquivalentDocument(
+    input: EquivalentDocumentInput,
+  ): DocumentRecord | undefined;
   getDocumentOriginal(
     workspaceId: string,
     documentId: string,
@@ -56,6 +64,10 @@ export interface DocumentStoragePolicy {
 
 export type UploadDocumentInput = DocumentUploadMetadata & {
   bytes: Uint8Array;
+};
+
+export type ImportDocumentInput = UploadDocumentInput & {
+  sha256: string;
 };
 
 export class InvalidDocumentContentError extends Error {
@@ -117,6 +129,29 @@ export class DocumentLibraryService {
       uploadedByUserId: actor.userId,
       workspaceId: actor.workspaceId,
     });
+  }
+
+  public importDocument(
+    actor: AuthenticatedActor,
+    input: ImportDocumentInput,
+  ): DocumentRecord {
+    if (
+      input.bytes.byteLength === 0 ||
+      input.bytes.byteLength > this.policy.maxUploadBytes ||
+      createHash("sha256").update(input.bytes).digest("hex") !== input.sha256
+    ) {
+      throw new InvalidDocumentContentError();
+    }
+    const record = {
+      ...input,
+      createdAt: this.clock().toISOString(),
+      uploadedByUserId: actor.userId,
+      workspaceId: actor.workspaceId,
+    };
+    return (
+      this.repository.findEquivalentDocument(record) ??
+      this.repository.createDocument(record)
+    );
   }
 
   public listDocuments(actor: AuthenticatedActor): DocumentRecord[] {

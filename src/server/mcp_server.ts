@@ -7,10 +7,26 @@ import {
   InvalidApplicationReferenceError,
 } from "../application/applications.js";
 import {
+  InvalidMcpDocumentExportError,
   LocalMcpActorUnavailableError,
   type McpApplicationTools,
 } from "../application/mcp.js";
 import { McpWriteAccessDisabledError } from "../application/mcp_access.js";
+import {
+  DocumentContentConflictError,
+  DocumentNotFoundError,
+  DocumentStorageQuotaExceededError,
+  InvalidDocumentContentError,
+  InvalidDocumentReferenceError,
+} from "../application/documents.js";
+import {
+  InvalidMcpDocumentImportError,
+  McpDocumentImportCapacityError,
+  McpDocumentImportConflictError,
+  McpDocumentImportIncompleteError,
+  McpDocumentImportNotFoundError,
+  MCP_DOCUMENT_CHUNK_BYTES,
+} from "../application/mcp_document_imports.js";
 import type {
   McpAuditAction,
   McpAuditRecorder,
@@ -23,6 +39,7 @@ import {
   createApplicationSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
+import { documentUploadMetadataSchema } from "../domain/documents.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
@@ -37,6 +54,10 @@ const writeAnnotations = {
   idempotentHint: false,
   openWorldHint: false,
   readOnlyHint: false,
+} as const;
+const idempotentWriteAnnotations = {
+  ...writeAnnotations,
+  idempotentHint: true,
 } as const;
 const deleteAnnotations = {
   ...writeAnnotations,
@@ -85,6 +106,8 @@ const applicationSummarySchema = z.strictObject({
 });
 const applicationListSchema = z.strictObject({
   applications: z.array(applicationSummarySchema),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
   returned: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
 });
@@ -144,6 +167,78 @@ const referenceValueSchema = z.strictObject({
 });
 const referenceDataSchema = z.strictObject({
   values: z.array(referenceValueSchema),
+});
+const documentAssociationSchema = z.strictObject({
+  companyName: z.string(),
+  id: applicationIdSchema,
+  roleTitle: z.string(),
+});
+const documentRecordSchema = z.strictObject({
+  applications: z.array(documentAssociationSchema),
+  byteSize: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  documentType: z.string(),
+  documentTypeId: referenceValueIdSchema,
+  id: z.uuid(),
+  mediaType: z.string(),
+  originalFilename: z.string(),
+  uploadedByDisplayName: z.string(),
+});
+const documentImportCapabilitiesSchema = z.strictObject({
+  maxDocumentBytes: z.number().int().positive(),
+  maxDocumentChunkBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(MCP_DOCUMENT_CHUNK_BYTES),
+});
+const documentListSchema = z.strictObject({
+  documents: z.array(documentRecordSchema),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+const uploadIdSchema = z.uuid();
+const documentImportProgressSchema = z.strictObject({
+  byteSize: z.number().int().positive(),
+  complete: z.boolean(),
+  maxChunkBytes: z.number().int().positive().max(MCP_DOCUMENT_CHUNK_BYTES),
+  nextOffset: z.number().int().nonnegative(),
+  receivedBytes: z.number().int().nonnegative(),
+  idempotencyKey: z.string(),
+  uploadId: uploadIdSchema,
+});
+const beginDocumentImportSchema = documentUploadMetadataSchema.extend({
+  byteSize: z.number().int().positive(),
+  idempotencyKey: z.string().trim().min(1).max(160),
+  sha256: sha256Schema,
+});
+const appendDocumentChunkSchema = z.strictObject({
+  chunkSha256: sha256Schema,
+  contentBase64: z
+    .string()
+    .min(4)
+    .max(Math.ceil(MCP_DOCUMENT_CHUNK_BYTES / 3) * 4)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+  offset: z.number().int().nonnegative(),
+  uploadId: uploadIdSchema,
+});
+const documentImportUploadSchema = z.strictObject({ uploadId: uploadIdSchema });
+const cancelDocumentImportSchema = z.strictObject({
+  cancelled: z.literal(true),
+});
+const documentChunkSchema = z.strictObject({
+  byteSize: z.number().int().positive(),
+  chunkByteSize: z.number().int().positive(),
+  chunkSha256: sha256Schema,
+  complete: z.boolean(),
+  contentBase64: z.string(),
+  document: documentRecordSchema,
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  sha256: sha256Schema,
 });
 const deleteApplicationResultSchema = z.strictObject({
   applicationId: applicationIdSchema,
@@ -232,6 +327,16 @@ function executeTool(
         ? failedToolResult("application_not_found")
         : failedToolResult("internal_error");
     }
+    if (error instanceof DocumentNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("document_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof InvalidMcpDocumentExportError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("invalid_document_export_offset")
+        : failedToolResult("internal_error");
+    }
     logger.error("mcp_tool_failed", { error, tool });
     recordAuditEvent(audit, logger, tool, targetType, "error");
     return failedToolResult("internal_error");
@@ -240,6 +345,7 @@ function executeTool(
 
 function executeWriteTool(
   tool: McpAuditAction,
+  targetType: McpAuditTargetType,
   logger: ApplicationLogger,
   audit: McpServerAuditOptions | undefined,
   operation: () => object,
@@ -251,7 +357,7 @@ function executeWriteTool(
   try {
     const value = audit.runAtomically(() => {
       const result = operation();
-      if (!recordAuditEvent(audit, logger, tool, "application", "success")) {
+      if (!recordAuditEvent(audit, logger, tool, targetType, "success")) {
         throw new McpWriteAuditFailedError();
       }
       return result;
@@ -265,7 +371,7 @@ function executeWriteTool(
       error instanceof LocalMcpActorUnavailableError ||
       error instanceof McpWriteAccessDisabledError
     ) {
-      return recordAuditEvent(audit, logger, tool, "application", "denied")
+      return recordAuditEvent(audit, logger, tool, targetType, "denied")
         ? failedToolResult(
             error instanceof McpWriteAccessDisabledError
               ? "write_access_disabled"
@@ -274,17 +380,43 @@ function executeWriteTool(
         : failedToolResult("internal_error");
     }
     if (error instanceof ApplicationNotFoundError) {
-      return recordAuditEvent(audit, logger, tool, "application", "not_found")
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
         ? failedToolResult("application_not_found")
         : failedToolResult("internal_error");
     }
     if (error instanceof InvalidApplicationReferenceError) {
-      return recordAuditEvent(audit, logger, tool, "application", "error")
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("invalid_application_reference")
         : failedToolResult("internal_error");
     }
+    if (error instanceof McpDocumentImportNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("document_import_not_found")
+        : failedToolResult("internal_error");
+    }
+    const documentErrorCode =
+      error instanceof InvalidMcpDocumentImportError ||
+      error instanceof InvalidDocumentContentError
+        ? "invalid_document_import"
+        : error instanceof McpDocumentImportConflictError ||
+            error instanceof DocumentContentConflictError
+          ? "document_import_conflict"
+          : error instanceof McpDocumentImportIncompleteError
+            ? "document_import_incomplete"
+            : error instanceof McpDocumentImportCapacityError
+              ? "document_import_capacity"
+              : error instanceof InvalidDocumentReferenceError
+                ? "invalid_document_reference"
+                : error instanceof DocumentStorageQuotaExceededError
+                  ? "document_storage_quota_exceeded"
+                  : undefined;
+    if (documentErrorCode) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(documentErrorCode)
+        : failedToolResult("internal_error");
+    }
     logger.error("mcp_tool_failed", { error, tool });
-    recordAuditEvent(audit, logger, tool, "application", "error");
+    recordAuditEvent(audit, logger, tool, targetType, "error");
     return failedToolResult("internal_error");
   }
 }
@@ -349,6 +481,7 @@ export function createApplicationMcpServer(
         "List up to 100 application summaries, optionally filtered by status ID.",
       inputSchema: z.strictObject({
         limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().nonnegative().default(0),
         statusId: referenceValueIdSchema.optional(),
       }),
       outputSchema: applicationListSchema,
@@ -363,6 +496,7 @@ export function createApplicationMcpServer(
         () =>
           tools.listApplications({
             limit: input.limit,
+            offset: input.offset,
             ...(input.statusId ? { statusId: input.statusId } : {}),
           }),
       ),
@@ -405,6 +539,72 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "get_document_import_capabilities",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Return the bounded document size and chunk limits accepted by this workspace.",
+      inputSchema: emptyInputSchema,
+      outputSchema: documentImportCapabilitiesSchema,
+      title: "Get document import capabilities",
+    },
+    () =>
+      executeTool(
+        "get_document_import_capabilities",
+        "document_transfer",
+        logger,
+        options.audit,
+        () => tools.getDocumentImportCapabilities(),
+      ),
+  );
+
+  server.registerTool(
+    "list_documents",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "List a bounded page of document metadata and application associations in the bound workspace.",
+      inputSchema: z.strictObject({
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().nonnegative().default(0),
+      }),
+      outputSchema: documentListSchema,
+      title: "List documents",
+    },
+    (input) =>
+      executeTool(
+        "list_documents",
+        "document_collection",
+        logger,
+        options.audit,
+        () => tools.listDocuments(input),
+      ),
+  );
+
+  server.registerTool(
+    "export_document_chunk",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Read one bounded base64 chunk of a stored original with whole-file and chunk SHA-256 digests. Follow nextOffset until complete.",
+      inputSchema: z.strictObject({
+        documentId: z.uuid(),
+        offset: z.number().int().nonnegative().default(0),
+      }),
+      outputSchema: documentChunkSchema,
+      title: "Export document chunk",
+    },
+    (input) =>
+      executeTool(
+        "export_document_chunk",
+        "document",
+        logger,
+        options.audit,
+        () => tools.exportDocumentChunk(input),
+      ),
+  );
+
+  server.registerTool(
     "create_application",
     {
       annotations: writeAnnotations,
@@ -415,8 +615,12 @@ export function createApplicationMcpServer(
       title: "Create application",
     },
     (input) =>
-      executeWriteTool("create_application", logger, options.audit, () =>
-        tools.createApplication(input),
+      executeWriteTool(
+        "create_application",
+        "application",
+        logger,
+        options.audit,
+        () => tools.createApplication(input),
       ),
   );
 
@@ -434,8 +638,12 @@ export function createApplicationMcpServer(
       title: "Update application",
     },
     ({ applicationId, update }) =>
-      executeWriteTool("update_application", logger, options.audit, () =>
-        tools.updateApplication(applicationId, update),
+      executeWriteTool(
+        "update_application",
+        "application",
+        logger,
+        options.audit,
+        () => tools.updateApplication(applicationId, update),
       ),
   );
 
@@ -453,8 +661,92 @@ export function createApplicationMcpServer(
       title: "Delete application",
     },
     ({ applicationId }) =>
-      executeWriteTool("delete_application", logger, options.audit, () =>
-        tools.deleteApplication(applicationId),
+      executeWriteTool(
+        "delete_application",
+        "application",
+        logger,
+        options.audit,
+        () => tools.deleteApplication(applicationId),
+      ),
+  );
+
+  server.registerTool(
+    "begin_document_import",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Begin or resume a bounded document import after write access is enabled. Reusing the same caller-chosen idempotency key and metadata returns the existing transfer.",
+      inputSchema: beginDocumentImportSchema,
+      outputSchema: documentImportProgressSchema,
+      title: "Begin document import",
+    },
+    (input) =>
+      executeWriteTool(
+        "begin_document_import",
+        "document_transfer",
+        logger,
+        options.audit,
+        () => tools.beginDocumentImport(input),
+      ),
+  );
+
+  server.registerTool(
+    "append_document_chunk",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Append one canonical base64 chunk at the expected offset. An exact retry of an accepted chunk is safe.",
+      inputSchema: appendDocumentChunkSchema,
+      outputSchema: documentImportProgressSchema,
+      title: "Append document chunk",
+    },
+    (input) =>
+      executeWriteTool(
+        "append_document_chunk",
+        "document_transfer",
+        logger,
+        options.audit,
+        () => tools.appendDocumentChunk(input),
+      ),
+  );
+
+  server.registerTool(
+    "complete_document_import",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Verify the complete document digest, enforce normal document quotas and references, and idempotently store and associate the original file.",
+      inputSchema: documentImportUploadSchema,
+      outputSchema: documentRecordSchema,
+      title: "Complete document import",
+    },
+    ({ uploadId }) =>
+      executeWriteTool(
+        "complete_document_import",
+        "document",
+        logger,
+        options.audit,
+        () => tools.completeDocumentImport(uploadId),
+      ),
+  );
+
+  server.registerTool(
+    "cancel_document_import",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Discard transient chunks after cancellation or successful completion without deleting any stored document.",
+      inputSchema: documentImportUploadSchema,
+      outputSchema: cancelDocumentImportSchema,
+      title: "Cancel document import",
+    },
+    ({ uploadId }) =>
+      executeWriteTool(
+        "cancel_document_import",
+        "document_transfer",
+        logger,
+        options.audit,
+        () => tools.cancelDocumentImport(uploadId),
       ),
   );
 

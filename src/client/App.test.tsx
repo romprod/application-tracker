@@ -209,7 +209,7 @@ const mcpStatus: McpStatus = {
     auditEvents: true,
     clientCredentials: true,
     oauthVerification: false,
-    registeredTools: 8,
+    registeredTools: 15,
   },
   clients: {
     actors: [
@@ -1198,7 +1198,7 @@ describe("application shell", () => {
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
-    expect(screen.getByText("8 tools registered")).toBeInTheDocument();
+    expect(screen.getByText("15 tools registered")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Read only/ })).toHaveAttribute(
       "aria-checked",
       "true",

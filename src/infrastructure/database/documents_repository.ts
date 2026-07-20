@@ -8,6 +8,7 @@ import {
   InvalidDocumentReferenceError,
   type CreateDocumentRecord,
   type DocumentApplicationAssociation,
+  type EquivalentDocumentInput,
   type DocumentOriginal,
   type DocumentRecord,
   type DocumentStoragePolicy,
@@ -281,6 +282,44 @@ export class SqliteDocumentsRepository implements DocumentsRepository {
       return created;
     });
     return create.immediate();
+  }
+
+  public findEquivalentDocument(
+    input: EquivalentDocumentInput,
+  ): DocumentRecord | undefined {
+    const applicationIds = [...input.applicationIds].sort();
+    const candidates = this.database
+      .prepare(
+        `SELECT documents.id
+           FROM documents
+          WHERE documents.workspace_id = ?
+            AND documents.file_sha256 = ?
+            AND documents.document_type_reference_id = ?
+            AND documents.original_filename = ?
+            AND documents.media_type = ?
+          ORDER BY documents.created_at, documents.id`,
+      )
+      .pluck()
+      .all(
+        input.workspaceId,
+        input.sha256,
+        input.documentTypeId,
+        input.originalFilename,
+        input.mediaType,
+      ) as string[];
+    for (const documentId of candidates) {
+      const stored = this.findStoredDocument(input.workspaceId, documentId);
+      if (!stored) continue;
+      const [document] = this.hydrate(input.workspaceId, [stored]);
+      if (
+        document &&
+        JSON.stringify(document.applications.map(({ id }) => id).sort()) ===
+          JSON.stringify(applicationIds)
+      ) {
+        return document;
+      }
+    }
+    return undefined;
   }
 
   public listDocuments(workspaceId: string): DocumentRecord[] {

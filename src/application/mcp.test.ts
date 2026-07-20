@@ -8,6 +8,7 @@ import {
   LocalMcpActorUnavailableError,
 } from "./mcp.js";
 import { McpWriteAccessDisabledError } from "./mcp_access.js";
+import { McpDocumentImportManager } from "./mcp_document_imports.js";
 import type { ReferenceValue } from "./reference_values.js";
 
 const actor: AuthenticatedActor = {
@@ -68,6 +69,17 @@ const references: ReferenceValue[] = [
   },
 ];
 
+function documentDependencies() {
+  return {
+    documents: {
+      getDocumentOriginal: vi.fn(),
+      importDocument: vi.fn(),
+      listDocuments: vi.fn().mockReturnValue([]),
+    },
+    imports: new McpDocumentImportManager(1024 * 1024),
+  };
+}
+
 describe("ApplicationMcpService", () => {
   it("binds every call to the configured active actor and workspace", () => {
     const repository = {
@@ -112,6 +124,7 @@ describe("ApplicationMcpService", () => {
     const referenceReader = {
       listReferenceValues: vi.fn().mockReturnValue(references),
     };
+    const { documents, imports } = documentDependencies();
     const service = new ApplicationMcpService(
       new LocalMcpActorProvider(repository, {
         username: "alex",
@@ -125,6 +138,8 @@ describe("ApplicationMcpService", () => {
           throw new McpWriteAccessDisabledError();
         }),
       },
+      documents,
+      imports,
       () => new Date("2026-01-10T12:00:00.000Z"),
     );
 
@@ -161,8 +176,12 @@ describe("ApplicationMcpService", () => {
       totalApplications: 3,
     });
     expect(
-      service.listApplications({ limit: 1, statusId: "status-open" }),
-    ).toMatchObject({ returned: 1, total: 2 });
+      service.listApplications({
+        limit: 1,
+        offset: 0,
+        statusId: "status-open",
+      }),
+    ).toMatchObject({ nextOffset: 1, offset: 0, returned: 1, total: 2 });
     expect(service.getApplication("application-1")).toEqual({
       application: applications[0],
       events: [
@@ -177,6 +196,17 @@ describe("ApplicationMcpService", () => {
       ],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
+    expect(service.getDocumentImportCapabilities()).toEqual({
+      maxDocumentBytes: 1024 * 1024,
+      maxDocumentChunkBytes: 12 * 1024,
+    });
+    expect(service.listDocuments({ limit: 50, offset: 0 })).toEqual({
+      documents: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    });
     expect(repository.findActiveActor).toHaveBeenCalledWith({
       username: "alex",
       workspaceSlug: "default",
@@ -192,6 +222,7 @@ describe("ApplicationMcpService", () => {
         .mockReturnValueOnce(actor)
         .mockReturnValue(undefined),
     };
+    const { documents, imports } = documentDependencies();
     const service = new ApplicationMcpService(
       new LocalMcpActorProvider(repository, {
         username: "alex",
@@ -209,6 +240,8 @@ describe("ApplicationMcpService", () => {
         getAccessMode: vi.fn(() => "read_only"),
         requireWriteAccess: vi.fn(),
       },
+      documents,
+      imports,
     );
 
     expect(service.getTrackerContext().actor.username).toBe("alex");
@@ -231,6 +264,7 @@ describe("ApplicationMcpService", () => {
       listApplications: vi.fn().mockReturnValue([]),
       updateApplication: vi.fn(() => updated),
     };
+    const { documents, imports } = documentDependencies();
     const service = new ApplicationMcpService(
       new LocalMcpActorProvider(
         { findActiveActor: vi.fn(() => actor) },
@@ -246,6 +280,8 @@ describe("ApplicationMcpService", () => {
           }
         },
       },
+      documents,
+      imports,
     );
     const createInput = {
       companyName: "Example Company",

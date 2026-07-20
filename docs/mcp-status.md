@@ -5,7 +5,7 @@ Settings → MCP. The page reports what the current build can do without exposin
 deployment or identity-provider details.
 
 The build includes local stdio and optional remote Streamable HTTP transports
-for five read tools and three application mutation tools. The page reports
+for eight read tools and seven mutation tools. The page reports
 whether runtime configuration has enabled each transport and whether the
 workspace policy currently permits mutations.
 
@@ -116,7 +116,7 @@ an existing local user from **Settings → Users**. The server fixes the issuer 
 
 ## Workspace write policy
 
-The three mutation tools are always discoverable so connected clients retain a
+The seven mutation tools are always discoverable so connected clients retain a
 stable tool registry. In `read_only` mode they fail with
 `write_access_disabled` before changing application data. In `read_write` mode
 active workspace members may create and update applications. Soft deletion also

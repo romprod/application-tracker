@@ -2,7 +2,10 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "../application/auth.js";
-import type { McpApplicationTools } from "../application/mcp.js";
+import {
+  applicationMcpToolNames,
+  type McpApplicationTools,
+} from "../application/mcp.js";
 import type { NewMcpAuditEvent } from "../application/mcp_audit.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { createApp } from "./app.js";
@@ -85,10 +88,25 @@ function initializedEndpoint(
     },
     createServer: (actorProvider, authenticatedActor) => {
       const tools: McpApplicationTools = {
+        appendDocumentChunk: () => {
+          throw new Error("not used");
+        },
+        beginDocumentImport: () => {
+          throw new Error("not used");
+        },
+        cancelDocumentImport: () => {
+          throw new Error("not used");
+        },
+        completeDocumentImport: () => {
+          throw new Error("not used");
+        },
         createApplication: () => {
           throw new Error("not used");
         },
         deleteApplication: () => {
+          throw new Error("not used");
+        },
+        exportDocumentChunk: () => {
           throw new Error("not used");
         },
         getApplication: () => {
@@ -104,6 +122,10 @@ function initializedEndpoint(
           terminalApplications: 0,
           totalApplications: 0,
         }),
+        getDocumentImportCapabilities: () => ({
+          maxDocumentBytes: 1024 * 1024,
+          maxDocumentChunkBytes: 12 * 1024,
+        }),
         getReferenceData: () => ({ values: [] }),
         getTrackerContext: () => ({
           access: "read_only",
@@ -113,7 +135,20 @@ function initializedEndpoint(
             slug: actorProvider.getWorkspaceSlug(),
           },
         }),
-        listApplications: () => ({ applications: [], returned: 0, total: 0 }),
+        listApplications: () => ({
+          applications: [],
+          nextOffset: null,
+          offset: 0,
+          returned: 0,
+          total: 0,
+        }),
+        listDocuments: () => ({
+          documents: [],
+          nextOffset: null,
+          offset: 0,
+          returned: 0,
+          total: 0,
+        }),
         updateApplication: () => {
           throw new Error("not used");
         },
@@ -216,16 +251,7 @@ describe("remote MCP HTTP endpoint", () => {
       .send({ id: 2, jsonrpc: "2.0", method: "tools/list", params: {} })
       .expect(200);
     expect(responseBody(listed).result?.tools?.map(({ name }) => name)).toEqual(
-      [
-        "get_tracker_context",
-        "get_job_search_summary",
-        "list_applications",
-        "get_application",
-        "get_reference_data",
-        "create_application",
-        "update_application",
-        "delete_application",
-      ],
+      applicationMcpToolNames,
     );
 
     const called = await request(app)

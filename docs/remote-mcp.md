@@ -117,8 +117,8 @@ same not-found response as an unknown session, even if it belongs to the same
 user. Session admission, idle expiry, absolute expiry, and shutdown cleanup use
 the limits shown in the administrator MCP status view.
 
-The remote endpoint exposes the same five read tools and three application
-mutation tools as local stdio. Fresh workspaces block mutations; an
+The remote endpoint exposes the same eight read tools and seven mutation tools
+as local stdio. Fresh workspaces block mutations; an
 administrator must enable **Read and write** in Settings → MCP. The policy is
 checked on every call, including existing sessions. Every tool call records the
 actor, workspace, result, target type, and `remote_http` transport. Successful

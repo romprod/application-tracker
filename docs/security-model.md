@@ -54,8 +54,8 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Five read tools and three application mutation tools are bounded and
-  closed-world; fresh workspaces block all mutations
+- Eight read tools and seven mutation tools are bounded and closed-world; fresh
+  workspaces block all mutations
 - Only a website administrator can enable the workspace-wide read-write policy
 - Every mutation rechecks the persisted policy, including existing sessions
 - Deletion requires explicit tool confirmation and uses the ledger's audited

@@ -70,6 +70,31 @@ describe("browserMcpStatusClient", () => {
     });
   });
 
+  it("accepts document-transfer audit actions and targets", async () => {
+    const transferred = {
+      ...status,
+      recentAuditEvents: [
+        {
+          ...status.recentAuditEvents[0],
+          action: "complete_document_import",
+          targetType: "document",
+        },
+      ],
+    } as const;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: transferred }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      transferred,
+    );
+  });
+
   it("rejects a malformed status instead of guessing", async () => {
     vi.stubGlobal(
       "fetch",

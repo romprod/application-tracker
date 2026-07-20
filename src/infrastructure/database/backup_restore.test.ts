@@ -58,10 +58,10 @@ describe("SQLite backup and restore", () => {
       const report = await createVerifiedBackup(database, backupPath);
 
       expect(report).toMatchObject({
-        applicationSchemaVersion: 15,
+        applicationSchemaVersion: 16,
         path: backupPath,
         requiresMigration: false,
-        schemaVersion: 15,
+        schemaVersion: 16,
       });
       expect(report.bytes).toBeGreaterThan(0);
       expect(report.pages).toBeGreaterThan(0);
@@ -107,10 +107,10 @@ describe("SQLite backup and restore", () => {
     const report = await restoreVerifiedBackup(backupPath, restorePath);
 
     expect(report).toMatchObject({
-      applicationSchemaVersion: 15,
+      applicationSchemaVersion: 16,
       path: restorePath,
       requiresMigration: false,
-      schemaVersion: 15,
+      schemaVersion: 16,
     });
     expect(lstatSync(restorePath).mode & 0o777).toBe(0o600);
     const restored = new Database(restorePath, {
@@ -213,7 +213,7 @@ describe("SQLite backup and restore", () => {
     database.close();
 
     await expect(verifyDatabaseArtifact(databasePath)).resolves.toMatchObject({
-      applicationSchemaVersion: 15,
+      applicationSchemaVersion: 16,
       requiresMigration: true,
       schemaVersion: 8,
     });

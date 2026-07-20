@@ -19,9 +19,9 @@ default password.
   bounded plain-text previews, and safe attachment downloads
 - Bounded email-link extraction without server-side network requests or stored
   email bodies
-- Local stdio MCP and authenticated Streamable HTTP MCP with five read tools,
-  three mutation tools, explicit actor binding, website-controlled write access,
-  and immutable audit events
+- Local stdio MCP and authenticated Streamable HTTP MCP with bounded application
+  and document transfer, explicit actor binding, website-controlled write
+  access, and immutable audit events
 - Administrator-managed MCP client IDs and one-time bearer tokens, with optional
   strict OAuth token verification
 - Online SQLite backup, verification, non-overwriting restore, and forward
@@ -106,6 +106,7 @@ every mutation, including calls made through existing sessions.
 - [Reference lists](docs/reference-lists.md)
 - [User management](docs/user-management.md)
 - [MCP status](docs/mcp-status.md)
+- [MCP data transfer](docs/mcp-data-transfer.md)
 - [Capability checklist](docs/parity-checklist.md)
 
 ## Contributing and security
