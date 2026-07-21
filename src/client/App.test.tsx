@@ -1297,6 +1297,12 @@ describe("application shell", () => {
       within(connection).getByText("OAuth · Alex Example · @alex"),
     ).toBeInTheDocument();
     expect(within(connection).getByText("Read Write")).toBeInTheDocument();
+    expect(
+      within(connection).getByText("2026-01-01 10:00 UTC"),
+    ).toBeInTheDocument();
+    expect(
+      within(connection).getByText("2026-01-01 10:01 UTC"),
+    ).toBeInTheDocument();
     const deleteButton = within(connection).getByRole("button", {
       name: "Delete Claude",
     });

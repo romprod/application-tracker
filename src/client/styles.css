@@ -2927,7 +2927,7 @@ code {
   opacity: 0.45;
 }
 
-.mcp-client-last-used > span:last-child {
+.mcp-client-timestamp {
   display: flex;
   align-items: center;
   min-height: 30px;

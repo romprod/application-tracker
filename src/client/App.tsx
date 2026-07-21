@@ -2345,12 +2345,24 @@ function McpSettingsView({
                         )}
                       </div>
                       <div className="mcp-client-last-used mcp-client-cell">
+                        <span className="mcp-client-label">Created</span>
+                        <time
+                          className="mcp-client-timestamp"
+                          dateTime={client.createdAt}
+                        >
+                          {formatAuditTime(client.createdAt)}
+                        </time>
                         <span className="mcp-client-label">Last used</span>
-                        <span>
-                          {client.lastUsedAt
-                            ? formatAuditTime(client.lastUsedAt)
-                            : "Never"}
-                        </span>
+                        {client.lastUsedAt ? (
+                          <time
+                            className="mcp-client-timestamp"
+                            dateTime={client.lastUsedAt}
+                          >
+                            {formatAuditTime(client.lastUsedAt)}
+                          </time>
+                        ) : (
+                          <span className="mcp-client-timestamp">Never</span>
+                        )}
                       </div>
                       {client.credentialType === "oauth" && (
                         <div className="mcp-client-actions">

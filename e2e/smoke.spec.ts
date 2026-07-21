@@ -86,6 +86,10 @@ function localTransportUrl(logicalUrl: string, baseURL: string): string {
   return new URL(`${logical.pathname}${logical.search}`, baseURL).href;
 }
 
+function browserAuditTime(value: string): string {
+  return `${value.slice(0, 16).replace("T", " ")} UTC`;
+}
+
 function mcpHeaders(
   accessToken: string,
   sessionId?: string,
@@ -517,10 +521,52 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   const connection = page.getByRole("listitem", {
     name: `${e2eMcp.clientName}, Active`,
   });
+  const initialSettingsStatus = await responseObject(
+    await page.request.get("/api/settings/mcp"),
+    200,
+    "initial MCP settings status",
+  );
+  const initialStatus = record(
+    initialSettingsStatus.status,
+    "initial MCP settings status.status",
+  );
+  const initialClients = record(
+    initialStatus.clients,
+    "initial MCP settings status clients",
+  );
+  if (!Array.isArray(initialClients.oauthClients)) {
+    throw new Error("Initial MCP settings status must include OAuth clients");
+  }
+  const initialOAuthConnection = initialClients.oauthClients
+    .map((value) => record(value, "initial OAuth connection"))
+    .find((value) => value.clientId === clientId);
+  if (!initialOAuthConnection) {
+    throw new Error("The initial OAuth connection was not listed");
+  }
+  const actorUserId = requiredString(
+    record(initialOAuthConnection.actor, "initial OAuth connection actor"),
+    "id",
+    "initial OAuth connection actor",
+  );
+  const createdAt = requiredString(
+    initialOAuthConnection,
+    "createdAt",
+    "initial OAuth connection",
+  );
+  const lastUsedAt = requiredString(
+    initialOAuthConnection,
+    "lastUsedAt",
+    "initial OAuth connection",
+  );
   await expect(connection).toContainText(
     `OAuth · ${e2eAdministrator.displayName} · @${e2eAdministrator.username}`,
   );
   await expect(connection).toContainText("Read Only");
+  await expect(connection).toContainText("Active");
+  await expect(connection).toContainText("Created");
+  await expect(connection).toContainText(browserAuditTime(createdAt));
+  await expect(connection).toContainText("Last used");
+  await expect(connection).toContainText(browserAuditTime(lastUsedAt));
 
   const revokedSessionId = await initializeMcp(
     request,
@@ -600,36 +646,86 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     20,
   );
 
-  const settingsStatus = await responseObject(
-    await page.request.get("/api/settings/mcp"),
-    200,
-    "MCP settings status",
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page
+    .getByRole("navigation", { name: "Settings navigation" })
+    .getByRole("button", { name: "MCP" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "MCP connections." }),
+  ).toBeVisible();
+  const managedConnection = page.getByRole("listitem", {
+    name: `${e2eMcp.clientName}, Active`,
+  });
+  await expect(managedConnection).toBeVisible();
+
+  const deletionPath = `/api/settings/mcp/oauth-clients/${clientId}/users/${actorUserId}`;
+  await page.route(
+    (url) => url.pathname === deletionPath,
+    async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({ error: { code: "temporary_failure" } }),
+        contentType: "application/json",
+        status: 503,
+      });
+    },
+    { times: 1 },
   );
-  const status = record(settingsStatus.status, "MCP settings status.status");
-  const clients = record(status.clients, "MCP settings status clients");
-  if (!Array.isArray(clients.oauthClients)) {
-    throw new Error("MCP settings status must include OAuth clients");
-  }
-  const oauthConnection = clients.oauthClients
-    .map((value) => record(value, "OAuth connection"))
-    .find((value) => value.clientId === clientId);
-  if (!oauthConnection) throw new Error("The OAuth connection was not listed");
-  const actorUserId = requiredString(
-    record(oauthConnection.actor, "OAuth connection actor"),
-    "id",
-    "OAuth connection actor",
+  await managedConnection
+    .getByRole("button", { name: `Delete ${e2eMcp.clientName}` })
+    .click();
+  await expect(
+    managedConnection.getByRole("button", {
+      name: `Confirm deletion of ${e2eMcp.clientName}`,
+    }),
+  ).toBeVisible();
+  const failedDeletionResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === deletionPath &&
+      response.request().method() === "DELETE",
   );
-  await responseObject(
-    await page.request.delete(
-      `/api/settings/mcp/oauth-clients/${clientId}/users/${actorUserId}`,
-      { headers: { Origin: new URL(baseURL).origin } },
-    ),
-    200,
-    "deleted OAuth connection response",
+  await managedConnection
+    .getByRole("button", {
+      name: `Confirm deletion of ${e2eMcp.clientName}`,
+    })
+    .click();
+  expect((await failedDeletionResponse).status()).toBe(503);
+  await expect(page.getByRole("alert")).toHaveText(
+    "The MCP client change could not be saved. Existing credentials are unchanged.",
   );
+  await expect(managedConnection).toBeVisible();
+  expect(
+    (
+      await request.post("/mcp", {
+        data: { id: 21, jsonrpc: "2.0", method: "tools/list", params: {} },
+        headers: mcpHeaders(deletionAccessToken, deletionSessionId),
+      })
+    ).status(),
+  ).toBe(200);
+
+  await managedConnection
+    .getByRole("button", { name: `Delete ${e2eMcp.clientName}` })
+    .click();
+  const deletionResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === deletionPath &&
+      response.request().method() === "DELETE",
+  );
+  await managedConnection
+    .getByRole("button", {
+      name: `Confirm deletion of ${e2eMcp.clientName}`,
+    })
+    .click();
+  expect((await deletionResponse).status()).toBe(200);
+  await expect(managedConnection).toHaveCount(0);
+  await expect(
+    page.getByText("No HTTPS connections have been authorized or created yet."),
+  ).toBeVisible();
+
   const rejectedDeletedSession = await responseObject(
     await request.post("/mcp", {
-      data: { id: 21, jsonrpc: "2.0", method: "tools/list", params: {} },
+      data: { id: 22, jsonrpc: "2.0", method: "tools/list", params: {} },
       headers: mcpHeaders(deletionAccessToken, deletionSessionId),
     }),
     401,
