@@ -1,9 +1,46 @@
 import { createHash } from "node:crypto";
+import { createServer, type Server } from "node:http";
 
-import { expect, test, type APIResponse } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+} from "@playwright/test";
 
 import { applicationMcpToolNames } from "../src/application/mcp";
 import { e2eAdministrator, e2eMcp, e2eSetupToken } from "./fixtures";
+
+let oauthCallbackServer: Server | undefined;
+
+test.beforeAll(async () => {
+  const callback = new URL(e2eMcp.redirectUri);
+  oauthCallbackServer = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><title>OAuth callback captured</title>");
+  });
+  await new Promise<void>((resolve, reject) => {
+    oauthCallbackServer?.once("error", reject);
+    oauthCallbackServer?.listen(
+      Number(callback.port),
+      callback.hostname,
+      () => {
+        oauthCallbackServer?.off("error", reject);
+        resolve();
+      },
+    );
+  });
+});
+
+test.afterAll(async () => {
+  if (!oauthCallbackServer) return;
+  await new Promise<void>((resolve, reject) => {
+    oauthCallbackServer?.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+});
 
 function record(value: unknown, description: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -62,6 +99,83 @@ function mcpHeaders(
     Origin: e2eMcp.allowedOrigin,
     ...(sessionId ? { "MCP-Session-Id": sessionId } : {}),
   };
+}
+
+function oauthAuthorizationUrl(
+  authorizationEndpoint: string,
+  baseURL: string,
+  clientId: string,
+  state: string,
+): URL {
+  const authorizationUrl = new URL(
+    localTransportUrl(authorizationEndpoint, baseURL),
+  );
+  authorizationUrl.searchParams.set("client_id", clientId);
+  authorizationUrl.searchParams.set(
+    "code_challenge",
+    createHash("sha256").update(e2eMcp.verifier).digest("base64url"),
+  );
+  authorizationUrl.searchParams.set("code_challenge_method", "S256");
+  authorizationUrl.searchParams.set("redirect_uri", e2eMcp.redirectUri);
+  authorizationUrl.searchParams.set("resource", e2eMcp.resourceUrl);
+  authorizationUrl.searchParams.set("response_type", "code");
+  authorizationUrl.searchParams.set("scope", e2eMcp.scope);
+  authorizationUrl.searchParams.set("state", state);
+  return authorizationUrl;
+}
+
+async function exchangeAuthorizationCode(
+  request: APIRequestContext,
+  tokenEndpoint: string,
+  baseURL: string,
+  clientId: string,
+  authorizationCode: string,
+): Promise<Record<string, unknown>> {
+  return responseObject(
+    await request.post(localTransportUrl(tokenEndpoint, baseURL), {
+      form: {
+        client_id: clientId,
+        code: authorizationCode,
+        code_verifier: e2eMcp.verifier,
+        grant_type: "authorization_code",
+        redirect_uri: e2eMcp.redirectUri,
+        resource: e2eMcp.resourceUrl,
+      },
+    }),
+    200,
+    "token response",
+  );
+}
+
+async function initializeMcp(
+  request: APIRequestContext,
+  accessToken: string,
+  requestId: number,
+): Promise<string> {
+  const response = await request.post("/mcp", {
+    data: {
+      id: requestId,
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        capabilities: {},
+        clientInfo: { name: "playwright-e2e", version: "1.0.0" },
+        protocolVersion: "2025-11-25",
+      },
+    },
+    headers: mcpHeaders(accessToken),
+  });
+  expect(
+    await responseObject(response, 200, "MCP initialization"),
+  ).toMatchObject({
+    id: requestId,
+    jsonrpc: "2.0",
+    result: { protocolVersion: "2025-11-25" },
+  });
+  const sessionId = response.headers()["mcp-session-id"];
+  expect(sessionId).toBeTruthy();
+  if (!sessionId) throw new Error("MCP initialization omitted its session ID");
+  return sessionId;
 }
 
 test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
@@ -197,41 +311,34 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   ).toBeVisible();
 
   await page.context().clearCookies();
-  const callbackRequest = page.waitForRequest((candidate) =>
-    candidate.url().startsWith(e2eMcp.redirectUri),
-  );
-  await page.route(`${e2eMcp.redirectUri}**`, async (route) => {
-    await route.fulfill({
-      body: "<!doctype html><title>OAuth callback captured</title>",
-      contentType: "text/html",
-      status: 200,
-    });
-  });
 
   const authorizationEndpoint = requiredString(
     authorizationMetadata,
     "authorization_endpoint",
     "authorization server metadata",
   );
-  const authorizationUrl = new URL(
-    localTransportUrl(authorizationEndpoint, baseURL),
+  const deniedAuthorizationUrl = oauthAuthorizationUrl(
+    authorizationEndpoint,
+    baseURL,
+    clientId,
+    e2eMcp.state,
   );
-  authorizationUrl.searchParams.set("client_id", clientId);
-  authorizationUrl.searchParams.set(
-    "code_challenge",
-    createHash("sha256").update(e2eMcp.verifier).digest("base64url"),
-  );
-  authorizationUrl.searchParams.set("code_challenge_method", "S256");
-  authorizationUrl.searchParams.set("redirect_uri", e2eMcp.redirectUri);
-  authorizationUrl.searchParams.set("resource", e2eMcp.resourceUrl);
-  authorizationUrl.searchParams.set("response_type", "code");
-  authorizationUrl.searchParams.set("scope", e2eMcp.scope);
-  authorizationUrl.searchParams.set("state", e2eMcp.state);
 
-  await page.goto(authorizationUrl.href);
+  await page.goto(deniedAuthorizationUrl.href);
   await expect(
     page.getByRole("heading", { name: "Sign in to Application Tracker" }),
   ).toBeVisible();
+  const rejectedPassword = "e2e-rejected-password-value";
+  await page.getByLabel("Username").fill(e2eAdministrator.username);
+  await page.getByLabel("Password").fill(rejectedPassword);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(
+    page.getByText("The username or password was not accepted.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(rejectedPassword);
+
   await page.getByLabel("Username").fill(e2eAdministrator.username);
   await page.getByLabel("Password").fill(e2eAdministrator.password);
   await page.getByRole("button", { name: "Continue" }).click();
@@ -240,11 +347,40 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     page.getByRole("heading", { name: `Authorize ${e2eMcp.clientName}` }),
   ).toBeVisible();
   await expect(page.getByText(e2eAdministrator.displayName)).toBeVisible();
+  const deniedCallbackRequest = page.waitForRequest((candidate) =>
+    candidate.url().startsWith(e2eMcp.redirectUri),
+  );
+  await page.getByRole("button", { name: "Deny" }).click();
+
+  const deniedCallbackUrl = new URL((await deniedCallbackRequest).url());
+  expect(deniedCallbackUrl.searchParams.get("error")).toBe("access_denied");
+  expect(deniedCallbackUrl.searchParams.get("state")).toBe(e2eMcp.state);
+  expect(deniedCallbackUrl.searchParams.has("code")).toBe(false);
+  expect(deniedCallbackUrl.href).not.toContain(rejectedPassword);
+  await expect(page).toHaveTitle("OAuth callback captured");
+
+  const approvedState = `${e2eMcp.state}-approved`;
+  const approvedAuthorizationUrl = oauthAuthorizationUrl(
+    authorizationEndpoint,
+    baseURL,
+    clientId,
+    approvedState,
+  );
+  await page.goto(approvedAuthorizationUrl.href);
+  await expect(
+    page.getByRole("heading", { name: `Authorize ${e2eMcp.clientName}` }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Username")).toHaveCount(0);
+  await expect(page.getByLabel("Password")).toHaveCount(0);
   await page.getByLabel("Connection permission").selectOption("read_only");
+  const callbackRequest = page.waitForRequest((candidate) =>
+    candidate.url().startsWith(e2eMcp.redirectUri),
+  );
   await page.getByRole("button", { name: "Authorize" }).click();
 
   const callbackUrl = new URL((await callbackRequest).url());
-  expect(callbackUrl.searchParams.get("state")).toBe(e2eMcp.state);
+  expect(callbackUrl.searchParams.get("state")).toBe(approvedState);
+  await expect(page).toHaveTitle("OAuth callback captured");
   const authorizationCode = callbackUrl.searchParams.get("code");
   if (!authorizationCode) throw new Error("The callback omitted its code");
 
@@ -253,55 +389,25 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     "token_endpoint",
     "authorization server metadata",
   );
-  const tokens = await responseObject(
-    await request.post(localTransportUrl(tokenEndpoint, baseURL), {
-      form: {
-        client_id: clientId,
-        code: authorizationCode,
-        code_verifier: e2eMcp.verifier,
-        grant_type: "authorization_code",
-        redirect_uri: e2eMcp.redirectUri,
-        resource: e2eMcp.resourceUrl,
-      },
-    }),
-    200,
-    "token response",
+  const tokens = await exchangeAuthorizationCode(
+    request,
+    tokenEndpoint,
+    baseURL,
+    clientId,
+    authorizationCode,
   );
   expect(tokens).toMatchObject({
     scope: e2eMcp.scope,
     token_type: "Bearer",
   });
   const accessToken = requiredString(tokens, "access_token", "token response");
-  requiredString(tokens, "refresh_token", "token response");
-
-  const initializationResponse = await request.post("/mcp", {
-    data: {
-      id: 1,
-      jsonrpc: "2.0",
-      method: "initialize",
-      params: {
-        capabilities: {},
-        clientInfo: { name: "playwright-e2e", version: "1.0.0" },
-        protocolVersion: "2025-11-25",
-      },
-    },
-    headers: mcpHeaders(accessToken),
-  });
-  const initialization = await responseObject(
-    initializationResponse,
-    200,
-    "MCP initialization",
+  const refreshToken = requiredString(
+    tokens,
+    "refresh_token",
+    "token response",
   );
-  expect(initialization).toMatchObject({
-    id: 1,
-    jsonrpc: "2.0",
-    result: { protocolVersion: "2025-11-25" },
-  });
-  const sessionId = initializationResponse.headers()["mcp-session-id"];
-  expect(sessionId).toBeTruthy();
-  if (!sessionId) {
-    throw new Error("MCP initialization omitted its session ID");
-  }
+
+  const sessionId = await initializeMcp(request, accessToken, 1);
 
   const notification = await request.post("/mcp", {
     data: { jsonrpc: "2.0", method: "notifications/initialized" },
@@ -350,8 +456,52 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     workspace: { name: e2eAdministrator.workspaceName, slug: "default" },
   });
 
+  const refreshedTokens = await responseObject(
+    await request.post(localTransportUrl(tokenEndpoint, baseURL), {
+      form: {
+        client_id: clientId,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        resource: e2eMcp.resourceUrl,
+      },
+    }),
+    200,
+    "refreshed token response",
+  );
+  const refreshedAccessToken = requiredString(
+    refreshedTokens,
+    "access_token",
+    "refreshed token response",
+  );
+  const refreshedRefreshToken = requiredString(
+    refreshedTokens,
+    "refresh_token",
+    "refreshed token response",
+  );
+  const continuedSession = await request.post("/mcp", {
+    data: { id: 4, jsonrpc: "2.0", method: "tools/list", params: {} },
+    headers: mcpHeaders(refreshedAccessToken, sessionId),
+  });
+  expect(continuedSession.status()).toBe(200);
+
+  const reusedRefresh = await request.post(
+    localTransportUrl(tokenEndpoint, baseURL),
+    {
+      form: {
+        client_id: clientId,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        resource: e2eMcp.resourceUrl,
+      },
+    },
+  );
+  expect(reusedRefresh.status()).toBe(400);
+  const reusedRefreshBody = JSON.stringify(await reusedRefresh.json());
+  expect(reusedRefreshBody).toContain("invalid_grant");
+  expect(reusedRefreshBody).not.toContain(refreshToken);
+
   const closed = await request.delete("/mcp", {
-    headers: mcpHeaders(accessToken, sessionId),
+    headers: mcpHeaders(refreshedAccessToken, sessionId),
   });
   expect(closed.status()).toBe(200);
 
@@ -371,4 +521,124 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     `OAuth · ${e2eAdministrator.displayName} · @${e2eAdministrator.username}`,
   );
   await expect(connection).toContainText("Read Only");
+
+  const revokedSessionId = await initializeMcp(
+    request,
+    refreshedAccessToken,
+    10,
+  );
+  const revocationEndpoint = requiredString(
+    authorizationMetadata,
+    "revocation_endpoint",
+    "authorization server metadata",
+  );
+  const revoked = await request.post(
+    localTransportUrl(revocationEndpoint, baseURL),
+    {
+      form: {
+        client_id: clientId,
+        token: refreshedRefreshToken,
+      },
+    },
+  );
+  expect(revoked.status()).toBe(200);
+  const rejectedRevokedSession = await responseObject(
+    await request.post("/mcp", {
+      data: { id: 11, jsonrpc: "2.0", method: "tools/list", params: {} },
+      headers: mcpHeaders(refreshedAccessToken, revokedSessionId),
+    }),
+    401,
+    "revoked MCP session response",
+  );
+  expect(rejectedRevokedSession).toEqual({
+    error: { code: "invalid_token" },
+  });
+  expect(JSON.stringify(rejectedRevokedSession)).not.toContain(
+    refreshedAccessToken,
+  );
+
+  const deletionState = `${e2eMcp.state}-delete`;
+  await page.goto(
+    oauthAuthorizationUrl(
+      authorizationEndpoint,
+      baseURL,
+      clientId,
+      deletionState,
+    ).href,
+  );
+  await expect(
+    page.getByRole("heading", { name: `Authorize ${e2eMcp.clientName}` }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Username")).toHaveCount(0);
+  const deletionCallbackRequest = page.waitForRequest((candidate) =>
+    candidate.url().startsWith(e2eMcp.redirectUri),
+  );
+  await page.getByRole("button", { name: "Authorize" }).click();
+  const deletionCallbackUrl = new URL((await deletionCallbackRequest).url());
+  expect(deletionCallbackUrl.searchParams.get("state")).toBe(deletionState);
+  await expect(page).toHaveTitle("OAuth callback captured");
+  const deletionAuthorizationCode =
+    deletionCallbackUrl.searchParams.get("code");
+  if (!deletionAuthorizationCode) {
+    throw new Error("The deletion callback omitted its code");
+  }
+  const deletionTokens = await exchangeAuthorizationCode(
+    request,
+    tokenEndpoint,
+    baseURL,
+    clientId,
+    deletionAuthorizationCode,
+  );
+  const deletionAccessToken = requiredString(
+    deletionTokens,
+    "access_token",
+    "deletion token response",
+  );
+  const deletionSessionId = await initializeMcp(
+    request,
+    deletionAccessToken,
+    20,
+  );
+
+  const settingsStatus = await responseObject(
+    await page.request.get("/api/settings/mcp"),
+    200,
+    "MCP settings status",
+  );
+  const status = record(settingsStatus.status, "MCP settings status.status");
+  const clients = record(status.clients, "MCP settings status clients");
+  if (!Array.isArray(clients.oauthClients)) {
+    throw new Error("MCP settings status must include OAuth clients");
+  }
+  const oauthConnection = clients.oauthClients
+    .map((value) => record(value, "OAuth connection"))
+    .find((value) => value.clientId === clientId);
+  if (!oauthConnection) throw new Error("The OAuth connection was not listed");
+  const actorUserId = requiredString(
+    record(oauthConnection.actor, "OAuth connection actor"),
+    "id",
+    "OAuth connection actor",
+  );
+  await responseObject(
+    await page.request.delete(
+      `/api/settings/mcp/oauth-clients/${clientId}/users/${actorUserId}`,
+      { headers: { Origin: new URL(baseURL).origin } },
+    ),
+    200,
+    "deleted OAuth connection response",
+  );
+  const rejectedDeletedSession = await responseObject(
+    await request.post("/mcp", {
+      data: { id: 21, jsonrpc: "2.0", method: "tools/list", params: {} },
+      headers: mcpHeaders(deletionAccessToken, deletionSessionId),
+    }),
+    401,
+    "deleted MCP session response",
+  );
+  expect(rejectedDeletedSession).toEqual({
+    error: { code: "invalid_token" },
+  });
+  expect(JSON.stringify(rejectedDeletedSession)).not.toContain(
+    deletionAccessToken,
+  );
 });

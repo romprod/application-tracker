@@ -281,6 +281,25 @@ describe("built-in MCP OAuth routes", () => {
     const code = redirect.searchParams.get("code");
     expect(code).toBeTruthy();
 
+    const wrongVerifier = `wrong-${"x".repeat(58)}`;
+    const rejectedToken = await request(app)
+      .post("/token")
+      .type("form")
+      .send({
+        client_id: clientId,
+        code,
+        code_verifier: wrongVerifier,
+        grant_type: "authorization_code",
+        redirect_uri: callback,
+        resource: endpoint,
+      })
+      .expect(400);
+    expect(responseObject(rejectedToken)).toMatchObject({
+      error: "invalid_grant",
+    });
+    expect(JSON.stringify(rejectedToken.body)).not.toContain(wrongVerifier);
+    expect(JSON.stringify(rejectedToken.body)).not.toContain(code);
+
     const token = await request(app)
       .post("/token")
       .type("form")

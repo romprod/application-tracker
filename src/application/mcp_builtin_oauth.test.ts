@@ -187,6 +187,173 @@ describe("McpBuiltInOAuthService", () => {
     }
   });
 
+  it("rejects mismatched authorization inputs and expired or reused codes", () => {
+    const database = openApplicationDatabase(":memory:");
+    const actor = seedActor(database);
+    let now = new Date(timestamp);
+    const service = new McpBuiltInOAuthService(
+      new SqliteMcpBuiltInOAuthRepository(database),
+      new CryptoMcpOAuthTokenManager(),
+      { requiredScope, resourceUrl },
+      () => now,
+    );
+
+    try {
+      const client = service.registerClient({
+        clientName: "Claude",
+        redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+      });
+      const authorizationInput = {
+        accessMode: "read_only" as const,
+        clientId: client.clientId,
+        codeChallenge: "c".repeat(43),
+        redirectUri: client.redirectUris[0]!,
+        resource: resourceUrl,
+        scopes: [requiredScope],
+      };
+
+      expect(() =>
+        service.beginAuthorization(actor, {
+          ...authorizationInput,
+          redirectUri: "https://claude.ai/api/mcp/other_callback",
+        }),
+      ).toThrow(InvalidMcpOAuthClientError);
+      expect(() =>
+        service.beginAuthorization(actor, {
+          ...authorizationInput,
+          resource: "https://other.example/mcp",
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+      expect(() =>
+        service.beginAuthorization(actor, {
+          ...authorizationInput,
+          scopes: ["application-tracker:administration"],
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+
+      const expired = service.beginAuthorization(actor, authorizationInput);
+      now = new Date("2026-01-01T00:05:00.000Z");
+      expect(() =>
+        service.challengeForAuthorizationCode(client.clientId, expired.code),
+      ).toThrow(InvalidMcpOAuthGrantError);
+      expect(() =>
+        service.exchangeAuthorizationCode({
+          authorizationCode: expired.code,
+          clientId: client.clientId,
+          redirectUri: client.redirectUris[0]!,
+          resource: resourceUrl,
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+
+      const current = service.beginAuthorization(actor, authorizationInput);
+      service.exchangeAuthorizationCode({
+        authorizationCode: current.code,
+        clientId: client.clientId,
+        redirectUri: client.redirectUris[0]!,
+        resource: resourceUrl,
+      });
+      expect(() =>
+        service.exchangeAuthorizationCode({
+          authorizationCode: current.code,
+          clientId: client.clientId,
+          redirectUri: client.redirectUris[0]!,
+          resource: resourceUrl,
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("requires refresh after access expiry and stops inactive actors", () => {
+    const database = openApplicationDatabase(":memory:");
+    const actor = seedActor(database);
+    let now = new Date(timestamp);
+    const service = new McpBuiltInOAuthService(
+      new SqliteMcpBuiltInOAuthRepository(database),
+      new CryptoMcpOAuthTokenManager(),
+      { requiredScope, resourceUrl },
+      () => now,
+    );
+
+    try {
+      const client = service.registerClient({
+        clientName: "Claude",
+        redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+      });
+      const authorization = service.beginAuthorization(actor, {
+        accessMode: "read_only",
+        clientId: client.clientId,
+        codeChallenge: "c".repeat(43),
+        redirectUri: client.redirectUris[0]!,
+        resource: resourceUrl,
+        scopes: [requiredScope],
+      });
+      const tokens = service.exchangeAuthorizationCode({
+        authorizationCode: authorization.code,
+        clientId: client.clientId,
+        redirectUri: client.redirectUris[0]!,
+        resource: resourceUrl,
+      });
+
+      now = new Date("2026-01-01T00:15:00.000Z");
+      expect(() => service.authorize(tokens.accessToken)).toThrow(
+        InvalidMcpOAuthGrantError,
+      );
+      const refreshed = service.exchangeRefreshToken({
+        clientId: client.clientId,
+        refreshToken: tokens.refreshToken,
+        resource: resourceUrl,
+      });
+      expect(service.authorize(refreshed.accessToken).actor.userId).toBe(
+        actor.userId,
+      );
+      expect(() =>
+        service.exchangeRefreshToken({
+          clientId: client.clientId,
+          refreshToken: tokens.refreshToken,
+          resource: resourceUrl,
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+
+      database
+        .prepare("UPDATE users SET status = 'disabled' WHERE id = ?")
+        .run(actor.userId);
+      expect(() => service.authorize(refreshed.accessToken)).toThrow(
+        InvalidMcpOAuthGrantError,
+      );
+      expect(() =>
+        service.exchangeRefreshToken({
+          clientId: client.clientId,
+          refreshToken: refreshed.refreshToken,
+          resource: resourceUrl,
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+
+      database
+        .prepare("UPDATE users SET status = 'active' WHERE id = ?")
+        .run(actor.userId);
+      expect(service.authorize(refreshed.accessToken)).toBeDefined();
+      database
+        .prepare(
+          "DELETE FROM workspace_memberships WHERE workspace_id = ? AND user_id = ?",
+        )
+        .run(actor.workspaceId, actor.userId);
+      expect(() => service.authorize(refreshed.accessToken)).toThrow(
+        InvalidMcpOAuthGrantError,
+      );
+      expect(() =>
+        service.exchangeRefreshToken({
+          clientId: client.clientId,
+          refreshToken: refreshed.refreshToken,
+          resource: resourceUrl,
+        }),
+      ).toThrow(InvalidMcpOAuthGrantError);
+    } finally {
+      database.close();
+    }
+  });
+
   it("registers current and legacy ChatGPT callback URLs only on the trusted origin", () => {
     const database = openApplicationDatabase(":memory:");
     const service = new McpBuiltInOAuthService(
