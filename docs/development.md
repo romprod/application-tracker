@@ -2,8 +2,8 @@
 
 ## Local environment
 
-Use Node.js 22.12 or newer. The repository contains `.nvmrc` and
-`.node-version` files for compatible version managers.
+Use Node.js 22.12 or newer. The repository includes `.nvmrc` for compatible
+version managers.
 
 ```sh
 cp .env.example .env

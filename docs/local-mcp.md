@@ -27,9 +27,9 @@ npm ci
 npm run build
 ```
 
-Copy [`.mcp.json.example`](../.mcp.json.example) to `.mcp.json` and replace the
-absolute paths and local username. `.mcp.json` is ignored by Git. Fresh
-installations use the workspace slug `default`.
+Copy the [MCP configuration example](../examples/mcp.json) to `.mcp.json` and
+replace the absolute paths and local username. `.mcp.json` is ignored by Git.
+Fresh installations use the workspace slug `default`.
 
 The client must launch the compiled file directly:
 

@@ -33,4 +33,4 @@ RFC 5737 for network examples.
 ## Security reports
 
 Do not disclose a suspected vulnerability in a public issue or pull request.
-Follow [SECURITY.md](SECURITY.md) instead.
+Follow the [security policy](SECURITY.md) instead.

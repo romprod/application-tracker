@@ -39,7 +39,7 @@ jobs:
       - name: Validate container configuration
         run: |
           cp .env.example .env
-          docker compose -f compose.example.yml config --quiet
+          docker compose -f deploy/compose.yml config --quiet
           docker build --tag application-tracker:ci .
 
   browser:

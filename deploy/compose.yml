@@ -1,12 +1,12 @@
 services:
   application-tracker:
     build:
-      context: .
+      context: ..
     image: application-tracker:local
     restart: unless-stopped
     init: true
     env_file:
-      - .env
+      - ../.env
     environment:
       BACKUP_DIRECTORY: /app/backups
       DATABASE_PATH: /app/data/application-tracker.sqlite

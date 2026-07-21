@@ -39,14 +39,14 @@ reverse proxy running on the Docker host and avoids unintended LAN exposure.
 ## Build and start
 
 ```sh
-docker compose -f compose.example.yml up --detach --build
-docker compose -f compose.example.yml ps
+docker compose -f deploy/compose.yml up --detach --build
+docker compose -f deploy/compose.yml ps
 ```
 
 The image health check calls `GET /api/health`. Inspect sanitized JSON logs with:
 
 ```sh
-docker compose -f compose.example.yml logs --follow application-tracker
+docker compose -f deploy/compose.yml logs --follow application-tracker
 ```
 
 Open `http://127.0.0.1:3333` on the Docker host or use the configured HTTPS
@@ -57,7 +57,7 @@ After creating the administrator, remove `SETUP_TOKEN` from `.env` and recreate
 the container so the process no longer receives it:
 
 ```sh
-docker compose -f compose.example.yml up --detach --force-recreate
+docker compose -f deploy/compose.yml up --detach --force-recreate
 ```
 
 ## Network exposure
@@ -74,7 +74,7 @@ interface explicitly:
 
 ```sh
 APPLICATION_TRACKER_BIND_ADDRESS=0.0.0.0 \
-  docker compose -f compose.example.yml up --detach
+  docker compose -f deploy/compose.yml up --detach
 ```
 
 Restrict port 3333 with the host firewall. Direct cleartext access is unsuitable
@@ -111,7 +111,7 @@ off-host storage.
 Run the compiled maintenance commands inside the container:
 
 ```sh
-docker compose -f compose.example.yml exec application-tracker npm run db:backup
+docker compose -f deploy/compose.yml exec application-tracker npm run db:backup
 ```
 
 List or copy the resulting artifact through an operator-controlled process that
@@ -125,9 +125,9 @@ Create and verify an online backup before an upgrade. Then update the checkout
 to the chosen release and rebuild:
 
 ```sh
-docker compose -f compose.example.yml build --pull
-docker compose -f compose.example.yml up --detach
-docker compose -f compose.example.yml ps
+docker compose -f deploy/compose.yml build --pull
+docker compose -f deploy/compose.yml up --detach
+docker compose -f deploy/compose.yml ps
 ```
 
 Startup applies forward migrations before the HTTP listener opens. Check health,
@@ -143,7 +143,7 @@ before relying on it in production.
 Stop the service without deleting data:
 
 ```sh
-docker compose -f compose.example.yml down
+docker compose -f deploy/compose.yml down
 ```
 
 Do not add `--volumes` unless you intend to delete the database and backup

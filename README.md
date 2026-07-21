@@ -117,9 +117,9 @@ every mutation, including calls made through existing sessions.
 ## Contributing and security
 
 Contributions are welcome through pull requests. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) before submitting code. Report suspected
-vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not a
-public issue.
+[the contribution guide](.github/CONTRIBUTING.md) before submitting code.
+Report suspected vulnerabilities through the private process in the
+[security policy](.github/SECURITY.md), not a public issue.
 
 ## License
 
