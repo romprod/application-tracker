@@ -196,7 +196,7 @@ function trustedChatGptRedirectUri(url: URL): boolean {
   );
 }
 
-function trustedRedirectUri(value: string): boolean {
+export function isTrustedMcpOAuthRedirectUri(value: string): boolean {
   if (
     value === claudeMcpOAuthCallback ||
     value === chatGptLegacyMcpOAuthCallback
@@ -262,7 +262,7 @@ export class McpBuiltInOAuthService {
       clientName.length > 80 ||
       input.redirectUris.length < 1 ||
       input.redirectUris.length > 8 ||
-      input.redirectUris.some((uri) => !trustedRedirectUri(uri))
+      input.redirectUris.some((uri) => !isTrustedMcpOAuthRedirectUri(uri))
     ) {
       throw new InvalidMcpOAuthClientError();
     }

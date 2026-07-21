@@ -150,6 +150,59 @@ describe("built-in MCP OAuth routes", () => {
     );
   });
 
+  it("allows a registered native client to submit consent to its loopback callback", async () => {
+    const { app } = await oauthApp();
+    const nativeCallback = "http://127.0.0.1:43191/oauth/callback";
+    const registered = await request(app)
+      .post("/register")
+      .send({
+        client_name: "Native client",
+        grant_types: ["authorization_code", "refresh_token"],
+        redirect_uris: [nativeCallback],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      })
+      .expect(201);
+    const clientId = requiredString(responseObject(registered), "client_id");
+    const params = {
+      ...oauthParams(clientId, "c".repeat(43)),
+      redirect_uri: nativeCallback,
+    };
+
+    const loginPage = await request(app).get("/authorize").query(params);
+    expect(String(loginPage.headers["content-security-policy"])).toContain(
+      "http://127.0.0.1:43191",
+    );
+
+    const loggedIn = await request(app)
+      .post("/authorize")
+      .type("form")
+      .send({
+        ...params,
+        oauth_action: "login",
+        password: "correct horse battery staple",
+        username: "alex",
+      })
+      .expect(200);
+    expect(String(loggedIn.headers["content-security-policy"])).toContain(
+      "http://127.0.0.1:43191",
+    );
+
+    const approved = await request(app)
+      .post("/authorize")
+      .set("Cookie", firstCookie(loggedIn))
+      .type("form")
+      .send({
+        ...params,
+        access_mode: "read_only",
+        oauth_action: "approve",
+      })
+      .expect(302);
+    const redirect = new URL(String(approved.headers.location));
+    expect(`${redirect.origin}${redirect.pathname}`).toBe(nativeCallback);
+    expect(redirect.searchParams.get("code")).toBeTruthy();
+  });
+
   it("discovers, registers, authorizes with a local login, refreshes, and revokes", async () => {
     const { app, oauth } = await oauthApp();
     const metadata = await request(app)

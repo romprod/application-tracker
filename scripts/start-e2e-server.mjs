@@ -8,6 +8,8 @@ const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const compiledServer = join(repositoryRoot, "dist/server/server/http.js");
 const compiledClient = join(repositoryRoot, "dist/client/index.html");
 const setupToken = process.env.E2E_SETUP_TOKEN;
+const mcpAllowedOrigin = process.env.E2E_MCP_ALLOWED_ORIGIN;
+const mcpResourceUrl = process.env.E2E_MCP_RESOURCE_URL;
 const port = Number.parseInt(process.env.E2E_PORT ?? "4173", 10);
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -15,6 +17,26 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 if (!setupToken || setupToken.length < 32 || setupToken.length > 512) {
   throw new Error("E2E_SETUP_TOKEN must contain between 32 and 512 characters");
+}
+if (!mcpAllowedOrigin || !mcpResourceUrl) {
+  throw new Error("The E2E MCP origin and resource URL are required");
+}
+
+const parsedMcpAllowedOrigin = new URL(mcpAllowedOrigin);
+const parsedMcpResourceUrl = new URL(mcpResourceUrl);
+if (
+  parsedMcpAllowedOrigin.protocol !== "https:" ||
+  parsedMcpAllowedOrigin.href !== `${parsedMcpAllowedOrigin.origin}/`
+) {
+  throw new Error("E2E_MCP_ALLOWED_ORIGIN must be an HTTPS origin");
+}
+if (
+  parsedMcpResourceUrl.protocol !== "https:" ||
+  parsedMcpResourceUrl.pathname !== "/mcp" ||
+  parsedMcpResourceUrl.search ||
+  parsedMcpResourceUrl.hash
+) {
+  throw new Error("E2E_MCP_RESOURCE_URL must be an HTTPS /mcp URL");
 }
 
 await access(compiledServer);
@@ -39,6 +61,10 @@ const server = spawn(process.execPath, [compiledServer], {
     BACKUP_DIRECTORY: backupDirectory,
     DATABASE_PATH: databasePath,
     HOST: "127.0.0.1",
+    MCP_REMOTE_ALLOWED_HOSTS: parsedMcpResourceUrl.host,
+    MCP_REMOTE_ALLOWED_ORIGINS: parsedMcpAllowedOrigin.origin,
+    MCP_REMOTE_ENABLED: "true",
+    MCP_REMOTE_URL: parsedMcpResourceUrl.href,
     NODE_ENV: "production",
     PORT: String(port),
     SESSION_COOKIE_SECURE: "false",

@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, urlencoded, type Request, type Response } from "express";
 import {
   AccessDeniedError,
   InvalidClientMetadataError,
@@ -28,6 +28,7 @@ import {
   hostedMcpOAuthCallbackOrigins,
   InvalidMcpOAuthClientError,
   InvalidMcpOAuthGrantError,
+  isTrustedMcpOAuthRedirectUri,
   type McpBuiltInOAuthService,
   type McpOAuthClient,
 } from "../application/mcp_builtin_oauth.js";
@@ -43,6 +44,23 @@ export interface McpBuiltInOAuthRouterOptions {
   oauth: McpBuiltInOAuthService;
   requiredScope: string;
   resourceUrl: string;
+}
+
+function requestedRedirectOrigin(request: Request): string | undefined {
+  const body: unknown = request.body;
+  const bodyRedirect =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? (body as Record<string, unknown>).redirect_uri
+      : undefined;
+  const candidate =
+    request.method === "POST" ? bodyRedirect : request.query.redirect_uri;
+  if (
+    typeof candidate !== "string" ||
+    !isTrustedMcpOAuthRedirectUri(candidate)
+  ) {
+    return undefined;
+  }
+  return new URL(candidate).origin;
 }
 
 function clientInformation(client: McpOAuthClient): OAuthClientInformationFull {
@@ -400,14 +418,23 @@ export function createMcpBuiltInOAuthRouter(
   const resource = new URL(options.resourceUrl);
   const issuer = new URL("/", resource);
   const router = Router();
-  router.use("/authorize", (_request, response, next) => {
+  router.use(
+    "/authorize",
+    urlencoded({ extended: false, limit: "16kb", parameterLimit: 32 }),
+  );
+  router.use("/authorize", (request, response, next) => {
     const policy = response.get("Content-Security-Policy");
     if (policy) {
+      const redirectOrigin = requestedRedirectOrigin(request);
+      const allowedOrigins = new Set([
+        ...hostedMcpOAuthCallbackOrigins,
+        ...(redirectOrigin ? [redirectOrigin] : []),
+      ]);
       response.set(
         "Content-Security-Policy",
         policy.replace(
           "form-action 'self'",
-          `form-action 'self' ${hostedMcpOAuthCallbackOrigins.join(" ")}`,
+          `form-action 'self' ${[...allowedOrigins].join(" ")}`,
         ),
       );
     }

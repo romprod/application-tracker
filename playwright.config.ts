@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { e2eSetupToken } from "./e2e/fixtures";
+import { e2eMcp, e2eSetupToken } from "./e2e/fixtures";
 
 const e2ePort = Number.parseInt(process.env.E2E_PORT ?? "4173", 10);
 if (!Number.isInteger(e2ePort) || e2ePort < 1 || e2ePort > 65_535) {
@@ -41,6 +41,8 @@ export default defineConfig({
     command: "npm run build && npm run start:e2e",
     env: {
       ...inheritedEnvironment,
+      E2E_MCP_ALLOWED_ORIGIN: e2eMcp.allowedOrigin,
+      E2E_MCP_RESOURCE_URL: e2eMcp.resourceUrl,
       E2E_PORT: String(e2ePort),
       E2E_SETUP_TOKEN: e2eSetupToken,
     },
