@@ -103,6 +103,20 @@ Fresh workspaces are read-only through MCP. An administrator can enable
 **Read and write** under **Settings → MCP**. The server rechecks this policy on
 every mutation, including calls made through existing sessions.
 
+### Job-email agent skill
+
+The repository includes the installable
+[Application Tracker Job Email](.agents/skills/application-tracker-job-email/SKILL.md)
+skill. It teaches compatible AI clients how to reconcile messages from an
+Outlook Jobs folder with Application Tracker while preserving existing data,
+using stable workspace reference IDs, and stopping when a match is ambiguous.
+
+Codex discovers the skill from `.agents/skills` while working in this checkout.
+Other clients that support `SKILL.md` skills can install the
+`.agents/skills/application-tracker-job-email` directory using their normal
+skill installation flow. Connect both the Application Tracker MCP server and an
+email provider before invoking `$application-tracker-job-email`.
+
 ## Documentation
 
 - [Development standards](docs/development.md)

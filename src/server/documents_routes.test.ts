@@ -685,7 +685,9 @@ describe("document routes", () => {
       .expect(200, {
         links: [
           {
+            externalPostingId: null,
             host: "boards.greenhouse.io",
+            provider: "generic",
             url: "https://boards.greenhouse.io/example/jobs/123",
           },
         ],

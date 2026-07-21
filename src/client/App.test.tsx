@@ -482,7 +482,9 @@ function createEmailLinksClient() {
       .fn<EmailLinksClient["extractJobLinks"]>()
       .mockResolvedValue([
         {
+          externalPostingId: null,
           host: "boards.greenhouse.io",
+          provider: "generic",
           url: "https://boards.greenhouse.io/example/jobs/123",
         },
       ]),
@@ -988,7 +990,7 @@ describe("application shell", () => {
     );
     expect(
       within(dialog).getByLabelText("Additional link 1 label"),
-    ).toHaveValue("Job posting · boards.greenhouse.io");
+    ).toHaveValue("Job posting · Job site · boards.greenhouse.io");
     expect(within(dialog).getByLabelText("Additional link 1 URL")).toHaveValue(
       "https://boards.greenhouse.io/example/jobs/123",
     );

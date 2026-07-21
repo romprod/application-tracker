@@ -1,32 +1,13 @@
 import type { EmailLinkExtractionInput } from "../domain/email_links.js";
+import type { JobBoardProvider } from "../domain/job_board.js";
+import { JobBoardProviderRegistry } from "./job_board_provider_registry.js";
 
 export interface EmailLinkCandidate {
+  externalPostingId: string | null;
   host: string;
+  provider: JobBoardProvider;
   url: string;
 }
-
-const knownJobHosts = [
-  "ashbyhq.com",
-  "bamboohr.com",
-  "greenhouse.io",
-  "icims.com",
-  "indeed.com",
-  "jobvite.com",
-  "lever.co",
-  "linkedin.com",
-  "myworkdayjobs.com",
-  "recruitee.com",
-  "smartrecruiters.com",
-  "taleo.net",
-  "teamtailor.com",
-  "workable.com",
-  "workday.com",
-] as const;
-
-const jobPathPattern =
-  /(?:^|\/)(?:careers?|jobs?|openings?|opportunities|positions?|roles?|vacancies)(?:\/|$)/i;
-const noisePattern =
-  /(?:^|\/)(?:help|privacy|preferences|support|terms|unsubscribe)(?:\/|$)/i;
 const urlPattern = /https?:\/\/[^\s<>"'`]+/gi;
 const encodedAmpersandPattern = /(?:&amp;|&#38;|&#x26;)/gi;
 
@@ -63,31 +44,11 @@ function unwrapRedirect(url: URL): URL {
   }
 }
 
-function isLikelyJobUrl(url: URL): boolean {
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.href.length > 2048 ||
-    noisePattern.test(url.pathname)
-  ) {
-    return false;
-  }
-  const hostname = url.hostname.toLowerCase();
-  if (hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")) {
-    return /(?:^|\/)jobs(?:\/|$)/i.test(url.pathname);
-  }
-  if (hostname === "indeed.com" || hostname.endsWith(".indeed.com")) {
-    return /(?:^|\/)(?:jobs?|viewjob)(?:\/|$)/i.test(url.pathname);
-  }
-  return (
-    knownJobHosts.some(
-      (host) => hostname === host || hostname.endsWith(`.${host}`),
-    ) || jobPathPattern.test(url.pathname)
-  );
-}
-
 export class EmailLinkExtractionService {
+  public constructor(
+    private readonly providers = new JobBoardProviderRegistry(),
+  ) {}
+
   public extract(input: EmailLinkExtractionInput): EmailLinkCandidate[] {
     const candidates: EmailLinkCandidate[] = [];
     const seen = new Set<string>();
@@ -101,12 +62,25 @@ export class EmailLinkExtractionService {
       } catch {
         continue;
       }
-      if (!isLikelyJobUrl(parsed)) continue;
-      parsed.hash = "";
-      const normalized = parsed.href;
+      if (
+        (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+        parsed.username !== "" ||
+        parsed.password !== "" ||
+        parsed.href.length > 2048
+      ) {
+        continue;
+      }
+      const provider = this.providers.match(parsed);
+      if (!provider) continue;
+      const normalized = provider.url.href;
       if (seen.has(normalized)) continue;
       seen.add(normalized);
-      candidates.push({ host: parsed.hostname.toLowerCase(), url: normalized });
+      candidates.push({
+        externalPostingId: provider.externalPostingId,
+        host: provider.url.hostname.toLowerCase(),
+        provider: provider.provider,
+        url: normalized,
+      });
     }
     return candidates;
   }

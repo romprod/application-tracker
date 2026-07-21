@@ -1,0 +1,16 @@
+interface:
+  display_name: "Application Tracker Job Email"
+  short_description: "Match job emails to tracked applications safely"
+  default_prompt: "Use $application-tracker-job-email to reconcile job emails with Application Tracker through MCP."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "application-tracker"
+      description: "Application Tracker MCP server for authoritative reads and writes"
+    - type: "mcp"
+      value: "outlook-email"
+      description: "Outlook email access for the requested job-search folder"
+
+policy:
+  allow_implicit_invocation: true

@@ -22,6 +22,7 @@ import { dueLabel } from "./application_next_action";
 import type { ReferenceValue } from "./reference_values_client";
 import {
   EmailLinksClientError,
+  jobBoardProviderLabel,
   type EmailLinkCandidate,
   type EmailLinksClient,
 } from "./email_links_client";
@@ -664,8 +665,10 @@ export function ApplicationDialog({
         ({ url }) => selectedEmailLinks.includes(url) && !existing.has(url),
       )
       .slice(0, available)
-      .map(({ host, url }) => ({
-        label: `Job posting · ${host}`.slice(0, 80),
+      .map(({ externalPostingId, host, provider, url }) => ({
+        label: `Job posting · ${jobBoardProviderLabel(provider)}${
+          externalPostingId ? ` · ${externalPostingId}` : ` · ${host}`
+        }`.slice(0, 80),
         url,
       }));
     setForm((current) => ({
@@ -1109,7 +1112,12 @@ export function ApplicationDialog({
                             }
                           />
                           <span>
-                            <strong>{candidate.host}</strong>
+                            <strong>
+                              {jobBoardProviderLabel(candidate.provider)}
+                              {candidate.externalPostingId
+                                ? ` · ${candidate.externalPostingId}`
+                                : ""}
+                            </strong>
                             <small>{candidate.url}</small>
                           </span>
                         </label>

@@ -1,5 +1,11 @@
+import { jobBoardProviders, type JobBoardProvider } from "../domain/job_board";
+
+export { jobBoardProviders, type JobBoardProvider } from "../domain/job_board";
+
 export interface EmailLinkCandidate {
+  externalPostingId: string | null;
   host: string;
+  provider: JobBoardProvider;
   url: string;
 }
 
@@ -18,12 +24,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isJobBoardProvider(value: unknown): value is JobBoardProvider {
+  return jobBoardProviders.some((provider) => provider === value);
+}
+
 function parseCandidate(value: unknown): EmailLinkCandidate {
   if (
     !isRecord(value) ||
+    (value.externalPostingId !== null &&
+      (typeof value.externalPostingId !== "string" ||
+        value.externalPostingId.length < 1 ||
+        value.externalPostingId.length > 128)) ||
     typeof value.host !== "string" ||
     value.host.length < 1 ||
     value.host.length > 253 ||
+    !isJobBoardProvider(value.provider) ||
     typeof value.url !== "string" ||
     value.url.length > 2048
   ) {
@@ -43,7 +58,35 @@ function parseCandidate(value: unknown): EmailLinkCandidate {
   ) {
     throw new EmailLinksClientError("invalid_response");
   }
-  return { host: value.host, url: value.url };
+  return {
+    externalPostingId: value.externalPostingId,
+    host: value.host,
+    provider: value.provider,
+    url: value.url,
+  };
+}
+
+export function jobBoardProviderLabel(provider: JobBoardProvider): string {
+  switch (provider) {
+    case "linkedin":
+      return "LinkedIn";
+    case "cv_library":
+      return "CV-Library";
+    case "indeed":
+      return "Indeed";
+    case "totaljobs":
+      return "Totaljobs";
+    case "michael_page":
+      return "Michael Page";
+    case "hackajob":
+      return "hackajob";
+    case "cord":
+      return "Cord";
+    case "talent":
+      return "Talent.com";
+    case "generic":
+      return "Job site";
+  }
 }
 
 async function readResponse(response: Response): Promise<unknown> {

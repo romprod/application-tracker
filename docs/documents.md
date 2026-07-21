@@ -138,6 +138,15 @@ Google redirect links, decodes quoted-printable content when the message
 declares that encoding, removes duplicates, and filters common privacy, support,
 preference, terms, and unsubscribe links.
 
+A provider registry canonicalizes direct posting URLs for LinkedIn, CV-Library,
+Indeed, Totaljobs, Michael Page, hackajob, Cord, and Talent.com. Candidates from
+those providers include the board name and board-scoped posting identifier.
+Deterministically encoded Cord and hackajob click links are unwrapped locally.
+Opaque tracking links are not fetched or used as posting identities; the user
+must supply their final destination URL before an identifier can be extracted.
+Other recognized recruitment URLs use the `generic` provider with no claimed
+posting identifier.
+
 The browser selects candidates by default, but saves only the links the user
 confirms. It adds them to the application's existing related-links field, which
 retains its 10-link limit. Neither the browser workflow nor the server stores
