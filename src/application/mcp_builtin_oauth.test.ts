@@ -187,6 +187,50 @@ describe("McpBuiltInOAuthService", () => {
     }
   });
 
+  it("registers current and legacy ChatGPT callback URLs only on the trusted origin", () => {
+    const database = openApplicationDatabase(":memory:");
+    const service = new McpBuiltInOAuthService(
+      new SqliteMcpBuiltInOAuthRepository(database),
+      new CryptoMcpOAuthTokenManager(),
+      { requiredScope, resourceUrl },
+    );
+    const currentCallback =
+      "https://chatgpt.com/connector/oauth/7cb18f93-8cf2-4a25-b991-1d19a1326a34";
+
+    try {
+      expect(
+        service.registerClient({
+          clientName: "ChatGPT",
+          redirectUris: [currentCallback],
+        }).redirectUris,
+      ).toEqual([currentCallback]);
+      expect(
+        service.registerClient({
+          clientName: "Published ChatGPT app",
+          redirectUris: [
+            "https://chatgpt.com/connector_platform_oauth_redirect",
+          ],
+        }).redirectUris,
+      ).toEqual(["https://chatgpt.com/connector_platform_oauth_redirect"]);
+
+      for (const redirectUri of [
+        "https://chatgpt.com/connector/oauth/",
+        "https://chatgpt.com/connector/oauth/id/extra",
+        "https://chatgpt.com/connector/oauth/id?next=https://attacker.example",
+        "https://chatgpt.com.evil.example/connector/oauth/id",
+      ]) {
+        expect(() =>
+          service.registerClient({
+            clientName: "Imposter",
+            redirectUris: [redirectUri],
+          }),
+        ).toThrow(InvalidMcpOAuthClientError);
+      }
+    } finally {
+      database.close();
+    }
+  });
+
   it("deletes one workspace-bound OAuth connection and invalidates its tokens", () => {
     const database = openApplicationDatabase(":memory:");
     const actor = seedActor(database);

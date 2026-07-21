@@ -25,7 +25,7 @@ import {
   type AuthService,
 } from "../application/auth.js";
 import {
-  claudeMcpOAuthCallback,
+  hostedMcpOAuthCallbackOrigins,
   InvalidMcpOAuthClientError,
   InvalidMcpOAuthGrantError,
   type McpBuiltInOAuthService,
@@ -403,12 +403,11 @@ export function createMcpBuiltInOAuthRouter(
   router.use("/authorize", (_request, response, next) => {
     const policy = response.get("Content-Security-Policy");
     if (policy) {
-      const callbackOrigin = new URL(claudeMcpOAuthCallback).origin;
       response.set(
         "Content-Security-Policy",
         policy.replace(
           "form-action 'self'",
-          `form-action 'self' ${callbackOrigin}`,
+          `form-action 'self' ${hostedMcpOAuthCallbackOrigins.join(" ")}`,
         ),
       );
     }

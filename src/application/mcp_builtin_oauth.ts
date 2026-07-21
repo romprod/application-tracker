@@ -167,16 +167,45 @@ export class McpOAuthConnectionNotFoundError extends Error {
 }
 
 export const claudeMcpOAuthCallback = "https://claude.ai/api/mcp/auth_callback";
+export const chatGptMcpOAuthCallbackOrigin = "https://chatgpt.com";
+export const chatGptLegacyMcpOAuthCallback =
+  "https://chatgpt.com/connector_platform_oauth_redirect";
+export const hostedMcpOAuthCallbackOrigins = [
+  new URL(claudeMcpOAuthCallback).origin,
+  chatGptMcpOAuthCallbackOrigin,
+];
 export const builtInMcpOAuthScope = "application-tracker:tools";
 const accessLifetimeMs = 15 * 60 * 1000;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 const authorizationCodeLifetimeMs = 5 * 60 * 1000;
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const chatGptCallbackPathPrefix = "/connector/oauth/";
+
+function trustedChatGptRedirectUri(url: URL): boolean {
+  const callbackId = url.pathname.slice(chatGptCallbackPathPrefix.length);
+  return (
+    url.origin === chatGptMcpOAuthCallbackOrigin &&
+    url.username === "" &&
+    url.password === "" &&
+    url.pathname.startsWith(chatGptCallbackPathPrefix) &&
+    callbackId.length > 0 &&
+    callbackId.length <= 512 &&
+    !callbackId.includes("/") &&
+    url.search === "" &&
+    url.hash === ""
+  );
+}
 
 function trustedRedirectUri(value: string): boolean {
-  if (value === claudeMcpOAuthCallback) return true;
+  if (
+    value === claudeMcpOAuthCallback ||
+    value === chatGptLegacyMcpOAuthCallback
+  ) {
+    return true;
+  }
   try {
     const url = new URL(value);
+    if (trustedChatGptRedirectUri(url)) return true;
     return (
       url.protocol === "http:" &&
       loopbackHosts.has(url.hostname) &&

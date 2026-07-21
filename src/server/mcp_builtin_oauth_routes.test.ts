@@ -114,6 +114,42 @@ function requiredString(
 }
 
 describe("built-in MCP OAuth routes", () => {
+  it("registers ChatGPT's current callback and permits its authorization redirect origin", async () => {
+    const { app } = await oauthApp();
+    const chatGptCallback =
+      "https://chatgpt.com/connector/oauth/7cb18f93-8cf2-4a25-b991-1d19a1326a34";
+    const registered = await request(app)
+      .post("/register")
+      .send({
+        client_name: "ChatGPT",
+        grant_types: ["authorization_code", "refresh_token"],
+        redirect_uris: [chatGptCallback],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      })
+      .expect(201);
+    const registeredBody = responseObject(registered);
+    expect(registeredBody).toMatchObject({
+      client_name: "ChatGPT",
+      redirect_uris: [chatGptCallback],
+      token_endpoint_auth_method: "none",
+    });
+
+    const loginPage = await request(app)
+      .get("/authorize")
+      .query({
+        ...oauthParams(
+          requiredString(registeredBody, "client_id"),
+          "c".repeat(43),
+        ),
+        redirect_uri: chatGptCallback,
+      });
+    expect(loginPage.status).toBe(200);
+    expect(String(loginPage.headers["content-security-policy"])).toContain(
+      "form-action 'self' https://claude.ai https://chatgpt.com",
+    );
+  });
+
   it("discovers, registers, authorizes with a local login, refreshes, and revokes", async () => {
     const { app, oauth } = await oauthApp();
     const metadata = await request(app)
