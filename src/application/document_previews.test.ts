@@ -19,7 +19,7 @@ const ready: ReadyDocumentPreviewRecord = {
   generatedAt: "2026-07-19T12:00:00.000Z",
   kind: "text",
   mediaType: "text/plain",
-  parserVersion: "document-preview-v2",
+  parserVersion: "document-preview-v3",
   status: "ready",
   text: "Preview text",
   truncated: false,
@@ -44,7 +44,9 @@ function dependencies(cached?: ReadyDocumentPreviewRecord) {
   );
   const getDocumentPreview = vi.fn<
     DocumentPreviewsRepository["getDocumentPreview"]
-  >(() => cached);
+  >((_workspaceId, _documentId, parserVersion) =>
+    cached?.parserVersion === parserVersion ? cached : undefined,
+  );
   const saveDocumentPreview = vi.fn<
     DocumentPreviewsRepository["saveDocumentPreview"]
   >((input) => {
@@ -90,7 +92,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v2",
+      "document-preview-v3",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
@@ -116,16 +118,45 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
+      "document-preview-v3",
+      () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
     await expect(service.getPreview(actor, documentId)).resolves.toEqual(ready);
     expect(values.getDocumentPreview).toHaveBeenCalledWith(
       "workspace-1",
       documentId,
-      "document-preview-v2",
+      "document-preview-v3",
     );
     expect(values.getDocumentOriginal).not.toHaveBeenCalled();
     expect(values.generate).not.toHaveBeenCalled();
+  });
+
+  it("regenerates previews cached by an older parser version", async () => {
+    const values = dependencies({
+      ...ready,
+      parserVersion: "document-preview-v2",
+      text: "Stale preview text",
+    });
+    const service = new DocumentPreviewService(
+      values.documents,
+      values.previews,
+      values.generator,
+      "document-preview-v3",
+      () => new Date("2026-07-19T12:00:00.000Z"),
+    );
+
+    await expect(service.getPreview(actor, documentId)).resolves.toEqual(ready);
+    expect(values.getDocumentPreview).toHaveBeenCalledWith(
+      "workspace-1",
+      documentId,
+      "document-preview-v3",
+    );
+    expect(values.generate).toHaveBeenCalledTimes(1);
+    expect(values.saveDocumentPreview).toHaveBeenCalledWith({
+      ...ready,
+      workspaceId: "workspace-1",
+    });
   });
 
   it("generates and stores a bounded preview with parser provenance", async () => {
@@ -134,7 +165,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v2",
+      "document-preview-v3",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 

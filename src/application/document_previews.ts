@@ -5,7 +5,6 @@ import {
 import { normalizeDocumentMediaType } from "../domain/documents.js";
 
 export const supportedDocumentPreviewMediaTypes = [
-  "application/json",
   "application/pdf",
   "application/vnd.ms-outlook",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -140,7 +139,7 @@ export class DocumentPreviewService {
     private readonly documents: DocumentsRepository,
     private readonly previews: DocumentPreviewsRepository,
     private readonly generator: DocumentPreviewGenerator,
-    private readonly parserVersion = "document-preview-v2",
+    private readonly parserVersion = "document-preview-v3",
     private readonly clock: () => Date = () => new Date(),
   ) {}
 

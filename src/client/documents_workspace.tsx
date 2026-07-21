@@ -305,19 +305,23 @@ function DocumentLibrary({
                       )}
                     </td>
                     <td className="document-stored-cell">
-                      <strong>{formatStoredDate(document.createdAt)}</strong>
-                      <small>by {document.uploadedByDisplayName}</small>
+                      <div className="document-stored-stack">
+                        <strong>{formatStoredDate(document.createdAt)}</strong>
+                        <small>by {document.uploadedByDisplayName}</small>
+                      </div>
                     </td>
                     <td>
                       <div className="document-actions">
-                        <button
-                          className="document-preview-button"
-                          type="button"
-                          aria-label={`Preview ${document.originalFilename}`}
-                          onClick={() => onPreview(document)}
-                        >
-                          Preview
-                        </button>
+                        {supportsInlinePreview(document) && (
+                          <button
+                            className="document-preview-button"
+                            type="button"
+                            aria-label={`Preview ${document.originalFilename}`}
+                            onClick={() => onPreview(document)}
+                          >
+                            Preview
+                          </button>
+                        )}
                         <a
                           className="document-download"
                           href={`/api/documents/${encodeURIComponent(document.id)}/download`}
@@ -336,6 +340,36 @@ function DocumentLibrary({
       )}
     </>
   );
+}
+
+const previewMediaTypeByExtension: Readonly<Record<string, string>> = {
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".eml": "message/rfc822",
+  ".msg": "application/vnd.ms-outlook",
+  ".pdf": "application/pdf",
+};
+
+const inlinePreviewMediaTypes = new Set([
+  "application/pdf",
+  "application/vnd.ms-outlook",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "message/rfc822",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+]);
+
+function supportsInlinePreview(document: DocumentRecord): boolean {
+  const extensionIndex = document.originalFilename.lastIndexOf(".");
+  const extension =
+    extensionIndex >= 0
+      ? document.originalFilename.slice(extensionIndex).toLowerCase()
+      : "";
+  const mediaType =
+    previewMediaTypeByExtension[extension] ??
+    document.mediaType.trim().toLowerCase();
+  return inlinePreviewMediaTypes.has(mediaType);
 }
 
 function DocumentPreviewDialog({

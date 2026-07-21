@@ -340,10 +340,41 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
 
   await uploadDocument(page, {
+    buffer: Buffer.from('{"applications":[]}'),
+    mimeType: "application/json",
+    name: "browser-preview.json",
+  });
+  const jsonRow = page
+    .getByRole("row")
+    .filter({ hasText: "browser-preview.json" });
+  await expect(jsonRow).toBeVisible();
+  await expect(
+    jsonRow.getByRole("button", { name: "Preview browser-preview.json" }),
+  ).toHaveCount(0);
+
+  await uploadDocument(page, {
     buffer: pdfFixture(),
     mimeType: "application/octet-stream",
     name: "browser-preview.pdf",
   });
+  const pdfRow = page
+    .getByRole("row")
+    .filter({ hasText: "browser-preview.pdf" });
+  const storedHeader = page.getByRole("columnheader", { name: "Stored" });
+  const storedCell = pdfRow.getByRole("cell").nth(3);
+  await expect(storedCell).toHaveCSS("display", "table-cell");
+  const [storedHeaderBox, storedCellBox] = await Promise.all([
+    storedHeader.boundingBox(),
+    storedCell.boundingBox(),
+  ]);
+  expect(storedHeaderBox).not.toBeNull();
+  expect(storedCellBox).not.toBeNull();
+  expect(
+    Math.abs((storedHeaderBox?.x ?? 0) - (storedCellBox?.x ?? 0)),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs((storedHeaderBox?.width ?? 0) - (storedCellBox?.width ?? 0)),
+  ).toBeLessThan(1);
   const pdfView = page.waitForResponse((response) =>
     response.url().endsWith("/view"),
   );

@@ -1758,7 +1758,7 @@
 }
 
 .document-file-cell > div,
-.document-stored-cell,
+.document-stored-stack,
 .document-file-picker > div {
   display: grid;
   gap: 5px;

@@ -678,6 +678,40 @@ describe("application shell", () => {
     );
   });
 
+  it("does not offer an inline preview for JSON exports", async () => {
+    const jsonDocument = {
+      ...documentRecord,
+      mediaType: "application/json",
+      originalFilename: "legacy-export.json",
+    };
+    const documentsClient = createDocumentsClient([jsonDocument]);
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={documentsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    const row = await screen.findByRole("row", {
+      name: /legacy-export\.json/i,
+    });
+    expect(
+      within(row).queryByRole("button", {
+        name: "Preview legacy-export.json",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(row).getByRole("link", { name: /Download/ }),
+    ).toBeInTheDocument();
+  });
+
   it("renders a structured email preview without injecting HTML", async () => {
     const emailDocument = {
       ...documentRecord,

@@ -15,12 +15,7 @@ const DOCX_MEDIA_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const EML_MEDIA_TYPE = "message/rfc822";
 const MSG_MEDIA_TYPE = "application/vnd.ms-outlook";
-const TEXT_MEDIA_TYPES = new Set([
-  "application/json",
-  "text/csv",
-  "text/markdown",
-  "text/plain",
-]);
+const TEXT_MEDIA_TYPES = new Set(["text/csv", "text/markdown", "text/plain"]);
 const EMAIL_ADDRESS_LIMIT = 25;
 const EMAIL_FIELD_LIMIT = 500;
 const CFB_END_OF_CHAIN = 0xfffffffe;
@@ -299,7 +294,10 @@ function emailPreview(
   },
   maximum: number,
 ): EmailDocumentPreview {
-  const bounded = normalizedText(input.text, maximum);
+  const compactBody = input.text
+    .replace(/\r\n?/g, "\n")
+    .replace(/(?:\n[\t ]*){3,}/g, "\n\n");
+  const bounded = normalizedText(compactBody, maximum);
   return {
     cc: input.cc.slice(0, EMAIL_ADDRESS_LIMIT),
     date: boundedField(input.date),
