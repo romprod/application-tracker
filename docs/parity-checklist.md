@@ -36,7 +36,10 @@ items are marked explicitly and do not block the first release.
 - [x] Content-addressed storage and deduplication
 - [x] Document metadata and application associations
 - [x] Original upload and download with authorization
-- [x] Resource-limited preview workers for explicitly supported formats
+- [x] Resource-limited preview processes for explicitly supported formats
+- [x] Authenticated inline PDF previews
+- [x] DOCX text extraction
+- [x] Structured MSG and EML envelope and body previews
 - [x] Safe email-link extraction from bounded input
 
 ## MCP

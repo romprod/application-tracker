@@ -138,6 +138,12 @@ const runtimeEnvironmentSchema = z.object({
     .min(1)
     .max(32)
     .default(2),
+  DOCUMENT_PREVIEW_MAX_DECODED_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(33_554_432)
+    .default(8_388_608),
   DOCUMENT_PREVIEW_MAX_INPUT_BYTES: z.coerce
     .number()
     .int()
@@ -368,6 +374,7 @@ export interface RuntimeConfig {
     maxWorkspaceDocuments: number;
     preview: {
       maxConcurrentWorkers: number;
+      maxDecodedBytes: number;
       maxInputBytes: number;
       maxMemoryMb: number;
       maxOutputCharacters: number;
@@ -628,6 +635,7 @@ export function parseRuntimeConfig(
       preview: {
         maxConcurrentWorkers:
           result.data.DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS,
+        maxDecodedBytes: result.data.DOCUMENT_PREVIEW_MAX_DECODED_BYTES,
         maxInputBytes: result.data.DOCUMENT_PREVIEW_MAX_INPUT_BYTES,
         maxMemoryMb: result.data.DOCUMENT_PREVIEW_MAX_MEMORY_MB,
         maxOutputCharacters: result.data.DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS,

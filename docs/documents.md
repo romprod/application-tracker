@@ -2,8 +2,9 @@
 
 Application Tracker stores original documents in the same SQLite database as
 their metadata. Signed-in workspace members can upload, list, associate, and
-download originals from the Documents workspace. They can also request bounded
-plain-text previews for explicitly supported formats.
+download originals from the Documents workspace. They can also view PDFs
+inline and request bounded text or structured-email previews for explicitly
+supported formats.
 
 ## Storage model
 
@@ -31,6 +32,11 @@ truncation state, and generation time. The parser version forms part of the
 primary key, so a parser upgrade creates a new cache entry instead of reusing
 stale output. A workspace-scoped foreign key deletes cached previews with their
 document.
+
+Migration 19 extends that cache with a preview kind and bounded JSON email
+metadata. Existing cached text remains valid as text; new MSG and EML previews
+store their subject, sender, recipients, date, and inert body text alongside
+the common preview fields.
 
 ## Upload policy
 
@@ -72,39 +78,54 @@ to an application is optional.
 
 ## Preview policy
 
-The preview endpoint supports these exact media types:
+The preview endpoint supports these formats:
 
 - `application/json`
+- `application/pdf`
+- `application/vnd.ms-outlook` (`.msg`)
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  (`.docx`)
 - `message/rfc822`
 - `text/csv`
 - `text/markdown`
 - `text/plain`
 
-The server decodes these formats as UTF-8 plain text. It normalizes line
-endings, rejects binary-looking control characters, and never renders preview
-text as HTML. Other media types return an unsupported result; their originals
-remain available for authorized download.
+Browser upload media types are not reliable for DOCX, EML, MSG, and PDF, so the
+server normalizes those four types from their case-insensitive filename
+extensions. PDF originals are returned only by the authenticated inline route,
+with a PDF signature check, inline disposition, `nosniff`, same-origin resource
+policy, and a sandbox content security policy.
+
+DOCX parsing reads only selected Word document, header, footer, footnote, and
+endnote XML entries. MSG and EML parsing returns a structured envelope and a
+plain-text body. HTML-only email bodies are converted to text; message HTML and
+attachments are never rendered. JSON, CSV, Markdown, and plain text are decoded
+as UTF-8. All text output has normalized line endings, and nominal text files
+with binary-looking controls fail closed. Other formats return an unsupported
+result while their originals remain available for authorized download.
 
 The service coalesces simultaneous cache misses for the same workspace,
 document, and parser version. A distinct miss acquires process-wide capacity
-before copying input or starting a worker thread outside the HTTP event loop.
-The supervisor sets V8 heap and stack limits, caps input and output, enforces a
-wall-clock timeout, validates the worker response, and terminates the worker
-after success or failure. These environment variables set the limits:
+before copying input or starting a disposable child process outside the HTTP
+event loop. The supervisor sets a V8 heap limit, caps input, decoded DOCX
+content, and output, enforces a wall-clock timeout, validates the process JSON
+response, and terminates the process after success or failure. These
+environment variables set the limits:
 
-| Variable                                  | Default | Accepted range        |
-| ----------------------------------------- | ------: | --------------------- |
-| `DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS` |       2 | 1–32 process-wide     |
-| `DOCUMENT_PREVIEW_MAX_INPUT_BYTES`        |   1 MiB | 1 KiB–10 MiB          |
-| `DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS`  | 100,000 | 1,000–1,000,000       |
-| `DOCUMENT_PREVIEW_TIMEOUT_MS`             | 1,500ms | 100–10,000ms          |
-| `DOCUMENT_PREVIEW_MAX_MEMORY_MB`          |  32 MiB | 16–128 MiB per worker |
+| Variable                                  | Default | Accepted range         |
+| ----------------------------------------- | ------: | ---------------------- |
+| `DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS` |       2 | 1–32 process-wide      |
+| `DOCUMENT_PREVIEW_MAX_INPUT_BYTES`        |   1 MiB | 1 KiB–10 MiB           |
+| `DOCUMENT_PREVIEW_MAX_DECODED_BYTES`      |   8 MiB | 1 KiB–32 MiB           |
+| `DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS`  | 100,000 | 1,000–1,000,000        |
+| `DOCUMENT_PREVIEW_TIMEOUT_MS`             | 1,500ms | 100–10,000ms           |
+| `DOCUMENT_PREVIEW_MAX_MEMORY_MB`          |  32 MiB | 16–128 MiB per process |
 
 The input limit must not exceed `DOCUMENT_MAX_UPLOAD_BYTES`. A successful
-preview is cached in SQLite. Unsupported, oversized, timed-out, and failed
-previews are not cached. When all worker slots are active, a distinct miss
-returns `503 document_preview_busy` with `Retry-After`; coalesced requests share
-the existing result instead.
+text or email preview is cached in SQLite. PDF, unsupported, oversized,
+timed-out, and failed previews are not cached. When all process slots are
+active, a distinct miss returns `503 document_preview_busy` with `Retry-After`;
+coalesced requests share the existing result instead.
 
 ## Email-link extraction
 
@@ -133,12 +154,14 @@ workspace.
 | `GET`  | `/api/documents`                      | List document metadata      |
 | `POST` | `/api/documents`                      | Store one multipart upload  |
 | `GET`  | `/api/documents/:documentId/download` | Download the exact original |
+| `GET`  | `/api/documents/:documentId/view`     | Render a validated PDF      |
 | `GET`  | `/api/documents/:documentId/preview`  | Generate or read a preview  |
 | `POST` | `/api/documents/email-links/extract`  | Extract job-link candidates |
 
 Downloads use `application/octet-stream`, attachment disposition, a sandbox
-content security policy, and `nosniff`. This keeps client-supplied media-type
-metadata from controlling browser rendering.
+content security policy, and `nosniff`. The separate PDF view route is the only
+inline-original boundary. This keeps client-supplied media-type metadata from
+controlling browser rendering.
 
 ## Backup and capacity
 
@@ -154,7 +177,8 @@ database file directly.
 
 ## Current limits
 
-The current preview parser extracts plain text only. It does not parse PDF,
-Office, or archive formats; render HTML; inspect archives or email attachments;
-delete documents; or create document versions. Unsupported formats remain
-downloadable because download authorization does not depend on preview support.
+The current preview implementation supports modern Word `.docx`, not legacy
+`.doc`, and it does not support ODT or RTF. It does not render message HTML,
+extract embedded DOCX objects or email attachments, delete documents, or create
+document versions. Unsupported formats remain downloadable because download
+authorization does not depend on preview support.

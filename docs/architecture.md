@@ -31,7 +31,7 @@ flowchart LR
   UseCases --> Repositories["Repository interfaces"]
   Repositories --> SQLite[("SQLite")]
   UseCases --> PreviewQueue["Preview supervisor"]
-  PreviewQueue --> Worker["Resource-limited parser worker"]
+  PreviewQueue --> Worker["Disposable resource-limited parser process"]
 ```
 
 ## Database contract
@@ -71,7 +71,7 @@ The schema separates:
 - applications, ordered contacts and links, audited deletion state, immutable
   creation or stage-transition events, and workspace reference values
 - file objects, document metadata, application-document associations, and
-  parser-versioned plain-text preview caches
+  parser-versioned text or structured-email preview caches
 - administrative settings and security audit events
 
 Every query that returns workspace data accepts a workspace identifier. Dynamic

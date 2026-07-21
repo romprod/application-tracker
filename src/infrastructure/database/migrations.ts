@@ -20,6 +20,7 @@ import { mcpClientsMigration } from "./migrations/015_mcp_clients.js";
 import { mcpDocumentTransferAuditActionsMigration } from "./migrations/016_mcp_document_transfer_audit_actions.js";
 import { mcpBuiltInOAuthMigration } from "./migrations/017_mcp_builtin_oauth.js";
 import { mcpConnectionAccessMigration } from "./migrations/018_mcp_connection_access.js";
+import { structuredDocumentPreviewsMigration } from "./migrations/019_structured_document_previews.js";
 
 export interface Migration {
   name: string;
@@ -59,6 +60,7 @@ export const applicationMigrations: readonly Migration[] = [
   mcpDocumentTransferAuditActionsMigration,
   mcpBuiltInOAuthMigration,
   mcpConnectionAccessMigration,
+  structuredDocumentPreviewsMigration,
 ];
 
 const createMigrationTable = `

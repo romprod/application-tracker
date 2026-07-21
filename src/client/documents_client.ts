@@ -27,14 +27,37 @@ export interface UploadDocumentInput {
   file: File;
 }
 
-export interface ReadyDocumentPreview {
+export interface TextDocumentPreview {
   documentId: string;
   generatedAt: string;
+  kind: "text";
   mediaType: string;
   parserVersion: string;
   status: "ready";
   text: string;
   truncated: boolean;
+}
+
+export interface EmailDocumentPreview {
+  cc: string[];
+  date: string | null;
+  documentId: string;
+  from: string | null;
+  generatedAt: string;
+  kind: "email";
+  mediaType: string;
+  parserVersion: string;
+  status: "ready";
+  subject: string | null;
+  text: string;
+  to: string[];
+  truncated: boolean;
+}
+
+export interface PdfDocumentPreview {
+  documentId: string;
+  mediaType: "application/pdf";
+  status: "pdf";
 }
 
 export interface UnsupportedDocumentPreview {
@@ -43,7 +66,10 @@ export interface UnsupportedDocumentPreview {
   status: "unsupported";
 }
 
-export type DocumentPreview = ReadyDocumentPreview | UnsupportedDocumentPreview;
+export type ReadyDocumentPreview = EmailDocumentPreview | TextDocumentPreview;
+
+export type DocumentPreview =
+  PdfDocumentPreview | ReadyDocumentPreview | UnsupportedDocumentPreview;
 
 export interface DocumentsClient {
   getDocumentPreview(documentId: string): Promise<DocumentPreview>;
@@ -151,8 +177,16 @@ function parsePreview(value: unknown): DocumentPreview {
       status: "unsupported",
     };
   }
+  if (value.status === "pdf" && value.mediaType === "application/pdf") {
+    return {
+      documentId: value.documentId,
+      mediaType: "application/pdf",
+      status: "pdf",
+    };
+  }
   if (
     value.status !== "ready" ||
+    (value.kind !== "text" && value.kind !== "email") ||
     !isBoundedText(value.generatedAt, 40) ||
     Number.isNaN(Date.parse(value.generatedAt)) ||
     !isBoundedText(value.parserVersion, 64) ||
@@ -162,14 +196,37 @@ function parsePreview(value: unknown): DocumentPreview {
   ) {
     throw new DocumentsClientError("invalid_response");
   }
-  return {
+  const base = {
     documentId: value.documentId,
     generatedAt: value.generatedAt,
     mediaType: value.mediaType,
     parserVersion: value.parserVersion,
-    status: "ready",
+    status: "ready" as const,
     text: value.text,
     truncated: value.truncated,
+  };
+  if (value.kind === "text") return { ...base, kind: "text" };
+  if (
+    !Array.isArray(value.cc) ||
+    value.cc.length > 25 ||
+    !value.cc.every((entry) => isBoundedText(entry, 500)) ||
+    !(value.date === null || isBoundedText(value.date, 500)) ||
+    !(value.from === null || isBoundedText(value.from, 500)) ||
+    !(value.subject === null || isBoundedText(value.subject, 500)) ||
+    !Array.isArray(value.to) ||
+    value.to.length > 25 ||
+    !value.to.every((entry) => isBoundedText(entry, 500))
+  ) {
+    throw new DocumentsClientError("invalid_response");
+  }
+  return {
+    ...base,
+    cc: value.cc,
+    date: value.date,
+    from: value.from,
+    kind: "email",
+    subject: value.subject,
+    to: value.to,
   };
 }
 

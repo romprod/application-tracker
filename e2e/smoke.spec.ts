@@ -6,9 +6,16 @@ import {
   test,
   type APIRequestContext,
   type APIResponse,
+  type Page,
 } from "@playwright/test";
 
 import { applicationMcpToolNames } from "../src/application/mcp";
+import {
+  docxFixture,
+  emlFixture,
+  msgFixture,
+  pdfFixture,
+} from "./document_preview_fixtures";
 import { e2eAdministrator, e2eMcp, e2eSetupToken } from "./fixtures";
 
 let oauthCallbackServer: Server | undefined;
@@ -88,6 +95,20 @@ function localTransportUrl(logicalUrl: string, baseURL: string): string {
 
 function browserAuditTime(value: string): string {
   return `${value.slice(0, 16).replace("T", " ")} UTC`;
+}
+
+async function uploadDocument(
+  page: Page,
+  file: { buffer: Buffer; mimeType: string; name: string },
+): Promise<void> {
+  await page.getByRole("button", { name: "Upload document" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add a document" });
+  await dialog.getByLabel("Choose file").setInputFiles(file);
+  await dialog.getByRole("button", { name: "Store document" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("status")).toContainText(
+    `${file.name} was stored.`,
+  );
 }
 
 function mcpHeaders(
@@ -188,6 +209,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   request,
 }) => {
   if (!baseURL) throw new Error("Playwright baseURL is required");
+  test.setTimeout(60_000);
 
   const challengeResponse = await request.get("/mcp", {
     headers: { Host: new URL(e2eMcp.resourceUrl).host },
@@ -313,6 +335,79 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(
     dashboardHero.getByRole("button", { name: "Log application" }),
   ).toBeVisible();
+
+  await page.getByRole("button", { name: "Documents" }).click();
+  await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+
+  await uploadDocument(page, {
+    buffer: pdfFixture(),
+    mimeType: "application/octet-stream",
+    name: "browser-preview.pdf",
+  });
+  const pdfView = page.waitForResponse((response) =>
+    response.url().endsWith("/view"),
+  );
+  await page
+    .getByRole("button", { name: "Preview browser-preview.pdf" })
+    .click();
+  const pdfDialog = page.getByRole("dialog", {
+    name: "Preview browser-preview.pdf",
+  });
+  await expect(
+    pdfDialog.getByTitle("Preview browser-preview.pdf"),
+  ).toBeVisible();
+  expect((await pdfView).status()).toBe(200);
+  await pdfDialog.getByRole("button", { name: "Done" }).click();
+
+  await uploadDocument(page, {
+    buffer: docxFixture(),
+    mimeType: "application/zip",
+    name: "browser-preview.docx",
+  });
+  await page
+    .getByRole("button", { name: "Preview browser-preview.docx" })
+    .click();
+  const docxDialog = page.getByRole("dialog", {
+    name: "Preview browser-preview.docx",
+  });
+  await expect(docxDialog).toContainText("Application Tracker DOCX preview");
+  await expect(docxDialog).toContainText("Second paragraph");
+  await docxDialog.getByRole("button", { name: "Done" }).click();
+
+  await uploadDocument(page, {
+    buffer: emlFixture(),
+    mimeType: "application/octet-stream",
+    name: "browser-preview.eml",
+  });
+  await page
+    .getByRole("button", { name: "Preview browser-preview.eml" })
+    .click();
+  const emlDialog = page.getByRole("dialog", {
+    name: "Preview browser-preview.eml",
+  });
+  await expect(emlDialog).toContainText("Application Tracker EML preview");
+  await expect(emlDialog).toContainText("Hiring Manager <hiring@example.test>");
+  await expect(emlDialog).toContainText(
+    "Your interview is scheduled for Tuesday.",
+  );
+  await emlDialog.getByRole("button", { name: "Done" }).click();
+
+  await uploadDocument(page, {
+    buffer: msgFixture(),
+    mimeType: "application/octet-stream",
+    name: "browser-preview.msg",
+  });
+  await page
+    .getByRole("button", { name: "Preview browser-preview.msg" })
+    .click();
+  const msgDialog = page.getByRole("dialog", {
+    name: "Preview browser-preview.msg",
+  });
+  await expect(msgDialog).toContainText("Application Tracker MSG preview");
+  await expect(msgDialog).toContainText(
+    "Your application has moved to the interview stage.",
+  );
+  await msgDialog.getByRole("button", { name: "Done" }).click();
 
   await page.context().clearCookies();
 

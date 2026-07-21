@@ -386,7 +386,13 @@ function DocumentPreviewDialog({
       >
         <header className="tracker-modal-header">
           <div>
-            <span className="eyebrow">Plain-text preview</span>
+            <span className="eyebrow">
+              {preview?.status === "pdf"
+                ? "Private PDF preview"
+                : preview?.status === "ready" && preview.kind === "email"
+                  ? "Private email preview"
+                  : "Private document preview"}
+            </span>
             <h2 id="document-preview-title">
               Preview {document.originalFilename}
             </h2>
@@ -417,7 +423,57 @@ function DocumentPreviewDialog({
               </p>
             </div>
           )}
-          {preview?.status === "ready" && (
+          {preview?.status === "pdf" && (
+            <iframe
+              className="document-pdf-preview"
+              src={`/api/documents/${encodeURIComponent(document.id)}/view`}
+              title={`Preview ${document.originalFilename}`}
+            />
+          )}
+          {preview?.status === "ready" && preview.kind === "email" && (
+            <article className="document-email-preview">
+              <header>
+                <span>Email subject</span>
+                <h3>{preview.subject ?? "(No subject)"}</h3>
+              </header>
+              <dl>
+                {preview.from && (
+                  <div>
+                    <dt>From</dt>
+                    <dd>{preview.from}</dd>
+                  </div>
+                )}
+                {preview.to.length > 0 && (
+                  <div>
+                    <dt>To</dt>
+                    <dd>{preview.to.join(", ")}</dd>
+                  </div>
+                )}
+                {preview.cc.length > 0 && (
+                  <div>
+                    <dt>Cc</dt>
+                    <dd>{preview.cc.join(", ")}</dd>
+                  </div>
+                )}
+                {preview.date && (
+                  <div>
+                    <dt>Date</dt>
+                    <dd>{preview.date}</dd>
+                  </div>
+                )}
+              </dl>
+              <pre>
+                {preview.text || "This email has no plain-text message body."}
+              </pre>
+              {preview.truncated && (
+                <p className="document-preview-note">
+                  Preview truncated safely. The downloadable original is
+                  unchanged.
+                </p>
+              )}
+            </article>
+          )}
+          {preview?.status === "ready" && preview.kind === "text" && (
             <>
               <div className="document-preview-meta">
                 <span>{preview.mediaType}</span>
@@ -428,7 +484,11 @@ function DocumentPreviewDialog({
           )}
         </div>
         <footer className="tracker-modal-footer">
-          <p>Preview text is generated inside a resource-limited worker.</p>
+          <p>
+            {preview?.status === "pdf"
+              ? "The original PDF is rendered through an authenticated, sandboxed route."
+              : "Preview content is generated in a disposable, resource-limited process."}
+          </p>
           <div>
             <a
               className="tracker-button tracker-button-quiet"
@@ -746,7 +806,7 @@ function previewLoadError(caught: unknown): string {
       return "Preview generation exceeded its time limit. Download remains available.";
     }
     if (caught.code === "document_preview_failed") {
-      return "This file could not be converted to a safe plain-text preview.";
+      return "This file could not be converted to a safe preview.";
     }
     if (caught.code === "document_preview_busy") {
       return "Preview capacity is busy. Wait a moment and try again; download remains available.";

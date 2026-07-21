@@ -16,7 +16,7 @@ default password.
 - Configurable statuses, sources, role types, and document types
 - Local administrator and member accounts with revocable sessions
 - Original document storage, SHA-256 deduplication, application associations,
-  bounded plain-text previews, and safe attachment downloads
+  inline PDF viewing, bounded DOCX and email previews, and safe downloads
 - Bounded email-link extraction without server-side network requests or stored
   email bodies
 - Local stdio MCP and authenticated Streamable HTTP MCP with bounded application

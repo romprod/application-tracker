@@ -5,6 +5,27 @@ import { referenceValueIdSchema } from "./reference_values.js";
 
 export const documentIdSchema = z.uuid();
 
+const previewMediaTypeByExtension: Readonly<Record<string, string>> = {
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".eml": "message/rfc822",
+  ".msg": "application/vnd.ms-outlook",
+  ".pdf": "application/pdf",
+};
+
+export function normalizeDocumentMediaType(
+  originalFilename: string,
+  declaredMediaType: string,
+): string {
+  const normalizedDeclared = declaredMediaType.trim().toLowerCase();
+  const extensionIndex = originalFilename.lastIndexOf(".");
+  const extension =
+    extensionIndex >= 0
+      ? originalFilename.slice(extensionIndex).toLowerCase()
+      : "";
+  return previewMediaTypeByExtension[extension] ?? normalizedDeclared;
+}
+
 const safeFilenameSchema = z
   .string()
   .trim()

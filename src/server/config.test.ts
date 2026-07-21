@@ -29,6 +29,7 @@ describe("parseRuntimeConfig", () => {
         maxWorkspaceDocuments: 2_000,
         preview: {
           maxConcurrentWorkers: 2,
+          maxDecodedBytes: 8_388_608,
           maxInputBytes: 1_048_576,
           maxMemoryMb: 32,
           maxOutputCharacters: 100_000,
@@ -106,6 +107,7 @@ describe("parseRuntimeConfig", () => {
     expect(
       parseRuntimeConfig({
         DOCUMENT_PREVIEW_MAX_CONCURRENT_WORKERS: "4",
+        DOCUMENT_PREVIEW_MAX_DECODED_BYTES: "4194304",
         DOCUMENT_PREVIEW_MAX_INPUT_BYTES: "524288",
         DOCUMENT_PREVIEW_MAX_MEMORY_MB: "48",
         DOCUMENT_PREVIEW_MAX_OUTPUT_CHARACTERS: "50000",
@@ -113,6 +115,7 @@ describe("parseRuntimeConfig", () => {
       }).documents.preview,
     ).toEqual({
       maxConcurrentWorkers: 4,
+      maxDecodedBytes: 4_194_304,
       maxInputBytes: 524_288,
       maxMemoryMb: 48,
       maxOutputCharacters: 50_000,

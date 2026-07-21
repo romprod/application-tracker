@@ -119,8 +119,9 @@ describe("browserDocumentsClient", () => {
     const preview = {
       documentId: document.id,
       generatedAt: "2026-07-19T10:05:00.000Z",
+      kind: "text",
       mediaType: "text/plain",
-      parserVersion: "plain-text-v1",
+      parserVersion: "document-preview-v2",
       status: "ready",
       text: "Preview text",
       truncated: false,
@@ -145,5 +146,56 @@ describe("browserDocumentsClient", () => {
         headers: { Accept: "application/json" },
       },
     );
+  });
+
+  it("loads PDF and structured email preview variants", async () => {
+    const emailPreview = {
+      cc: [],
+      date: null,
+      documentId: document.id,
+      from: "Hiring Manager <hiring@example.test>",
+      generatedAt: "2026-07-19T10:05:00.000Z",
+      kind: "email",
+      mediaType: "message/rfc822",
+      parserVersion: "document-preview-v2",
+      status: "ready",
+      subject: "Interview invitation",
+      text: "Your interview is Tuesday.",
+      to: ["Alex Example <alex@example.test>"],
+      truncated: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              preview: {
+                documentId: document.id,
+                mediaType: "application/pdf",
+                status: "pdf",
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ preview: emailPreview }), {
+            status: 200,
+          }),
+        ),
+    );
+
+    await expect(
+      browserDocumentsClient.getDocumentPreview(document.id),
+    ).resolves.toEqual({
+      documentId: document.id,
+      mediaType: "application/pdf",
+      status: "pdf",
+    });
+    await expect(
+      browserDocumentsClient.getDocumentPreview(document.id),
+    ).resolves.toEqual(emailPreview);
   });
 });

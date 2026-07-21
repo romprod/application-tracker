@@ -147,6 +147,10 @@ credentials, OAuth authorization codes, and OAuth token families. Existing
 records inherit the previous workspace setting during migration; subsequent
 changes are connection-specific.
 
+The nineteenth migration extends cached document previews with a text-or-email
+kind and bounded JSON metadata for structured MSG and EML envelope fields.
+Existing rows retain the text kind.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

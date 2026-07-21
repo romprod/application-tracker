@@ -123,20 +123,22 @@ claims, secret material, database paths, or internal errors. See
 - Transactional workspace and installation byte and document-count quotas
 - Server-calculated SHA-256 digests and transactional deduplication
 - Attachment-only downloads with sandbox and `nosniff` headers
+- Signature-checked, authenticated PDF-only inline route
 - Original download independent from preview support
-- Exact allowlist of plain-text preview media types
-- Preview input, output, memory, stack, and wall-clock limits
-- Same-key preview coalescing and process-wide worker admission
-- Preview parsing in disposable worker threads outside the HTTP event loop
-- Parser-versioned, workspace-scoped plain-text preview cache
+- Exact allowlist of text, PDF, DOCX, MSG, and EML preview media types
+- Preview input, decoded-content, output, memory, and wall-clock limits
+- Same-key preview coalescing and process-wide process admission
+- Preview parsing in disposable child processes outside the HTTP event loop
+- Parser-versioned, workspace-scoped text and email preview cache
 - Bounded, no-network email-link extraction with explicit user selection
 
-The preview worker decodes only five explicitly supported plain-text media
-types. It rejects binary-looking output and returns text that the browser
-renders without HTML interpretation. The supervisor terminates the worker on
-completion, invalid output, runtime failure, or timeout. PDF, Office, archive,
-HTML rendering, archive-entry traversal, decompression, and attachment parsing
-remain outside this boundary.
+The preview process decodes an exact allowlist. It rejects binary-looking text,
+limits selected DOCX expansion, validates MSG container allocation before
+parsing, and returns text that the browser renders without HTML interpretation.
+HTML-only email is reduced to inert text. The supervisor terminates the process
+on completion, invalid output, runtime failure, or timeout. PDF parsing, legacy
+Office formats, arbitrary archive traversal, active HTML, embedded objects, and
+attachment parsing remain outside this boundary.
 
 ### Data and operations
 

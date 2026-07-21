@@ -334,8 +334,9 @@ describe("SqliteDocumentsRepository", () => {
       const stored = previews.saveDocumentPreview({
         documentId: document.id,
         generatedAt: "2026-07-19T12:00:00.000Z",
+        kind: "text",
         mediaType: "text/plain",
-        parserVersion: "plain-text-v1",
+        parserVersion: "document-preview-v2",
         status: "ready",
         text: "Text with SQL control: '); DROP TABLE documents; --",
         truncated: false,
@@ -346,14 +347,14 @@ describe("SqliteDocumentsRepository", () => {
         previews.getDocumentPreview(
           setup.workspace.id,
           document.id,
-          "plain-text-v1",
+          "document-preview-v2",
         ),
       ).toEqual(stored);
       expect(
         previews.getDocumentPreview(
           "other-workspace",
           document.id,
-          "plain-text-v1",
+          "document-preview-v2",
         ),
       ).toBeUndefined();
       expect(() =>
@@ -370,6 +371,57 @@ describe("SqliteDocumentsRepository", () => {
           .pluck()
           .get(),
       ).toBe("documents");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("stores and restores structured email preview metadata", () => {
+    const { database, documentTypeId, repository, setup } = createRepository();
+    const bytes = Buffer.from("email fixture");
+
+    try {
+      const document = repository.createDocument({
+        applicationIds: [],
+        bytes,
+        createdAt,
+        documentTypeId,
+        mediaType: "message/rfc822",
+        originalFilename: "reply.eml",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        uploadedByUserId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+      const previews = new SqliteDocumentPreviewsRepository(database);
+      const expected = {
+        cc: ["Recruiter <recruiter@example.test>"],
+        date: "2026-07-19T10:00:00.000Z",
+        documentId: document.id,
+        from: "Hiring Manager <hiring@example.test>",
+        generatedAt: "2026-07-19T12:00:00.000Z",
+        kind: "email" as const,
+        mediaType: "message/rfc822",
+        parserVersion: "document-preview-v2",
+        status: "ready" as const,
+        subject: "Interview invitation",
+        text: "Your interview is Tuesday.",
+        to: ["Alex Example <alex@example.test>"],
+        truncated: false,
+      };
+
+      expect(
+        previews.saveDocumentPreview({
+          ...expected,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toEqual(expected);
+      expect(
+        previews.getDocumentPreview(
+          setup.workspace.id,
+          document.id,
+          "document-preview-v2",
+        ),
+      ).toEqual(expected);
     } finally {
       database.close();
     }

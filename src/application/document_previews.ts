@@ -2,9 +2,13 @@ import {
   DocumentNotFoundError,
   type DocumentsRepository,
 } from "./documents.js";
+import { normalizeDocumentMediaType } from "../domain/documents.js";
 
 export const supportedDocumentPreviewMediaTypes = [
   "application/json",
+  "application/pdf",
+  "application/vnd.ms-outlook",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "message/rfc822",
   "text/csv",
   "text/markdown",
@@ -14,11 +18,32 @@ export const supportedDocumentPreviewMediaTypes = [
 export type SupportedDocumentPreviewMediaType =
   (typeof supportedDocumentPreviewMediaTypes)[number];
 
-export interface ReadyDocumentPreview {
+export interface TextDocumentPreview {
+  kind: "text";
   mediaType: string;
   status: "ready";
   text: string;
   truncated: boolean;
+}
+
+export interface EmailDocumentPreview {
+  cc: string[];
+  date: string | null;
+  from: string | null;
+  kind: "email";
+  mediaType: string;
+  status: "ready";
+  subject: string | null;
+  text: string;
+  to: string[];
+  truncated: boolean;
+}
+
+export type ReadyDocumentPreview = EmailDocumentPreview | TextDocumentPreview;
+
+export interface PdfDocumentPreview {
+  mediaType: "application/pdf";
+  status: "pdf";
 }
 
 export interface UnsupportedDocumentPreview {
@@ -29,26 +54,36 @@ export interface UnsupportedDocumentPreview {
 export type GeneratedDocumentPreview =
   ReadyDocumentPreview | UnsupportedDocumentPreview;
 
+export interface DocumentPreviewSource {
+  mediaType: string;
+  originalFilename: string;
+}
+
 export interface DocumentPreviewGenerator {
   generate(
     bytes: Uint8Array,
-    mediaType: string,
-  ): Promise<GeneratedDocumentPreview>;
+    source: DocumentPreviewSource,
+  ): Promise<GeneratedDocumentPreview | PdfDocumentPreview>;
 }
 
-export interface ReadyDocumentPreviewRecord extends ReadyDocumentPreview {
+export type ReadyDocumentPreviewRecord = ReadyDocumentPreview & {
   documentId: string;
   generatedAt: string;
   parserVersion: string;
-}
+};
+
+export type PdfDocumentPreviewResult = PdfDocumentPreview & {
+  documentId: string;
+};
 
 export type DocumentPreviewResult =
   | ReadyDocumentPreviewRecord
+  | PdfDocumentPreviewResult
   | (UnsupportedDocumentPreview & { documentId: string });
 
-export interface SaveDocumentPreviewInput extends ReadyDocumentPreviewRecord {
+export type SaveDocumentPreviewInput = ReadyDocumentPreviewRecord & {
   workspaceId: string;
-}
+};
 
 export interface DocumentPreviewsRepository {
   getDocumentPreview(
@@ -63,6 +98,7 @@ export interface DocumentPreviewsRepository {
 
 export interface DocumentPreviewPolicy {
   maxConcurrentWorkers: number;
+  maxDecodedBytes: number;
   maxInputBytes: number;
   maxMemoryMb: number;
   maxOutputCharacters: number;
@@ -104,7 +140,7 @@ export class DocumentPreviewService {
     private readonly documents: DocumentsRepository,
     private readonly previews: DocumentPreviewsRepository,
     private readonly generator: DocumentPreviewGenerator,
-    private readonly parserVersion = "plain-text-v1",
+    private readonly parserVersion = "document-preview-v2",
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -141,11 +177,14 @@ export class DocumentPreviewService {
       documentId,
     );
     if (!original) throw new DocumentNotFoundError();
-    const generated = await this.generator.generate(
-      original.bytes,
-      original.document.mediaType,
-    );
-    if (generated.status === "unsupported") {
+    const generated = await this.generator.generate(original.bytes, {
+      mediaType: normalizeDocumentMediaType(
+        original.document.originalFilename,
+        original.document.mediaType,
+      ),
+      originalFilename: original.document.originalFilename,
+    });
+    if (generated.status === "pdf" || generated.status === "unsupported") {
       return { ...generated, documentId };
     }
     return this.previews.saveDocumentPreview({

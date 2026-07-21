@@ -95,7 +95,7 @@ describe("migrateDatabase", () => {
           .pluck()
           .all(),
       ).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
       ]);
       expect(
         database
@@ -105,6 +105,107 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBeNull();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves cached text while adding constrained structured previews", () => {
+    const database = new Database(":memory:");
+    const occurredAt = "2026-07-19T10:00:00.000Z";
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 18));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES ('workspace-preview', 'Preview', 'preview', ?)`,
+        )
+        .run(occurredAt);
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES ('user-preview', 'preview-user', 'Preview User', 'active', ?, ?)`,
+        )
+        .run(occurredAt, occurredAt);
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES ('workspace-preview', 'user-preview', 'admin', ?)`,
+        )
+        .run(occurredAt);
+      const documentTypeId = database
+        .prepare(
+          `SELECT id FROM reference_values
+           WHERE workspace_id = 'workspace-preview'
+             AND category = 'document_type'
+           ORDER BY sort_order LIMIT 1`,
+        )
+        .pluck()
+        .get();
+      if (typeof documentTypeId !== "string") {
+        throw new Error("Missing document type fixture");
+      }
+      database
+        .prepare(
+          `INSERT INTO file_objects
+             (sha256, byte_size, content, created_at)
+           VALUES (?, 4, ?, ?)`,
+        )
+        .run("0".repeat(64), Buffer.from("text"), occurredAt);
+      database
+        .prepare(
+          `INSERT INTO documents
+             (id, workspace_id, file_sha256, document_type_reference_id,
+              original_filename, media_type, uploaded_by_user_id, created_at)
+           VALUES (
+             'document-preview', 'workspace-preview', ?, ?, 'notes.txt',
+             'text/plain', 'user-preview', ?
+           )`,
+        )
+        .run("0".repeat(64), documentTypeId, occurredAt);
+      database
+        .prepare(
+          `INSERT INTO document_previews
+             (workspace_id, document_id, parser_version, media_type,
+              plain_text, is_truncated, generated_at)
+           VALUES (
+             'workspace-preview', 'document-preview', 'plain-text-v1',
+             'text/plain', 'Cached preview', 0, ?
+           )`,
+        )
+        .run(occurredAt);
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT preview_kind AS previewKind,
+                    email_metadata_json AS emailMetadataJson
+             FROM document_previews`,
+          )
+          .get(),
+      ).toEqual({ emailMetadataJson: null, previewKind: "text" });
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE document_previews
+             SET email_metadata_json = '{}'`,
+          )
+          .run(),
+      ).toThrow();
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE document_previews
+             SET preview_kind = 'email'`,
+          )
+          .run(),
+      ).toThrow();
     } finally {
       database.close();
     }

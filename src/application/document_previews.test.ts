@@ -17,8 +17,9 @@ const documentId = "22222222-2222-4222-8222-222222222222";
 const ready: ReadyDocumentPreviewRecord = {
   documentId,
   generatedAt: "2026-07-19T12:00:00.000Z",
+  kind: "text",
   mediaType: "text/plain",
-  parserVersion: "plain-text-v1",
+  parserVersion: "document-preview-v2",
   status: "ready",
   text: "Preview text",
   truncated: false,
@@ -46,17 +47,14 @@ function dependencies(cached?: ReadyDocumentPreviewRecord) {
   >(() => cached);
   const saveDocumentPreview = vi.fn<
     DocumentPreviewsRepository["saveDocumentPreview"]
-  >((input) => ({
-    documentId: input.documentId,
-    generatedAt: input.generatedAt,
-    mediaType: input.mediaType,
-    parserVersion: input.parserVersion,
-    status: input.status,
-    text: input.text,
-    truncated: input.truncated,
-  }));
+  >((input) => {
+    const { workspaceId, ...record } = input;
+    void workspaceId;
+    return record;
+  });
   const generate = vi.fn<DocumentPreviewGenerator["generate"]>(() =>
     Promise.resolve({
+      kind: "text",
       mediaType: "text/plain",
       status: "ready",
       text: "Preview text",
@@ -92,7 +90,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "plain-text-v1",
+      "document-preview-v2",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
@@ -100,6 +98,7 @@ describe("DocumentPreviewService", () => {
     const second = service.getPreview(actor, documentId);
     await vi.waitFor(() => expect(values.generate).toHaveBeenCalledTimes(1));
     finishGeneration?.({
+      kind: "text",
       mediaType: "text/plain",
       status: "ready",
       text: "Preview text",
@@ -123,7 +122,7 @@ describe("DocumentPreviewService", () => {
     expect(values.getDocumentPreview).toHaveBeenCalledWith(
       "workspace-1",
       documentId,
-      "plain-text-v1",
+      "document-preview-v2",
     );
     expect(values.getDocumentOriginal).not.toHaveBeenCalled();
     expect(values.generate).not.toHaveBeenCalled();
@@ -135,26 +134,26 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "plain-text-v1",
+      "document-preview-v2",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
     await expect(service.getPreview(actor, documentId)).resolves.toEqual(ready);
-    expect(values.generate).toHaveBeenCalledWith(
-      Buffer.from("Preview text"),
-      "text/plain",
-    );
+    expect(values.generate).toHaveBeenCalledWith(Buffer.from("Preview text"), {
+      mediaType: "text/plain",
+      originalFilename: "notes.txt",
+    });
     expect(values.saveDocumentPreview).toHaveBeenCalledWith({
       ...ready,
       workspaceId: "workspace-1",
     });
   });
 
-  it("reports unsupported formats without caching content", async () => {
+  it("reports inline PDFs without caching content", async () => {
     const values = dependencies();
     values.generate.mockResolvedValue({
       mediaType: "application/pdf",
-      status: "unsupported",
+      status: "pdf",
     });
     values.getDocumentOriginal.mockReturnValue({
       bytes: Buffer.from("pdf-data"),
@@ -179,7 +178,7 @@ describe("DocumentPreviewService", () => {
     await expect(service.getPreview(actor, documentId)).resolves.toEqual({
       documentId,
       mediaType: "application/pdf",
-      status: "unsupported",
+      status: "pdf",
     });
     expect(values.saveDocumentPreview).not.toHaveBeenCalled();
   });

@@ -21,6 +21,7 @@ import type { AuthService } from "../application/auth.js";
 import {
   documentIdSchema,
   documentUploadMetadataSchema,
+  normalizeDocumentMediaType,
 } from "../domain/documents.js";
 import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { requestSessionToken } from "./auth_routes.js";
@@ -82,6 +83,26 @@ function attachmentDisposition(filename: string): string {
       .replaceAll(/[^\x20-\x7e]/g, "_")
       .slice(0, 180) || "document";
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodedFilename(filename)}`;
+}
+
+function inlineDisposition(filename: string): string {
+  const fallback =
+    filename
+      .replaceAll(/["\\]/g, "_")
+      .replaceAll(/[^\x20-\x7e]/g, "_")
+      .slice(0, 180) || "document.pdf";
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encodedFilename(filename)}`;
+}
+
+function hasPdfSignature(bytes: Uint8Array): boolean {
+  return (
+    bytes.byteLength >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  );
 }
 
 function uploadParser(maxUploadBytes: number): RequestHandler {
@@ -214,7 +235,10 @@ export function createDocumentsRouter(
       const parsed = documentUploadMetadataSchema.safeParse({
         applicationIds: parseApplicationIds(fields.applicationIds),
         documentTypeId: fields.documentTypeId,
-        mediaType: request.file.mimetype || "application/octet-stream",
+        mediaType: normalizeDocumentMediaType(
+          request.file.originalname,
+          request.file.mimetype || "application/octet-stream",
+        ),
         originalFilename: request.file.originalname,
       });
       if (!parsed.success) {
@@ -279,6 +303,49 @@ export function createDocumentsRouter(
         "Content-Length": String(original.bytes.byteLength),
         "Content-Security-Policy": "sandbox",
         "Content-Type": "application/octet-stream",
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.send(Buffer.from(original.bytes));
+    } catch (error) {
+      if (error instanceof DocumentNotFoundError) {
+        response.status(404).json({ error: { code: "document_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.get("/:documentId/view", (request, response, next) => {
+    const parsedId = documentIdSchema.safeParse(request.params.documentId);
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      const original = options.service.getDocumentOriginal(
+        authenticatedActor(response),
+        parsedId.data,
+      );
+      if (
+        normalizeDocumentMediaType(
+          original.document.originalFilename,
+          original.document.mediaType,
+        ) !== "application/pdf" ||
+        !hasPdfSignature(original.bytes)
+      ) {
+        response
+          .status(422)
+          .json({ error: { code: "document_preview_failed" } });
+        return;
+      }
+      response.set({
+        "Content-Disposition": inlineDisposition(
+          original.document.originalFilename,
+        ),
+        "Content-Length": String(original.bytes.byteLength),
+        "Content-Security-Policy": "sandbox",
+        "Content-Type": "application/pdf",
+        "Cross-Origin-Resource-Policy": "same-origin",
         "X-Content-Type-Options": "nosniff",
       });
       response.send(Buffer.from(original.bytes));

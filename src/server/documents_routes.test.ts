@@ -1,3 +1,7 @@
+import { once } from "node:events";
+import net from "node:net";
+import type { AddressInfo } from "node:net";
+
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -19,6 +23,12 @@ import { SqliteDocumentPreviewsRepository } from "../infrastructure/database/doc
 import { DocumentPreviewSupervisor } from "../infrastructure/documents/document_preview_supervisor.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { createApp } from "./app.js";
+import {
+  docxFixture,
+  emlFixture,
+  msgFixture,
+  pdfFixture,
+} from "../../e2e/document_preview_fixtures.js";
 
 const databases: ReturnType<typeof openApplicationDatabase>[] = [];
 
@@ -118,12 +128,13 @@ async function createDocumentsApp(
         new SqliteDocumentPreviewsRepository(database),
         new DocumentPreviewSupervisor({
           maxConcurrentWorkers: 2,
+          maxDecodedBytes: 8192,
           maxInputBytes: maxPreviewInputBytes,
           maxMemoryMb: 16,
           maxOutputCharacters: 1000,
-          timeoutMs: 500,
+          timeoutMs: 3000,
         }),
-        "plain-text-v1",
+        "document-preview-v2",
         () => new Date("2026-07-19T10:05:00.000Z"),
       ),
       service: documentsService,
@@ -168,6 +179,20 @@ function responseDocument(response: request.Response): Record<string, unknown> {
     throw new Error("Expected a document response");
   }
   return body.document as Record<string, unknown>;
+}
+
+function responsePreview(response: request.Response): Record<string, unknown> {
+  const body: unknown = response.body;
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("preview" in body) ||
+    typeof body.preview !== "object" ||
+    body.preview === null
+  ) {
+    throw new Error("Expected a preview response");
+  }
+  return body.preview as Record<string, unknown>;
 }
 
 async function holdIncompleteUpload(
@@ -447,8 +472,9 @@ describe("document routes", () => {
       preview: {
         documentId,
         generatedAt: "2026-07-19T10:05:00.000Z",
+        kind: "text",
         mediaType: "text/plain",
-        parserVersion: "plain-text-v1",
+        parserVersion: "document-preview-v2",
         status: "ready",
         text: "First line\nSecond line",
         truncated: false,
@@ -464,7 +490,127 @@ describe("document routes", () => {
       .expect(200, expected);
   });
 
-  it("reports unsupported, oversized, malformed, and unauthenticated previews", async () => {
+  it("previews representative DOCX, EML, and MSG uploads", async () => {
+    const { app, documentTypeId } = await createDocumentsApp(8192, 8192);
+    const cookie = await login(app);
+    const upload = async (
+      bytes: Buffer,
+      contentType: string,
+      filename: string,
+    ) => {
+      const response = await sameOrigin(request(app).post("/api/documents"))
+        .set("Cookie", cookie)
+        .field("documentTypeId", documentTypeId)
+        .field("applicationIds", "[]")
+        .attach("file", bytes, { contentType, filename })
+        .expect(201);
+      const document = responseDocument(response);
+      if (typeof document.id !== "string")
+        throw new Error("Missing document ID");
+      return document;
+    };
+
+    const docx = await upload(
+      docxFixture(),
+      "application/zip",
+      "cover-letter.docx",
+    );
+    const eml = await upload(
+      emlFixture(),
+      "application/octet-stream",
+      "reply.eml",
+    );
+    const msg = await upload(
+      msgFixture(),
+      "application/octet-stream",
+      "reply.msg",
+    );
+
+    expect(docx.mediaType).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(eml.mediaType).toBe("message/rfc822");
+    expect(msg.mediaType).toBe("application/vnd.ms-outlook");
+
+    await request(app)
+      .get(`/api/documents/${String(docx.id)}/preview`)
+      .set("Cookie", cookie)
+      .expect(200)
+      .expect((response: request.Response) => {
+        expect(responsePreview(response)).toMatchObject({
+          kind: "text",
+          status: "ready",
+          text: "Application Tracker DOCX preview\n\nSecond paragraph",
+        });
+      });
+    await request(app)
+      .get(`/api/documents/${String(eml.id)}/preview`)
+      .set("Cookie", cookie)
+      .expect(200)
+      .expect((response: request.Response) => {
+        expect(responsePreview(response)).toMatchObject({
+          from: "Hiring Manager <hiring@example.test>",
+          kind: "email",
+          status: "ready",
+          subject: "Application Tracker EML preview",
+          text: "Your interview is scheduled for Tuesday.",
+        });
+      });
+    await request(app)
+      .get(`/api/documents/${String(msg.id)}/preview`)
+      .set("Cookie", cookie)
+      .expect(200)
+      .expect((response: request.Response) => {
+        expect(responsePreview(response)).toMatchObject({
+          from: "Hiring Manager <hiring@example.test>",
+          kind: "email",
+          status: "ready",
+          subject: "Application Tracker MSG preview",
+          text: "Your application has moved to the interview stage.",
+        });
+      });
+  });
+
+  it("serves only valid authenticated PDFs through the inline view route", async () => {
+    const { app, documentTypeId } = await createDocumentsApp(8192, 8192);
+    const cookie = await login(app);
+    const upload = async (bytes: Buffer, filename: string) => {
+      const response = await sameOrigin(request(app).post("/api/documents"))
+        .set("Cookie", cookie)
+        .field("documentTypeId", documentTypeId)
+        .field("applicationIds", "[]")
+        .attach("file", bytes, {
+          contentType: "application/octet-stream",
+          filename,
+        })
+        .expect(201);
+      const id = responseDocument(response).id;
+      if (typeof id !== "string") throw new Error("Missing document ID");
+      return id;
+    };
+    const validId = await upload(pdfFixture(), "Product CV.pdf");
+    const malformedId = await upload(Buffer.from("not-a-pdf"), "fake.pdf");
+
+    const inline = await request(app)
+      .get(`/api/documents/${validId}/view`)
+      .set("Cookie", cookie)
+      .expect("Content-Type", "application/pdf")
+      .expect("Content-Disposition", /inline/)
+      .expect("Content-Security-Policy", "sandbox")
+      .expect("Cross-Origin-Resource-Policy", "same-origin")
+      .expect("X-Content-Type-Options", "nosniff")
+      .expect(200);
+    expect(inline.body).toEqual(pdfFixture());
+    await request(app)
+      .get(`/api/documents/${malformedId}/view`)
+      .set("Cookie", cookie)
+      .expect(422, { error: { code: "document_preview_failed" } });
+    await request(app)
+      .get(`/api/documents/${validId}/view`)
+      .expect(401, { error: { code: "authentication_required" } });
+  });
+
+  it("reports PDF, oversized, malformed, and unauthenticated previews", async () => {
     const { app, documentTypeId } = await createDocumentsApp(1024, 8);
     const cookie = await login(app);
     const upload = async (
@@ -505,7 +651,7 @@ describe("document routes", () => {
         preview: {
           documentId: pdfId,
           mediaType: "application/pdf",
-          status: "unsupported",
+          status: "pdf",
         },
       });
     await request(app)
@@ -558,6 +704,3 @@ describe("document routes", () => {
       .expect(400, { error: { code: "validation_error" } });
   });
 });
-import { once } from "node:events";
-import net from "node:net";
-import type { AddressInfo } from "node:net";

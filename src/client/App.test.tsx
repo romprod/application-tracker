@@ -26,7 +26,11 @@ import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
-import type { DocumentRecord, DocumentsClient } from "./documents_client";
+import type {
+  DocumentPreview,
+  DocumentRecord,
+  DocumentsClient,
+} from "./documents_client";
 import type { EmailLinksClient } from "./email_links_client";
 
 afterEach(() => {
@@ -436,19 +440,18 @@ function createApplicationsClient(
   } satisfies ApplicationsClient;
 }
 
-function createDocumentsClient(documents: DocumentRecord[] = [documentRecord]) {
+function createDocumentsClient(
+  documents: DocumentRecord[] = [documentRecord],
+  preview: DocumentPreview = {
+    documentId: documentRecord.id,
+    mediaType: "application/pdf",
+    status: "pdf",
+  },
+) {
   return {
     getDocumentPreview: vi
       .fn<DocumentsClient["getDocumentPreview"]>()
-      .mockResolvedValue({
-        documentId: documentRecord.id,
-        generatedAt: "2026-07-19T10:05:00.000Z",
-        mediaType: "text/plain",
-        parserVersion: "plain-text-v1",
-        status: "ready",
-        text: "Synthetic preview text",
-        truncated: false,
-      }),
+      .mockResolvedValue(preview),
     listDocuments: vi
       .fn<DocumentsClient["listDocuments"]>()
       .mockResolvedValue({ documents, maxUploadBytes: 10_485_760 }),
@@ -644,7 +647,7 @@ describe("application shell", () => {
     expect(screen.getByText("Product CV.pdf")).toBeInTheDocument();
   });
 
-  it("opens an authorized plain-text document preview", async () => {
+  it("opens an authorized inline PDF preview", async () => {
     const documentsClient = createDocumentsClient();
     render(
       <App
@@ -667,10 +670,64 @@ describe("application shell", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Preview Original CV.pdf",
     });
-    expect(within(dialog).getByText("Synthetic preview text")).toBeVisible();
+    expect(
+      within(dialog).getByTitle("Preview Original CV.pdf"),
+    ).toHaveAttribute("src", `/api/documents/${documentRecord.id}/view`);
     expect(documentsClient.getDocumentPreview).toHaveBeenCalledWith(
       documentRecord.id,
     );
+  });
+
+  it("renders a structured email preview without injecting HTML", async () => {
+    const emailDocument = {
+      ...documentRecord,
+      mediaType: "message/rfc822",
+      originalFilename: "Interview.eml",
+    };
+    const documentsClient = createDocumentsClient([emailDocument], {
+      cc: ["Recruiter <recruiter@example.test>"],
+      date: "2026-07-19T10:00:00.000Z",
+      documentId: emailDocument.id,
+      from: "Hiring Manager <hiring@example.test>",
+      generatedAt: "2026-07-19T10:05:00.000Z",
+      kind: "email",
+      mediaType: "message/rfc822",
+      parserVersion: "document-preview-v2",
+      status: "ready",
+      subject: "Interview invitation",
+      text: "<script>not executable</script>",
+      to: ["Alex Example <alex@example.test>"],
+      truncated: false,
+    });
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={documentsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Preview Interview.eml" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Preview Interview.eml",
+    });
+    expect(within(dialog).getByText("Interview invitation")).toBeVisible();
+    expect(
+      within(dialog).getByText("Hiring Manager <hiring@example.test>"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText("<script>not executable</script>"),
+    ).toBeVisible();
+    expect(within(dialog).queryByRole("iframe")).not.toBeInTheDocument();
   });
 
   it("adds an application and clears the intake form", async () => {
