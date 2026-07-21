@@ -296,7 +296,7 @@ function emailPreview(
 ): EmailDocumentPreview {
   const compactBody = input.text
     .replace(/\r\n?/g, "\n")
-    .replace(/(?:\n[\t ]*){3,}/g, "\n\n");
+    .replace(/(?:\n[^\S\r\n]*){3,}/g, "\n\n");
   const bounded = normalizedText(compactBody, maximum);
   return {
     cc: input.cc.slice(0, EMAIL_ADDRESS_LIMIT),

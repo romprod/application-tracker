@@ -424,7 +424,12 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await emlDialog.getByRole("button", { name: "Done" }).click();
 
   await uploadDocument(page, {
-    buffer: msgFixture(),
+    buffer: msgFixture(
+      Array.from(
+        { length: 32 },
+        (_, index) => `Preview paragraph ${String(index + 1)}.`,
+      ).join("\r\n\r\n\u00a0\r\n\r\n"),
+    ),
     mimeType: "application/octet-stream",
     name: "browser-preview.msg",
   });
@@ -435,9 +440,17 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     name: "Preview browser-preview.msg",
   });
   await expect(msgDialog).toContainText("Application Tracker MSG preview");
-  await expect(msgDialog).toContainText(
-    "Your application has moved to the interview stage.",
-  );
+  await expect(msgDialog).toContainText("Preview paragraph 32.");
+  const msgBody = msgDialog.locator("pre");
+  expect(await msgBody.textContent()).not.toContain("\u00a0");
+  expect(
+    await msgDialog.evaluate(
+      (dialog) => dialog.scrollHeight - dialog.clientHeight,
+    ),
+  ).toBeLessThanOrEqual(1);
+  await expect(
+    msgDialog.getByRole("button", { name: "Done" }),
+  ).toBeInViewport();
   await msgDialog.getByRole("button", { name: "Done" }).click();
 
   await page.context().clearCookies();

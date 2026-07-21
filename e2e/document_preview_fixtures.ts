@@ -51,7 +51,9 @@ export function emlFixture(): Buffer {
   );
 }
 
-export function msgFixture(): Buffer {
+export function msgFixture(
+  body = "Your application has moved to the interview stage.",
+): Buffer {
   const entries: Entry[] = [
     {
       children: [1, 2, 3, 4, 5, 6],
@@ -61,10 +63,7 @@ export function msgFixture(): Buffer {
     },
     stream("__substg1.0_001A001F", utf16("IPM.Note")),
     stream("__substg1.0_0037001F", utf16("Application Tracker MSG preview")),
-    stream(
-      "__substg1.0_1000001F",
-      utf16("Your application has moved to the interview stage."),
-    ),
+    stream("__substg1.0_1000001F", utf16(body)),
     stream("__substg1.0_0C1A001F", utf16("Hiring Manager")),
     stream("__substg1.0_5D01001F", utf16("hiring@example.test")),
     {

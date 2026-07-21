@@ -98,10 +98,11 @@ policy, and a sandbox content security policy.
 DOCX parsing reads only selected Word document, header, footer, footnote, and
 endnote XML entries. MSG and EML parsing returns a structured envelope and a
 plain-text body. HTML-only email bodies are converted to text; message HTML and
-attachments are never rendered. CSV, Markdown, and plain text are decoded
-as UTF-8. All text output has normalized line endings, and nominal text files
-with binary-looking controls fail closed. Other formats return an unsupported
-result while their originals remain available for authorized download.
+attachments are never rendered. Email-only Unicode spacer lines are compacted
+without changing the original. CSV, Markdown, and plain text are decoded as
+UTF-8. All text output has normalized line endings, and nominal text files with
+binary-looking controls fail closed. Other formats return an unsupported result
+while their originals remain available for authorized download.
 
 The service coalesces simultaneous cache misses for the same workspace,
 document, and parser version. A distinct miss acquires process-wide capacity

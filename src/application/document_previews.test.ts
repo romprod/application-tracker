@@ -19,7 +19,7 @@ const ready: ReadyDocumentPreviewRecord = {
   generatedAt: "2026-07-19T12:00:00.000Z",
   kind: "text",
   mediaType: "text/plain",
-  parserVersion: "document-preview-v3",
+  parserVersion: "document-preview-v4",
   status: "ready",
   text: "Preview text",
   truncated: false,
@@ -92,7 +92,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v3",
+      "document-preview-v4",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
@@ -118,7 +118,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v3",
+      "document-preview-v4",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
@@ -126,7 +126,7 @@ describe("DocumentPreviewService", () => {
     expect(values.getDocumentPreview).toHaveBeenCalledWith(
       "workspace-1",
       documentId,
-      "document-preview-v3",
+      "document-preview-v4",
     );
     expect(values.getDocumentOriginal).not.toHaveBeenCalled();
     expect(values.generate).not.toHaveBeenCalled();
@@ -135,14 +135,14 @@ describe("DocumentPreviewService", () => {
   it("regenerates previews cached by an older parser version", async () => {
     const values = dependencies({
       ...ready,
-      parserVersion: "document-preview-v2",
+      parserVersion: "document-preview-v3",
       text: "Stale preview text",
     });
     const service = new DocumentPreviewService(
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v3",
+      "document-preview-v4",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 
@@ -150,7 +150,7 @@ describe("DocumentPreviewService", () => {
     expect(values.getDocumentPreview).toHaveBeenCalledWith(
       "workspace-1",
       documentId,
-      "document-preview-v3",
+      "document-preview-v4",
     );
     expect(values.generate).toHaveBeenCalledTimes(1);
     expect(values.saveDocumentPreview).toHaveBeenCalledWith({
@@ -165,7 +165,7 @@ describe("DocumentPreviewService", () => {
       values.documents,
       values.previews,
       values.generator,
-      "document-preview-v3",
+      "document-preview-v4",
       () => new Date("2026-07-19T12:00:00.000Z"),
     );
 

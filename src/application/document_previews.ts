@@ -139,7 +139,7 @@ export class DocumentPreviewService {
     private readonly documents: DocumentsRepository,
     private readonly previews: DocumentPreviewsRepository,
     private readonly generator: DocumentPreviewGenerator,
-    private readonly parserVersion = "document-preview-v3",
+    private readonly parserVersion = "document-preview-v4",
     private readonly clock: () => Date = () => new Date(),
   ) {}
 

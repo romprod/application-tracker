@@ -64,7 +64,7 @@ describe("document preview format parsers", () => {
         "MIME-Version: 1.0",
         "Content-Type: text/html; charset=utf-8",
         "",
-        "<style>.hidden { color: red }</style><div><blockquote><p>Hello <b>Alex</b></p></blockquote></div><p>Your interview is Tuesday.</p><script>unsafe()</script>",
+        "<style>.hidden { color: red }</style><div><blockquote><p>Hello <b>Alex</b></p></blockquote></div><p>&nbsp;</p><p>Your interview is Tuesday.</p><script>unsafe()</script>",
       ].join("\r\n"),
     );
 
