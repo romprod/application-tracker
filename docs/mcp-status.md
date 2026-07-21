@@ -67,8 +67,8 @@ The environment controls the remote MCP session policy:
 
 | Variable                       | Default | Meaning                          |
 | ------------------------------ | ------: | -------------------------------- |
-| `MCP_SESSION_GLOBAL_LIMIT`     |      32 | Installation-wide remote limit   |
-| `MCP_SESSION_PER_ACTOR_LIMIT`  |       8 | Remote limit for one actor       |
+| `MCP_SESSION_GLOBAL_LIMIT`     |     256 | Installation-wide remote limit   |
+| `MCP_SESSION_PER_ACTOR_LIMIT`  |      64 | Remote limit for one actor       |
 | `MCP_SESSION_IDLE_SECONDS`     |     300 | Remote idle expiry, 5 minutes    |
 | `MCP_SESSION_ABSOLUTE_SECONDS` |   14400 | Remote maximum lifetime, 4 hours |
 

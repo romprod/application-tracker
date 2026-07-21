@@ -217,7 +217,7 @@ const runtimeEnvironmentSchema = z.object({
     .int()
     .min(1)
     .max(1000)
-    .default(32),
+    .default(256),
   MCP_SESSION_IDLE_SECONDS: z.coerce
     .number()
     .int()
@@ -229,7 +229,7 @@ const runtimeEnvironmentSchema = z.object({
     .int()
     .min(1)
     .max(100)
-    .default(8),
+    .default(64),
   MCP_LOCAL_ACTOR_USERNAME: z.preprocess(
     blankToUndefined,
     z

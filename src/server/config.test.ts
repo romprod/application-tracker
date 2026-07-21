@@ -52,9 +52,9 @@ describe("parseRuntimeConfig", () => {
         },
         session: {
           absoluteDurationMs: 14_400_000,
-          globalLimit: 32,
+          globalLimit: 256,
           idleDurationMs: 300_000,
-          perActorLimit: 8,
+          perActorLimit: 64,
         },
       },
       nodeEnv: "development",
