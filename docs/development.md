@@ -22,6 +22,7 @@ Useful commands:
 | -------------------------------------- | ------------------------------------------------- |
 | `npm run check`                        | Run formatting, lint, type, test, and build gates |
 | `npm test`                             | Run the test suite once                           |
+| `npm run test:e2e`                     | Run Chromium browser acceptance tests             |
 | `npm run test:watch`                   | Run tests while editing                           |
 | `npm run build`                        | Compile the client and server                     |
 | `npm run db:backup`                    | Create and verify an online SQLite backup         |
@@ -36,6 +37,18 @@ API error responses and the fields permitted in runtime logs are documented in
 [`error-handling.md`](error-handling.md).
 Build and client configuration for the local MCP process are documented in
 [`local-mcp.md`](local-mcp.md).
+
+Install the Chromium browser once before running browser acceptance locally:
+
+```sh
+npx playwright install chromium
+npm run test:e2e
+```
+
+The browser suite builds and starts the compiled application with a temporary
+synthetic SQLite database. It does not read `.env`, local application data, or
+production data. GitHub Actions installs Chromium and runs the same acceptance
+suite for pull requests and pushes to `main`.
 
 ## Commit discipline
 

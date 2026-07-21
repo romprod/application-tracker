@@ -8,5 +8,11 @@
     "target": "ES2023",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["eslint.config.js", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "e2e/**/*.ts",
+    "eslint.config.js",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

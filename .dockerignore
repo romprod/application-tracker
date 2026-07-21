@@ -5,10 +5,15 @@
 .mcp.json
 
 backups
+blob-report
 coverage
 data
 dist
 node_modules
+playwright-report
+test-results
+
+playwright/.auth
 
 *.db
 *.db-*

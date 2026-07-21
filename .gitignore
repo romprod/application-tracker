@@ -2,12 +2,16 @@ node_modules/
 build/
 coverage/
 dist/
+blob-report/
+playwright-report/
+test-results/
 
 .env
 .env.*
 !.env.example
 
 .mcp.json
+playwright/.auth/
 data/
 backups/
 *.db
