@@ -131,6 +131,31 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
+  it("accepts job-email audit actions and targets", async () => {
+    const reconciled = {
+      ...status,
+      recentAuditEvents: [
+        {
+          ...status.recentAuditEvents[0],
+          action: "upsert_application_from_email",
+          targetType: "job_email",
+        },
+      ],
+    } as const;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: reconciled }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      reconciled,
+    );
+  });
+
   it("rejects a malformed status instead of guessing", async () => {
     vi.stubGlobal(
       "fetch",

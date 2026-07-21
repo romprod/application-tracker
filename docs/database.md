@@ -151,6 +151,11 @@ The nineteenth migration extends cached document previews with a text-or-email
 kind and bounded JSON metadata for structured MSG and EML envelope fields.
 Existing rows retain the text kind.
 
+The twentieth migration stores workspace-unique job-board posting identities
+and source-email Message-IDs beside applications. It also extends MCP audit
+actions for deterministic email matching and idempotent reconciliation. Email
+bodies are not stored in either evidence table.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

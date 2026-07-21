@@ -142,6 +142,7 @@ describe("ApplicationMcpService", () => {
       },
       documents,
       imports,
+      undefined,
       () => new Date("2026-01-10T12:00:00.000Z"),
     );
 
@@ -186,6 +187,7 @@ describe("ApplicationMcpService", () => {
     ).toMatchObject({ nextOffset: 1, offset: 0, returned: 1, total: 2 });
     expect(service.getApplication("application-1")).toEqual({
       application: applications[0],
+      emailEvidence: [],
       events: [
         {
           actorDisplayName: "Alex Example",
@@ -196,6 +198,7 @@ describe("ApplicationMcpService", () => {
           type: "application_created",
         },
       ],
+      jobPostings: [],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
     expect(service.getDocumentImportCapabilities()).toEqual({

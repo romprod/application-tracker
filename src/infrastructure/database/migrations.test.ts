@@ -95,7 +95,7 @@ describe("migrateDatabase", () => {
           .pluck()
           .all(),
       ).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       expect(
         database
@@ -960,6 +960,40 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(oauthClientId),
       ).toBe("read_write");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates workspace-unique job posting and email evidence", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name IN (
+               'application_job_postings',
+               'application_email_evidence'
+             )
+             ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual(["application_email_evidence", "application_job_postings"]);
+      const auditSql = database
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_audit_events'",
+        )
+        .pluck()
+        .get();
+      expect(auditSql).toContain("match_job_application_email");
+      expect(auditSql).toContain("upsert_application_from_email");
+      expect(auditSql).toContain("job_email");
     } finally {
       database.close();
     }

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const jobBoardProviders = [
   "linkedin",
   "cv_library",
@@ -9,5 +11,7 @@ export const jobBoardProviders = [
   "talent",
   "generic",
 ] as const;
+
+export const jobBoardProviderSchema = z.enum(jobBoardProviders);
 
 export type JobBoardProvider = (typeof jobBoardProviders)[number];

@@ -7,6 +7,11 @@ import {
   InvalidApplicationReferenceError,
 } from "../application/applications.js";
 import {
+  InvalidJobPostingEvidenceError,
+  JobEmailEvidenceConflictError,
+  JobEmailMatchAmbiguousError,
+} from "../application/job_email_reconciliation.js";
+import {
   InvalidMcpDocumentExportError,
   LocalMcpActorUnavailableError,
   type McpApplicationTools,
@@ -41,6 +46,11 @@ import {
 } from "../domain/applications.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
+import {
+  matchJobApplicationEmailSchema,
+  upsertApplicationFromEmailSchema,
+} from "../domain/job_email_reconciliation.js";
+import { jobBoardProviderSchema } from "../domain/job_board.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
 const readOnlyAnnotations = {
@@ -151,9 +161,55 @@ const applicationEventSchema = z.strictObject({
   toStatus: z.string(),
   type: z.enum(["application_created", "status_changed"]),
 });
+const applicationJobPostingSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  canonicalUrl: z.url().nullable(),
+  createdAt: z.iso.datetime(),
+  externalPostingId: z.string().nullable(),
+  id: z.uuid(),
+  provider: jobBoardProviderSchema,
+  updatedAt: z.iso.datetime(),
+});
+const applicationEmailEvidenceSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  createdAt: z.iso.datetime(),
+  id: z.uuid(),
+  messageId: z.string(),
+  receivedAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  webUrl: z.url().nullable(),
+});
 const applicationDetailSchema = z.strictObject({
   application: applicationRecordSchema,
+  emailEvidence: z.array(applicationEmailEvidenceSchema),
   events: z.array(applicationEventSchema),
+  jobPostings: z.array(applicationJobPostingSchema),
+});
+const jobEmailMatchCandidateSchema = z.strictObject({
+  companyName: z.string(),
+  id: applicationIdSchema,
+  roleTitle: z.string(),
+  status: z.string(),
+  statusId: referenceValueIdSchema,
+  updatedAt: z.iso.datetime(),
+});
+const jobEmailMatchResultSchema = z.strictObject({
+  level: z
+    .enum(["posting_id", "canonical_url", "email_message_id", "company_title"])
+    .nullable(),
+  matches: z.array(jobEmailMatchCandidateSchema),
+  outcome: z.enum(["matched", "none", "ambiguous", "conflict"]),
+});
+const upsertApplicationFromEmailResultSchema = z.strictObject({
+  action: z.enum(["created", "matched", "updated"]),
+  application: applicationRecordSchema,
+  emailEvidence: z.array(applicationEmailEvidenceSchema),
+  emailEvidenceLinked: z.boolean(),
+  jobPostings: z.array(applicationJobPostingSchema),
+  matchLevel: z
+    .enum(["posting_id", "canonical_url", "email_message_id", "company_title"])
+    .nullable(),
+  postingLinked: z.boolean(),
 });
 const referenceValueSchema = z.strictObject({
   category: z.enum(["status", "source", "role_type", "document_type"]),
@@ -337,6 +393,11 @@ function executeTool(
         ? failedToolResult("invalid_document_export_offset")
         : failedToolResult("internal_error");
     }
+    if (error instanceof InvalidJobPostingEvidenceError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("invalid_job_posting_evidence")
+        : failedToolResult("internal_error");
+    }
     logger.error("mcp_tool_failed", { error, tool });
     recordAuditEvent(audit, logger, tool, targetType, "error");
     return failedToolResult("internal_error");
@@ -387,6 +448,19 @@ function executeWriteTool(
     if (error instanceof InvalidApplicationReferenceError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("invalid_application_reference")
+        : failedToolResult("internal_error");
+    }
+    const jobEmailErrorCode =
+      error instanceof JobEmailMatchAmbiguousError
+        ? "job_email_ambiguous"
+        : error instanceof JobEmailEvidenceConflictError
+          ? "job_email_conflict"
+          : error instanceof InvalidJobPostingEvidenceError
+            ? "invalid_job_posting_evidence"
+            : undefined;
+    if (jobEmailErrorCode) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(jobEmailErrorCode)
         : failedToolResult("internal_error");
     }
     if (error instanceof McpDocumentImportNotFoundError) {
@@ -515,6 +589,26 @@ export function createApplicationMcpServer(
     ({ applicationId }) =>
       executeTool("get_application", "application", logger, options.audit, () =>
         tools.getApplication(applicationId),
+      ),
+  );
+
+  server.registerTool(
+    "match_job_application_email",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Deterministically match job-email evidence by provider posting ID, canonical posting URL, email Message-ID, then exact normalized company and role title. Returns ambiguity or conflict instead of guessing.",
+      inputSchema: matchJobApplicationEmailSchema,
+      outputSchema: jobEmailMatchResultSchema,
+      title: "Match job application email",
+    },
+    (input) =>
+      executeTool(
+        "match_job_application_email",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.matchJobApplicationEmail(input),
       ),
   );
 
@@ -667,6 +761,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.deleteApplication(applicationId),
+      ),
+  );
+
+  server.registerTool(
+    "upsert_application_from_email",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Idempotently match or create an application, apply an optional selected-field update, and persist workspace-unique posting and email evidence. Reusing the same email Message-ID cannot create a duplicate application.",
+      inputSchema: upsertApplicationFromEmailSchema,
+      outputSchema: upsertApplicationFromEmailResultSchema,
+      title: "Upsert application from email",
+    },
+    (input) =>
+      executeWriteTool(
+        "upsert_application_from_email",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.upsertApplicationFromEmail(input),
       ),
   );
 

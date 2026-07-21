@@ -22,12 +22,25 @@ import type {
 } from "../domain/applications.js";
 import type { McpAccessMode } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
+import {
+  JobEmailReconciliationUnavailableError,
+  type ApplicationEmailEvidence,
+  type ApplicationJobPosting,
+  type JobEmailMatchResult,
+  type JobEmailReconciliationService,
+  type UpsertApplicationFromEmailResult,
+} from "./job_email_reconciliation.js";
+import type {
+  MatchJobApplicationEmailInput,
+  UpsertApplicationFromEmailInput,
+} from "../domain/job_email_reconciliation.js";
 
 export const applicationMcpToolNames = [
   "get_tracker_context",
   "get_job_search_summary",
   "list_applications",
   "get_application",
+  "match_job_application_email",
   "get_reference_data",
   "get_document_import_capabilities",
   "list_documents",
@@ -35,6 +48,7 @@ export const applicationMcpToolNames = [
   "create_application",
   "update_application",
   "delete_application",
+  "upsert_application_from_email",
   "begin_document_import",
   "append_document_chunk",
   "complete_document_import",
@@ -152,7 +166,9 @@ export interface McpApplicationList {
 
 export interface McpApplicationDetail {
   application: ApplicationRecord;
+  emailEvidence: ApplicationEmailEvidence[];
   events: ApplicationEvent[];
+  jobPostings: ApplicationJobPosting[];
 }
 
 export interface McpReferenceData {
@@ -216,10 +232,16 @@ export interface McpApplicationTools {
   getTrackerContext(): LocalMcpTrackerContext;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
   listDocuments(input: { limit: number; offset: number }): McpDocumentList;
+  matchJobApplicationEmail(
+    input: MatchJobApplicationEmailInput,
+  ): JobEmailMatchResult;
   updateApplication(
     applicationId: string,
     input: UpdateApplicationInput,
   ): ApplicationRecord;
+  upsertApplicationFromEmail(
+    input: UpsertApplicationFromEmailInput,
+  ): UpsertApplicationFromEmailResult;
 }
 
 export class LocalMcpActorUnavailableError extends Error {
@@ -279,6 +301,7 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly accessPolicy: McpAccessPolicy,
     private readonly documents: McpDocumentsService,
     private readonly documentImports: McpDocumentImportManager,
+    private readonly jobEmails?: JobEmailReconciliationService,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -371,10 +394,23 @@ export class ApplicationMcpService implements McpApplicationTools {
       .listApplications(actor)
       .find(({ id }) => id === applicationId);
     if (!application) throw new ApplicationNotFoundError();
+    const evidence = this.jobEmails?.getApplicationEvidence(
+      actor,
+      applicationId,
+    ) ?? { emailEvidence: [], jobPostings: [] };
     return {
       application,
+      emailEvidence: evidence.emailEvidence,
       events: this.applications.listApplicationEvents(actor, applicationId),
+      jobPostings: evidence.jobPostings,
     };
+  }
+
+  public matchJobApplicationEmail(
+    input: MatchJobApplicationEmailInput,
+  ): JobEmailMatchResult {
+    const actor = this.actorProvider.getActor();
+    return this.jobEmailService().match(actor, input);
   }
 
   public getReferenceData(): McpReferenceData {
@@ -499,5 +535,18 @@ export class ApplicationMcpService implements McpApplicationTools {
     this.accessPolicy.requireWriteAccess(actor);
     this.applications.deleteApplication(actor, applicationId);
     return { applicationId, deleted: true };
+  }
+
+  public upsertApplicationFromEmail(
+    input: UpsertApplicationFromEmailInput,
+  ): UpsertApplicationFromEmailResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.jobEmailService().upsert(actor, input);
+  }
+
+  private jobEmailService(): JobEmailReconciliationService {
+    if (!this.jobEmails) throw new JobEmailReconciliationUnavailableError();
+    return this.jobEmails;
   }
 }

@@ -5,7 +5,7 @@ Settings → MCP. The page reports what the current build can do while exposing
 only the canonical public MCP endpoint from its network configuration.
 
 The build includes local stdio and optional remote Streamable HTTP transports
-for eight read tools and seven mutation tools. The page reports
+for nine read tools and eight mutation tools. The page reports
 whether runtime configuration has enabled each transport and whether the
 individual connection permits mutations.
 
@@ -138,11 +138,12 @@ fixes the issuer to `MCP_OAUTH_ISSUER`; the browser never receives or selects it
 
 ## Per-connection write policy
 
-The seven mutation tools are always discoverable so connected clients retain a
+The eight mutation tools are always discoverable so connected clients retain a
 stable tool registry. In `read_only` mode they fail with
 `write_access_disabled` before changing application data. In `read_write` mode
-active workspace members may create and update applications. Soft deletion also
-requires `confirm=true` and is advertised as destructive to the MCP client.
+active workspace members may create and update applications, reconcile job
+emails, and transfer documents. Soft deletion also requires `confirm=true` and
+is advertised as destructive to the MCP client.
 
 The setting belongs to a bearer credential, OAuth grant, or local stdio process;
 there is no workspace-wide switch. Existing sessions recheck the credential on

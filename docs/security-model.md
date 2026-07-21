@@ -2,7 +2,8 @@
 
 ## Assets
 
-- Application records, notes, contacts, events, and due actions
+- Application records, notes, contacts, events, due actions, posting identities,
+  and bounded source-email evidence
 - Uploaded CVs, cover letters, and email files
 - Local password verifiers, sessions, setup tokens, MCP bearer tokens, and OAuth
   tokens
@@ -54,7 +55,7 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Eight read tools and seven mutation tools are bounded and closed-world; new
+- Nine read tools and eight mutation tools are bounded and closed-world; new
   connections block all mutations by default
 - Local stdio permissions are fixed per process by `MCP_LOCAL_ACCESS_MODE`
 - Every mutation rechecks the connection-bound policy
@@ -131,6 +132,8 @@ claims, secret material, database paths, or internal errors. See
 - Preview parsing in disposable child processes outside the HTTP event loop
 - Parser-versioned, workspace-scoped text and email preview cache
 - Bounded, no-network email-link extraction with explicit user selection
+- Workspace-unique posting IDs, canonical URLs, and email Message-IDs without
+  persisted email subjects, senders, or bodies
 
 The preview process decodes an exact allowlist. It rejects binary-looking text,
 limits selected DOCX expansion, validates MSG container allocation before

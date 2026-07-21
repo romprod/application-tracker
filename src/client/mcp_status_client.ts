@@ -89,7 +89,9 @@ export interface McpAuditEvent {
     | "get_tracker_context"
     | "list_applications"
     | "list_documents"
-    | "update_application";
+    | "match_job_application_email"
+    | "update_application"
+    | "upsert_application_from_email";
   actor: {
     displayName: string;
     username: string;
@@ -102,6 +104,7 @@ export interface McpAuditEvent {
     | "document"
     | "document_collection"
     | "document_transfer"
+    | "job_email"
     | "job_search"
     | "reference_data"
     | "workspace";
@@ -175,7 +178,9 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "get_tracker_context" &&
       value.action !== "list_applications" &&
       value.action !== "list_documents" &&
-      value.action !== "update_application") ||
+      value.action !== "match_job_application_email" &&
+      value.action !== "update_application" &&
+      value.action !== "upsert_application_from_email") ||
     !isRecord(value.actor) ||
     typeof value.actor.displayName !== "string" ||
     typeof value.actor.username !== "string" ||
@@ -190,6 +195,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.targetType !== "document" &&
       value.targetType !== "document_collection" &&
       value.targetType !== "document_transfer" &&
+      value.targetType !== "job_email" &&
       value.targetType !== "job_search" &&
       value.targetType !== "reference_data" &&
       value.targetType !== "workspace") ||

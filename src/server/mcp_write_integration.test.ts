@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { DocumentLibraryService } from "../application/documents.js";
+import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import {
   ApplicationMcpService,
   LocalMcpActorProvider,
@@ -19,6 +20,7 @@ import { openApplicationDatabase } from "../infrastructure/database/connection.j
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
 import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
+import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { createLocalMcpServer } from "./mcp_server.js";
@@ -409,5 +411,186 @@ describe("MCP write integration", () => {
     expect(
       database.prepare("SELECT count(*) FROM file_objects").pluck().get(),
     ).toBe(1);
+  });
+
+  it("matches and idempotently upserts persisted job-email evidence", async () => {
+    const database = openApplicationDatabase(":memory:");
+    databases.push(database);
+    const setup = new SqliteSetupRepository(
+      database,
+    ).createInitialAdministrator({
+      completedAt: "2026-07-21T14:00:00.000Z",
+      displayName: "Alex Example",
+      passwordHash: "scrypt$1024$8$1$salt$hash-value-long-enough",
+      username: "alex",
+      workspaceName: "Applications",
+    });
+    const actorProvider = new LocalMcpActorProvider(
+      new SqliteMcpActorRepository(database),
+      { username: "alex", workspaceSlug: "default" },
+    );
+    const applications = new ApplicationLedgerService(
+      new SqliteApplicationsRepository(database),
+      () => new Date("2026-07-21T16:00:00.000Z"),
+    );
+    const jobEmails = new JobEmailReconciliationService(
+      new SqliteJobEmailReconciliationRepository(database),
+      applications,
+      (operation) => database.transaction(operation).immediate(),
+      () => new Date("2026-07-21T16:01:00.000Z"),
+    );
+    const documents = new DocumentLibraryService(
+      new SqliteDocumentsRepository(database, documentPolicy),
+      documentPolicy,
+    );
+    const tools = new ApplicationMcpService(
+      actorProvider,
+      applications,
+      new ReferenceValuesService(new SqliteReferenceValuesRepository(database)),
+      new McpConnectionAccessPolicy("read_write"),
+      documents,
+      new McpDocumentImportManager(documentPolicy.maxUploadBytes),
+      jobEmails,
+    );
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: setup.administrator.id,
+        recorder: new McpAuditService(new SqliteMcpAuditRepository(database)),
+        runAtomically: (operation) =>
+          database.transaction(operation).immediate(),
+        workspaceId: setup.workspace.id,
+      },
+    });
+    const client = new Client({ name: "job-email-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    clients.push(client);
+    servers.push(server);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const statusId = database
+      .prepare(
+        `SELECT id FROM reference_values
+         WHERE workspace_id = ? AND category = 'status'
+         ORDER BY sort_order LIMIT 1`,
+      )
+      .pluck()
+      .get(setup.workspace.id) as string;
+    const arguments_ = {
+      application: {
+        companyName: "Example Company",
+        roleTitle: "Platform Engineer",
+        statusId,
+      },
+      email: {
+        messageId: "<linkedin-4405273020@example.com>",
+        receivedAt: "2026-07-21T15:30:00Z",
+        webUrl: "https://outlook.office.com/mail/inbox/id/example",
+      },
+      posting: {
+        url: "https://www.linkedin.com/comm/jobs/view/4405273020?trackingId=email",
+      },
+    };
+
+    const first = await client.callTool({
+      arguments: arguments_,
+      name: "upsert_application_from_email",
+    });
+    const repeated = await client.callTool({
+      arguments: arguments_,
+      name: "upsert_application_from_email",
+    });
+    const storedApplicationId = database
+      .prepare(
+        "SELECT id FROM applications WHERE workspace_id = ? AND deleted_at IS NULL",
+      )
+      .pluck()
+      .get(setup.workspace.id);
+    if (typeof storedApplicationId !== "string") {
+      throw new Error("Missing application from job-email upsert result");
+    }
+    const applicationId = storedApplicationId;
+
+    expect(first.structuredContent).toMatchObject({
+      action: "created",
+      emailEvidenceLinked: true,
+      matchLevel: null,
+      postingLinked: true,
+    });
+    expect(repeated.structuredContent).toMatchObject({
+      action: "matched",
+      application: { id: applicationId },
+      emailEvidenceLinked: false,
+      matchLevel: "posting_id",
+      postingLinked: false,
+    });
+    const matched = await client.callTool({
+      arguments: {
+        posting: {
+          url: "https://www.linkedin.com/jobs/view/4405273020?refId=other",
+        },
+      },
+      name: "match_job_application_email",
+    });
+    expect(matched.structuredContent).toMatchObject({
+      level: "posting_id",
+      matches: [{ id: applicationId }],
+      outcome: "matched",
+    });
+    const detail = await client.callTool({
+      arguments: { applicationId },
+      name: "get_application",
+    });
+    expect(detail.structuredContent).toMatchObject({
+      emailEvidence: [{ messageId: "<linkedin-4405273020@example.com>" }],
+      jobPostings: [{ externalPostingId: "4405273020", provider: "linkedin" }],
+    });
+    expect(
+      database
+        .prepare("SELECT count(*) FROM applications WHERE deleted_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    await client.callTool({
+      arguments: {
+        companyName: "Example Company",
+        roleTitle: "Platform Engineer",
+        statusId,
+      },
+      name: "create_application",
+    });
+    const ambiguous = await client.callTool({
+      arguments: {
+        companyName: "example company",
+        roleTitle: "platform engineer",
+      },
+      name: "match_job_application_email",
+    });
+    expect(ambiguous.structuredContent).toMatchObject({
+      level: "company_title",
+      matches: [
+        { companyName: "Example Company" },
+        { companyName: "Example Company" },
+      ],
+      outcome: "ambiguous",
+    });
+    expect(
+      database
+        .prepare(
+          `SELECT action FROM mcp_audit_events
+           WHERE action IN (
+             'match_job_application_email',
+             'upsert_application_from_email'
+           )
+           ORDER BY rowid`,
+        )
+        .pluck()
+        .all(),
+    ).toEqual([
+      "upsert_application_from_email",
+      "upsert_application_from_email",
+      "match_job_application_email",
+      "match_job_application_email",
+    ]);
   });
 });

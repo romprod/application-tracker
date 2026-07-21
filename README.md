@@ -108,8 +108,9 @@ every mutation, including calls made through existing sessions.
 The repository includes the installable
 [Application Tracker Job Email](.agents/skills/application-tracker-job-email/SKILL.md)
 skill. It teaches compatible AI clients how to reconcile messages from an
-Outlook Jobs folder with Application Tracker while preserving existing data,
-using stable workspace reference IDs, and stopping when a match is ambiguous.
+Outlook Jobs folder with Application Tracker through the server's deterministic
+match and idempotent email-upsert tools, while stopping when evidence is
+ambiguous or conflicting.
 
 Codex discovers the skill from `.agents/skills` while working in this checkout.
 Other clients that support `SKILL.md` skills can install the

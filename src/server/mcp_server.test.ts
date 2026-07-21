@@ -71,7 +71,13 @@ function fakeTools(): McpApplicationTools {
       returned: 0,
       total: 0,
     })),
+    matchJobApplicationEmail: vi.fn(() => ({
+      level: null,
+      matches: [],
+      outcome: "none" as const,
+    })),
     updateApplication: vi.fn(),
+    upsertApplicationFromEmail: vi.fn(),
   };
 }
 
@@ -101,7 +107,7 @@ describe("local MCP server", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual(
       applicationMcpToolNames,
     );
-    for (const tool of listed.tools.slice(0, 8)) {
+    for (const tool of listed.tools.slice(0, 9)) {
       expect(tool.annotations).toMatchObject({
         destructiveHint: false,
         idempotentHint: true,
@@ -109,14 +115,14 @@ describe("local MCP server", () => {
         readOnlyHint: true,
       });
     }
-    for (const tool of listed.tools.slice(8, 11)) {
+    for (const tool of listed.tools.slice(9, 12)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: false,
         openWorldHint: false,
         readOnlyHint: false,
       });
     }
-    for (const tool of listed.tools.slice(11)) {
+    for (const tool of listed.tools.slice(12)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: true,
         openWorldHint: false,

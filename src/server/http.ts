@@ -7,6 +7,7 @@ import { AuthService } from "../application/auth.js";
 import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
+import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import { ApplicationMcpService } from "../application/mcp.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
 import {
@@ -32,6 +33,7 @@ import { JoseMcpAccessTokenVerifier } from "../infrastructure/auth/mcp_access_to
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
+import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteMcpClientsRepository } from "../infrastructure/database/mcp_clients_repository.js";
@@ -64,6 +66,11 @@ async function startApplication(): Promise<void> {
   try {
     const applicationsService = new ApplicationLedgerService(
       new SqliteApplicationsRepository(database),
+    );
+    const jobEmailReconciliationService = new JobEmailReconciliationService(
+      new SqliteJobEmailReconciliationRepository(database),
+      applicationsService,
+      (operation) => database.transaction(operation).immediate(),
     );
     const documentsRepository = new SqliteDocumentsRepository(
       database,
@@ -165,6 +172,7 @@ async function startApplication(): Promise<void> {
                 accessPolicy,
                 documentsService,
                 mcpDocumentImports,
+                jobEmailReconciliationService,
               ),
               {
                 audit: {

@@ -1,109 +1,119 @@
 # Current Application Tracker MCP contract
 
-Use this reference with Application Tracker servers that expose the generic
-application tools described below. Treat each live tool schema and description
-as authoritative if it differs from this file.
+Treat live tool schemas and descriptions as authoritative if they differ from
+this reference.
 
-## Required read sequence
+## Contents
 
-1. `get_tracker_context`
-   - Confirms the bound actor, workspace, and `read_only` or `read_write`
-     access.
-2. `get_reference_data`
-   - Returns workspace-specific statuses, sources, role types, and document
-     types.
-   - Use an ID only when its value is active and its category is correct.
-3. `list_applications`
-   - Accepts `limit` from 1 to 100, `offset`, and optional `statusId`.
-   - Follow `nextOffset` until it is null when checking for duplicates.
-   - Summaries contain company and title but do not contain links or `sourceUrl`.
-4. `get_application`
-   - Returns the full application, including `links`, `sourceUrl`, notes,
-     contacts, and immutable stage events.
+- [Required sequence](#required-sequence)
+- [Match input and result](#match-input-and-result)
+- [Upsert input and idempotency](#upsert-input-and-idempotency)
+- [Application detail evidence](#application-detail-evidence)
+- [Supported provider identities](#supported-provider-identities)
+- [Generic application schemas](#generic-application-schemas)
 
-## Current writes
+## Required sequence
 
-`create_application` requires:
+1. Call `get_tracker_context` to confirm the bound actor, workspace, and
+   `read_only` or `read_write` access.
+2. Call `get_reference_data` and use only active, category-correct reference
+   IDs from this workspace.
+3. Call `match_job_application_email` before a write.
+4. Call `upsert_application_from_email` for an authorized reconciliation.
+5. Call `get_application` for read-back verification.
 
-- `companyName`: 1 to 160 characters;
-- `roleTitle`: 1 to 160 characters; and
-- `statusId`: an active status reference ID from the bound workspace.
+## Match input and result
+
+`match_job_application_email` accepts:
+
+- `posting` with an HTTP(S) `url`, or a non-generic `provider` plus
+  `externalPostingId` pair;
+- `emailMessageId`;
+- `companyName` and `roleTitle` as a pair.
+
+At least one identity is required. The server canonicalizes supported posting
+URLs and evaluates evidence in this order:
+
+1. provider plus external posting ID;
+2. canonical posting URL;
+3. source-email Message-ID;
+4. exact normalized company plus exact normalized role title.
+
+The result contains `outcome`, `level`, and bounded candidate summaries:
+
+- `matched`: one application at the strongest available level;
+- `none`: no candidate;
+- `ambiguous`: more than one candidate at the strongest level;
+- `conflict`: supplied levels point to different applications.
+
+Lower-confidence evidence never overrides a stronger identity.
+
+## Upsert input and idempotency
+
+`upsert_application_from_email` requires:
+
+- `application`, using the normal `create_application` schema;
+- `email.messageId`, 1 to 998 characters;
+- `email.receivedAt`, an ISO date-time.
 
 It optionally accepts:
 
-- `appliedOn`: ISO date;
-- `contacts`: at most 10;
-- `links`: at most 10;
-- `location`: at most 160 characters;
-- `nextAction`: at most 500 characters;
-- `nextActionDue`: ISO date;
-- `notes`: at most 5000 characters;
-- `roleTypeId`: active role-type reference ID;
-- `sourceId`: active source reference ID; and
-- `sourceUrl`: HTTP or HTTPS URL, at most 2048 characters.
+- `email.webUrl`, an HTTP(S) URL up to 2048 characters;
+- `posting`, using the match posting schema; and
+- `update`, using the normal non-empty `update_application` update schema.
 
-`update_application` accepts an `applicationId` and an `update` object. Omitted
-fields remain unchanged. Nullable scalar fields can be cleared with `null`.
-The update object must contain at least one changed field.
+`application` is the create fallback if no record matches. `update` is applied
+only when at least one supplied value differs. Reusing the same Message-ID
+returns the linked application instead of creating a duplicate. Exact retries
+do not duplicate posting rows, email rows, or unchanged application updates.
 
-Important: `links` and `contacts` are replacement arrays. Always retrieve and
-merge the complete existing array before adding an item.
+The result contains:
 
-The default reference labels are commonly `Prospect`, `Applied`, `Interview`,
-`Offer`, and `Closed` for statuses, and `Company website`, `Job board`,
-`Referral`, `Recruiter`, and `Other` for sources. Workspaces can change them;
-never hardcode an ID and never select an inactive value.
+- `action`: `created`, `matched`, or `updated`;
+- the full `application`;
+- `matchLevel`;
+- `postingLinked` and `emailEvidenceLinked` booleans; and
+- all persisted `jobPostings` and `emailEvidence` for the application.
 
-## Posting identity
+Stable expected failures include `job_email_ambiguous`,
+`job_email_conflict`, `invalid_job_posting_evidence`,
+`invalid_application_reference`, and `write_access_disabled`.
 
-The current generic MCP contract does not expose posting identifiers as a
-first-class unique field and does not expose the web application's email-link
-extractor. Store the canonical posting URL in `sourceUrl` and, when available,
-store a job-posting link whose label includes the provider and external ID.
+## Application detail evidence
 
-Recognize an external ID only from these transparent forms:
+`get_application` returns:
 
-| Provider     | Transparent evidence                                                           |
-| ------------ | ------------------------------------------------------------------------------ |
-| LinkedIn     | Numeric ID in `/jobs/view/<id>`                                                |
-| CV-Library   | Numeric ID in `/job/<id>` or `/job/apply/<id>`                                 |
-| Indeed       | `jk` or `vjk` parameter, or the 16-character posting token in a direct job URL |
-| Totaljobs    | Numeric `/job/<id>` path or `JobId` parameter                                  |
-| Michael Page | `JN-<digits>-<digits>` value following `/ref/`                                 |
-| hackajob     | UUID following `/apply/` or `/job/` in a direct decoded posting URL            |
-| Cord         | Numeric ID immediately following `/jobs/`                                      |
-| Talent.com   | Numeric `id` parameter on a direct posting URL                                 |
+- `application` with normal contacts, links, notes, source, and status fields;
+- immutable stage `events`;
+- `jobPostings`; and
+- `emailEvidence`.
 
-For other providers, retain a direct posting URL but set no external ID. Do not
-use campaign IDs, email click IDs, recruiter IDs, account IDs, or search-result
-IDs as posting identities.
+A job posting contains provider, external posting ID when available, canonical
+URL when available, and timestamps. Email evidence contains Message-ID,
+received timestamp, optional Outlook web URL, and persistence timestamps. The
+server does not store email subjects, senders, or bodies in this evidence.
 
-The web application may unwrap known deterministic click links and remove
-tracking parameters through its internal provider registry. An AI client using
-only the current MCP tools cannot call that registry. Do not imitate network
-redirect resolution or guess an ID from an opaque URL.
+## Supported provider identities
 
-## Matching and storage conventions
+| Provider     | Transparent posting identity                                  |
+| ------------ | ------------------------------------------------------------- |
+| LinkedIn     | Numeric ID in `/jobs/view/<id>`                               |
+| CV-Library   | Numeric ID in `/job/<id>` or `/job/apply/<id>`                |
+| Indeed       | `jk` or `vjk`, or a 16-character direct-job token             |
+| Totaljobs    | Numeric `/job/<id>` path or `JobId`                           |
+| Michael Page | `JN-<digits>-<digits>` following `/ref/`                      |
+| hackajob     | UUID following `/apply/` or `/job/`                           |
+| Cord         | Numeric ID following `/jobs/`                                 |
+| Talent.com   | Numeric `id` parameter on a direct posting URL                |
+| Generic      | Direct canonical posting URL only; never claim an external ID |
 
-Match records in this order:
+Do not submit campaign, email-click, recruiter, account, or search-result IDs.
 
-1. provider plus external posting ID;
-2. canonical posting URL in `sourceUrl` or `links`;
-3. source-email URL or stable message identifier already stored;
-4. exact normalized company plus exact normalized role title.
+## Generic application schemas
 
-The current schema cannot enforce provider-ID uniqueness. Therefore, two
-records with the same strongest identity are a data conflict, not permission to
-choose one. Stop and report both IDs.
+The create fallback requires `companyName`, `roleTitle`, and active `statusId`.
+Optional fields are `appliedOn`, contacts, links, location, next action and due
+date, notes, role type ID, source ID, and source URL.
 
-Use source-email evidence to make repeat runs safe. If a write result is
-unknown, search again before retrying because generic application writes are
-not idempotent.
-
-## Expected evolution
-
-A future server may expose dedicated posting extraction, matching, email
-evidence, or idempotent upsert tools. Prefer those tools when available because
-they can keep provider rules and uniqueness enforcement inside the
-application. Inspect the live schema before calling them; this skill must not
-invent future tool arguments.
+Updates omit unchanged fields and use `null` to clear nullable scalars. Contacts
+and links are replacement arrays with at most 10 entries each.

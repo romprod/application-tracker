@@ -10,6 +10,7 @@ export type McpAuditTargetType =
   | "document"
   | "document_collection"
   | "document_transfer"
+  | "job_email"
   | "job_search"
   | "reference_data"
   | "workspace";
