@@ -1,6 +1,6 @@
 ---
 name: application-tracker-job-email
-description: Reconcile job-search emails and supported attachments with Application Tracker through its MCP server. Use when asked to inspect an Outlook Jobs folder or supplied job email, identify the corresponding tracked application, match by job-board posting identity or company plus title, create or update an application idempotently, persist source-email evidence, import a safe file attachment, or explain why an email cannot be matched safely.
+description: Reconcile job-search emails and supported attachments with Application Tracker through its MCP server and an already-connected @softeria/ms-365-mcp-server instance. Use when asked to inspect an Outlook Jobs folder or supplied job email, identify the corresponding tracked application, match by job-board posting identity or company plus title, create or update an application idempotently, persist source-email evidence, import a safe file attachment, or explain why an email cannot be matched safely.
 ---
 
 # Application Tracker Job Email
@@ -24,22 +24,38 @@ Require these Application Tracker MCP tools:
 - `get_application`; and
 - `upsert_application_from_email` for mutations.
 
-For this deployment, require the hosted `ms365` Streamable HTTP server at
-`https://ms365-mcp.example.com/mcp`. Confirm its tools are attached to the
-current task; a connected status elsewhere in the client is not sufficient.
-Use its `list-mail-folder-messages` and `get-mail-message` tools, and request
+Require an already-connected `@softeria/ms-365-mcp-server` instance. Discover
+it from the current task's MCP tool inventory instead of assuming a server
+name, URL, or transport:
+
+1. Find one MCP namespace that exposes `list-mail-folder-messages` and
+   `get-mail-message` (allow client-normalized hyphen or underscore forms).
+2. Prefer a candidate whose server metadata, namespace, configuration, or tool
+   descriptions identify `@softeria/ms-365-mcp-server`, Softeria, `ms365`,
+   `m365`, or Microsoft 365.
+3. Validate capability from the live tool schemas. A matching label alone is
+   insufficient. If the client hides package metadata, describe the server as
+   Softeria-compatible rather than claiming its package identity was verified.
+4. If several candidates qualify and no exact Softeria identity is visible,
+   stop and ask the user which connected server to use.
+
+Confirm the selected tools are attached to the current task; a connected
+status elsewhere in the client is not sufficient. Request
 `internetMessageId` explicitly. Treat the Graph item `id` only as a retrieval
 handle; persist the RFC `internetMessageId` as tracker email evidence.
 
-Do not install, register, or launch a local stdio M365 server as a silent
-fallback. Do not substitute the Outlook Email plugin for this reconciliation
-unless its live list and fetch results both expose the same non-empty RFC
-`internetMessageId`. If the hosted tools are absent or authentication fails,
-stop before tracker mutation and ask the user to attach or reconnect `ms365`.
+Use an existing hosted HTTP or local stdio instance, but never install,
+register, or launch another M365 server as a silent fallback. Do not substitute
+an Outlook-specific plugin unless the user explicitly allows an alternative
+and its live list and fetch results expose the same non-empty RFC
+`internetMessageId`. If no qualifying tools are attached or authentication
+fails, stop before tracker mutation and ask the user to attach or reconnect
+their Softeria server.
 
-When attachments are in scope, require the hosted M365
-`list-mail-attachments` and `download-bytes` tools so metadata can be inspected
-before materializing one selected attachment. Also require these tracker tools:
+When attachments are in scope, require `list-mail-attachments` and
+`download-bytes` from that same selected M365 namespace so metadata can be
+inspected before materializing one selected attachment. Also require these
+tracker tools:
 
 - `get_document_import_capabilities`;
 - `begin_document_import`;
@@ -65,9 +81,9 @@ differs from the reference.
 
 1. Resolve the exact mailbox and folder. For a general request, use
    `Inbox\Jobs`; do not expand to the whole mailbox without authorization.
-2. Confirm the hosted `ms365` and Application Tracker tool surfaces are both
-   available in the current task. Never create a replacement connector from
-   the shell.
+2. Discover and validate one already-connected Softeria M365 tool surface, and
+   confirm it and the Application Tracker tools are available in the current
+   task. Never create a replacement connector from the shell.
 3. Call `get_tracker_context` before other tracker operations.
 4. For writes, require `read_write`. If access is `read_only`, complete the
    read-only analysis and report the blocker without retrying mutations.

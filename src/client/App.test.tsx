@@ -1829,7 +1829,7 @@ describe("application shell", () => {
       transports: {
         ...mcpStatus.transports,
         remote: {
-          endpoint: "https://applicationtracker.example.com/mcp",
+          endpoint: "https://tracker.example.com/mcp",
           state: "ready",
           transport: "streamable_http",
         },
@@ -2015,7 +2015,7 @@ describe("application shell", () => {
       transports: {
         ...mcpStatus.transports,
         remote: {
-          endpoint: "https://applicationtracker.example.com/mcp",
+          endpoint: "https://tracker.example.com/mcp",
           state: "ready",
           transport: "streamable_http",
         },
@@ -2063,9 +2063,7 @@ describe("application shell", () => {
       name: "Copy MCP endpoint for Claude ai",
     });
     fireEvent.click(endpointButton);
-    expect(writeText).toHaveBeenCalledWith(
-      "https://applicationtracker.example.com/mcp",
-    );
+    expect(writeText).toHaveBeenCalledWith("https://tracker.example.com/mcp");
     await waitFor(() => expect(endpointButton).toHaveTextContent("Copied"));
     expect(endpointButton).not.toHaveAttribute("data-copied");
     await waitFor(() => expect(endpointButton).toHaveTextContent("Endpoint"), {

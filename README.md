@@ -112,17 +112,19 @@ Outlook Jobs folder with Application Tracker through the server's deterministic
 match and idempotent email-upsert tools, while stopping when evidence is
 ambiguous or conflicting.
 
-This deployment uses the hosted Microsoft 365 MCP server at
-`https://ms365-mcp.example.com/mcp` for mailbox reads. The workflow requires its
-stable `internetMessageId`, attachment metadata, and bounded download tools.
-The Outlook Email plugin is not the default connector for reconciliation, and
-agents must not install or launch a local M365 server as a fallback.
+The skill discovers an already-connected
+`@softeria/ms-365-mcp-server` instance by its live mail-tool capabilities, so
+users may name or host it however they choose and may use HTTP or stdio
+transport. The workflow requires a stable `internetMessageId`, attachment
+metadata, and bounded download tools. Agents must not silently install or
+launch a second M365 server when no compatible tool surface is attached.
 
 Codex discovers the skill from `.agents/skills` while working in this checkout.
 Other clients that support `SKILL.md` skills can install the
 `.agents/skills/application-tracker-job-email` directory using their normal
-skill installation flow. Connect both the Application Tracker MCP server and
-the hosted `ms365` server before invoking `$application-tracker-job-email`.
+skill installation flow. Connect both an Application Tracker MCP server and a
+Softeria Microsoft 365 MCP server before invoking
+`$application-tracker-job-email`; their local names and URLs do not matter.
 
 ## Documentation
 
