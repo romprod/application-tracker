@@ -10,6 +10,7 @@ this reference.
 - [Match input and result](#match-input-and-result)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
 - [Application detail evidence](#application-detail-evidence)
+- [Attachment document imports](#attachment-document-imports)
 - [Supported provider identities](#supported-provider-identities)
 - [Generic application schemas](#generic-application-schemas)
 
@@ -121,6 +122,36 @@ A job posting contains provider, external posting ID when available, canonical
 URL when available, and timestamps. Email evidence contains Message-ID,
 received timestamp, optional Outlook web URL, and persistence timestamps. The
 server does not store email subjects, senders, or bodies in this evidence.
+
+## Attachment document imports
+
+For a selected, named `fileAttachment`, list its metadata before materializing
+only that attachment. Do not import `itemAttachment`, `referenceAttachment`,
+inline content, an unsafe or empty filename, or an attachment without a valid
+media type. Reject unsupported attachments before starting an upload.
+
+The document sequence is:
+
+1. `get_document_import_capabilities` returns `maxDocumentBytes` and
+   `maxDocumentChunkBytes`.
+2. Hash the materialized original and call `begin_document_import` with
+   `applicationIds`, actual `byteSize`, active `documentTypeId`, caller-chosen
+   `idempotencyKey`, original `mediaType` and `originalFilename`, and the
+   whole-file `sha256`.
+3. Call `append_document_chunk` at the returned `nextOffset`. Each canonical
+   base64 chunk must decode within the chunk limit and match `chunkSha256`.
+4. Call `complete_document_import` only after `receivedBytes` equals
+   `byteSize`. Completion verifies the whole-file digest and stores one
+   document associated with the supplied applications.
+5. Use `export_document_chunk` to verify the stored byte size, whole-file
+   digest, and per-chunk digests; use `list_documents` to verify metadata and
+   associations.
+
+Reusing the same idempotency key with identical metadata resumes or returns the
+existing completed upload. Retrying completion returns the same document and
+does not create a duplicate. Reusing the key with different metadata is an
+error. Call `cancel_document_import` to discard transient chunks after an
+abandoned import; it never deletes a stored document.
 
 ## Supported provider identities
 

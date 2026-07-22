@@ -1,6 +1,6 @@
 ---
 name: application-tracker-job-email
-description: Reconcile job-search emails with Application Tracker through its MCP server. Use when asked to inspect an Outlook Jobs folder or supplied job email, identify the corresponding tracked application, match by job-board posting identity or company plus title, create or update an application idempotently, persist source-email evidence, or explain why an email cannot be matched safely.
+description: Reconcile job-search emails and supported attachments with Application Tracker through its MCP server. Use when asked to inspect an Outlook Jobs folder or supplied job email, identify the corresponding tracked application, match by job-board posting identity or company plus title, create or update an application idempotently, persist source-email evidence, import a safe file attachment, or explain why an email cannot be matched safely.
 ---
 
 # Application Tracker Job Email
@@ -27,6 +27,18 @@ Require these Application Tracker MCP tools:
 Also require an email connector that can read the requested folder or message,
 or email content supplied by the user. Tool names may be namespaced by the
 client; resolve them by final tool name.
+
+When attachments are in scope, also require connector operations that can list
+attachment metadata without downloading content and materialize one selected
+attachment by message and attachment ID. Require these tracker tools:
+
+- `get_document_import_capabilities`;
+- `begin_document_import`;
+- `append_document_chunk`;
+- `complete_document_import`;
+- `cancel_document_import` for abandoned uploads;
+- `export_document_chunk`; and
+- `list_documents`.
 
 Treat inspect, investigate, compare, and preview requests as read-only. Treat
 reconcile, import, create, link, and update requests as authorization for the
@@ -157,7 +169,49 @@ tables. Workspace uniqueness on posting identity, canonical URL, and Message-ID
 prevents duplicate attribution. An exact retry is safe; do not fall back to
 generic create/update after an uncertain upsert result.
 
-### 6. Verify and report
+### 6. Import a supported attachment
+
+Only import an attachment after the email has been matched to one intended
+application. List metadata first and retain the attachment ID, name, media
+type, reported size, and inline flag. Select one relevant, named, non-inline
+`fileAttachment` with a syntactically valid media type. Do not materialize
+unrelated attachments.
+
+Treat `itemAttachment`, `referenceAttachment`, inline content, empty or unsafe
+filenames, missing media types, and files unrelated to the application as
+unsupported. Skip them before `begin_document_import`; an unsupported
+reference must leave no tracker upload or document state.
+
+For the selected file:
+
+1. Materialize only that attachment to a private temporary path.
+2. Read the materialized bytes, record the actual byte size, and calculate the
+   whole-file SHA-256. Connector metadata size is advisory and can include
+   transport overhead.
+3. Call `get_document_import_capabilities`; reject files over the document
+   limit and split accepted bytes into chunks no larger than the returned
+   chunk limit.
+4. Choose an active, category-correct document type. Use `Other` when the file
+   is application evidence but is not a CV, cover letter, or portfolio.
+5. Call `begin_document_import` with only the matched application ID, original
+   filename and media type, actual size and SHA-256, and a stable idempotency
+   key such as `outlook-attachment-<sha256>`.
+6. Append canonical base64 chunks in order. Supply the exact offset and
+   SHA-256 of each decoded chunk, then call `complete_document_import`.
+7. Retry `begin_document_import` with identical metadata and the same key.
+   It must return the completed transfer and `complete_document_import` must
+   return the same document ID.
+8. Read the document back with `export_document_chunk` until complete and
+   verify its actual size and whole-file SHA-256. Confirm through
+   `list_documents` that exactly one document has the expected application,
+   filename, media type, and document ID.
+
+If materialization, hashing, chunking, or completion fails after an upload has
+started, call `cancel_document_import` for its upload ID. Do not modify mailbox
+read state, move the message, or delete the source attachment. Remove the
+private temporary copy after successful verification.
+
+### 7. Verify and report
 
 After a successful upsert, call `get_application` and verify:
 
@@ -169,6 +223,10 @@ After a successful upsert, call `get_application` and verify:
 Report matched, created, updated, skipped, ambiguous, conflicting, and failed
 counts. For each mutation, report the email subject or date, application ID,
 match level, and whether new posting or email evidence was linked.
+
+For an attachment import, also report the attachment ID and metadata, actual
+byte size and SHA-256, document ID and application association, retry result,
+and any unsupported attachment that was skipped before tracker mutation.
 
 Never claim a link or change unless the MCP write succeeded and read-back
 confirmed it.
