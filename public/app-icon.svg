@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Application Tracker</title>
+  <rect width="512" height="512" rx="92" fill="#173c35"/>
+  <path d="M82 86h348v340H82z" fill="#faf8f1"/>
+  <path d="M82 86h348v42H82z" fill="#c8583b"/>
+  <circle cx="118" cy="107" r="8" fill="#faf8f1"/>
+  <circle cx="146" cy="107" r="8" fill="#faf8f1" opacity=".72"/>
+  <path d="M110 333l74-156h72l74 156h-59l-14-34h-80l-14 34zm87-81h40l-20-55z" fill="#173c35"/>
+  <path d="M292 177h112v48h-32v108h-48V225h-32z" fill="#c8583b"/>
+</svg>

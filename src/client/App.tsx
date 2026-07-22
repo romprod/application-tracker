@@ -92,6 +92,7 @@ export function App({
   usersClient = browserUsersClient,
 }: AppProps) {
   const [view, setView] = useState<AppView>({ kind: "loading" });
+  const [startupAttempt, setStartupAttempt] = useState(0);
 
   useEffect(
     () =>
@@ -142,7 +143,12 @@ export function App({
     return () => {
       active = false;
     };
-  }, [authClient, setupClient]);
+  }, [authClient, setupClient, startupAttempt]);
+
+  function retryStartup() {
+    setView({ kind: "loading" });
+    setStartupAttempt((attempt) => attempt + 1);
+  }
 
   function signOut() {
     if (view.kind !== "ready" || view.signingOut) return;
@@ -200,6 +206,9 @@ export function App({
         view.kind === "ready" ? " workspace-app-shell" : ""
       }`}
     >
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       {view.kind !== "ready" && (
         <Masthead
           onLogout={undefined}
@@ -213,14 +222,22 @@ export function App({
       >
         <Sidebar
           activePage={view.kind === "ready" ? view.page : "overview"}
-          mode={isSetup ? "setup" : isLogin ? "login" : "workspace"}
+          mode={
+            isSetup
+              ? "setup"
+              : isLogin
+                ? "login"
+                : view.kind === "ready"
+                  ? "workspace"
+                  : "status"
+          }
           onNavigate={navigate}
           onLogout={view.kind === "ready" ? signOut : undefined}
           session={session}
           signingOut={view.kind === "ready" && view.signingOut}
         />
         {view.kind === "loading" && <LoadingView />}
-        {view.kind === "error" && <StatusErrorView />}
+        {view.kind === "error" && <StatusErrorView onRetry={retryStartup} />}
         {view.kind === "setup" && !view.tokenConfigured && <MissingTokenView />}
         {view.kind === "setup" && view.tokenConfigured && (
           <SetupView
@@ -302,11 +319,7 @@ function Masthead({
 }) {
   return (
     <header className="masthead">
-      <a
-        className="brand"
-        href="#main-content"
-        aria-label="Application Tracker home"
-      >
+      <a className="brand" href="/" aria-label="Application Tracker home">
         <span className="brand-mark" aria-hidden="true">
           AT
         </span>
@@ -327,7 +340,7 @@ function Masthead({
             </button>
           </div>
         )}
-        <div className="build-label" aria-label="Installation status">
+        <div className="build-label" aria-label="Application status">
           <span className="status-dot" aria-hidden="true" />
           {statusLabel}
         </div>
@@ -345,56 +358,70 @@ function Sidebar({
   signingOut,
 }: {
   activePage: ReadyPage;
-  mode: "login" | "setup" | "workspace";
+  mode: "login" | "setup" | "status" | "workspace";
   onNavigate: (page: ReadyPage) => void;
   onLogout: (() => void) | undefined;
   session: AuthenticatedSession | undefined;
   signingOut: boolean;
 }) {
-  if (mode !== "workspace") {
+  if (mode === "login") {
+    return (
+      <aside className="sidebar sign-in-sidebar">
+        <p className="sidebar-label">Workspace access</p>
+        <nav aria-label="Sign-in navigation">
+          <ul>
+            <li>
+              <a href="#main-content" aria-current="page">
+                <span aria-hidden="true">→</span>
+                Sign in
+              </a>
+            </li>
+          </ul>
+        </nav>
+        <p className="privacy-note">
+          <span aria-hidden="true">●</span>
+          Private workspace
+        </p>
+      </aside>
+    );
+  }
+
+  if (mode === "setup") {
     return (
       <aside className="sidebar setup-sidebar">
         <p className="sidebar-label">Installation</p>
         <nav aria-label="Primary navigation">
           <ul>
-            {mode === "setup" ? (
-              <>
-                <li>
-                  <a href="#main-content" aria-current="page">
-                    <span>01</span>
-                    Administrator
-                  </a>
-                </li>
-                <li>
-                  <span className="future-navigation" aria-disabled="true">
-                    <span>02</span>
-                    Sign in
-                    <small>next</small>
-                  </span>
-                </li>
-              </>
-            ) : (
-              <>
-                <li>
-                  <span className="completed-navigation">
-                    <span>01</span>
-                    Administrator
-                    <small>ready</small>
-                  </span>
-                </li>
-                <li>
-                  <a href="#main-content" aria-current="page">
-                    <span>02</span>
-                    Sign in
-                  </a>
-                </li>
-              </>
-            )}
+            <li>
+              <a href="#main-content" aria-current="page">
+                <span>01</span>
+                Administrator
+              </a>
+            </li>
+            <li>
+              <span className="future-navigation" aria-disabled="true">
+                <span>02</span>
+                Sign in
+                <small>next</small>
+              </span>
+            </li>
           </ul>
         </nav>
         <p className="privacy-note">
           <span aria-hidden="true">●</span>
           Closed by default
+        </p>
+      </aside>
+    );
+  }
+
+  if (mode === "status") {
+    return (
+      <aside className="sidebar status-sidebar">
+        <p className="sidebar-label">Application Tracker</p>
+        <p className="privacy-note">
+          <span aria-hidden="true">●</span>
+          Private workspace
         </p>
       </aside>
     );
@@ -492,12 +519,15 @@ function LoadingView() {
   );
 }
 
-function StatusErrorView() {
+function StatusErrorView({ onRetry }: { onRetry: () => void }) {
   return (
     <main id="main-content" tabIndex={-1} className="status-view">
       <p className="eyebrow">Connection unavailable</p>
       <h1>Application Tracker could not start.</h1>
-      <p>Confirm that the server is running, then reload this page.</p>
+      <p>Confirm that the server is running, then try the connection again.</p>
+      <button className="status-retry" onClick={onRetry} type="button">
+        Try again
+      </button>
     </main>
   );
 }
@@ -539,6 +569,7 @@ function LoginView({
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -570,7 +601,7 @@ function LoginView({
       )}
       <div className="login-layout">
         <section className="login-intro" aria-labelledby="login-title">
-          <p className="eyebrow">Local identity · Step 02</p>
+          <p className="eyebrow">Private workspace</p>
           <h1 id="login-title">Sign in to your workspace.</h1>
           <p className="lede">
             Continue to the private ledger with the local account created for
@@ -587,7 +618,7 @@ function LoginView({
             </div>
             <div>
               <dt>Account recovery</dt>
-              <dd>Operator controlled</dd>
+              <dd>Contact your operator</dd>
             </div>
           </dl>
         </section>
@@ -598,7 +629,9 @@ function LoginView({
           onSubmit={submit}
         >
           <div className="login-form-heading">
-            <span className="index-number">02</span>
+            <span className="index-number" aria-hidden="true">
+              →
+            </span>
             <div>
               <p className="eyebrow">Workspace credentials</p>
               <h2 id="credentials-title">Local account</h2>
@@ -609,10 +642,14 @@ function LoginView({
             <input
               autoCapitalize="none"
               autoComplete="username"
-              autoFocus
+              aria-describedby={
+                error ? "login-error login-recovery" : undefined
+              }
+              aria-invalid={error ? true : undefined}
               id="login-username"
               maxLength={64}
               minLength={3}
+              name="username"
               required
               spellCheck={false}
               value={username}
@@ -621,21 +658,41 @@ function LoginView({
           </div>
           <div className="field">
             <label htmlFor="login-password">Password</label>
-            <input
-              autoComplete="current-password"
-              id="login-password"
-              maxLength={128}
-              required
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
+            <div className="password-input">
+              <input
+                aria-describedby={
+                  error ? "login-error login-recovery" : undefined
+                }
+                aria-invalid={error ? true : undefined}
+                autoComplete="current-password"
+                id="login-password"
+                maxLength={128}
+                name="password"
+                required
+                type={passwordVisible ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                aria-pressed={passwordVisible}
+                className="password-visibility"
+                onClick={() => setPasswordVisible((visible) => !visible)}
+                type="button"
+              >
+                {passwordVisible ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
           {error && (
-            <p className="form-error" role="alert">
+            <p className="form-error" id="login-error" role="alert">
               {error}
             </p>
           )}
+          <p className="login-recovery" id="login-recovery">
+            If you no longer have access, contact the Application Tracker
+            operator who manages this workspace.
+          </p>
           <div className="login-actions">
             <p>
               Credentials stay in this request and are never stored by the

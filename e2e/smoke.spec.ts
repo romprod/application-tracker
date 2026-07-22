@@ -318,9 +318,33 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(
     page.getByRole("heading", { name: "Sign in to your workspace." }),
   ).toBeVisible();
+  await expect(page.getByText("Installation", { exact: true })).toHaveCount(0);
+  const skipLink = page.getByRole("link", { name: "Skip to content" });
+  await expect(skipLink).toHaveAttribute("href", "#main-content");
+  await expect(
+    page.getByRole("link", { name: "Application Tracker home" }),
+  ).toHaveAttribute("href", "/");
+  await expect(page.getByLabel("Username")).toHaveAttribute("name", "username");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "name",
+    "password",
+  );
+  await skipLink.focus();
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("form", { name: "Local account" })).toBeVisible();
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.getByLabel("Username").fill(e2eAdministrator.username);
-  await page.getByLabel("Password").fill(e2eAdministrator.password);
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill(e2eAdministrator.password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page.getByRole("status")).toHaveText(

@@ -95,7 +95,7 @@
 .workspace-account small {
   overflow: hidden;
   color: rgb(245 240 228 / 52%);
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -174,7 +174,7 @@
   width: 100%;
   padding: 10px;
   color: rgb(245 240 228 / 58%);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2227,7 +2227,7 @@
     align-items: center;
     justify-content: center;
     padding: 5px;
-    font-size: 9px;
+    font-size: 12px;
     border-radius: 0;
   }
 

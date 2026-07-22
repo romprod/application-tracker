@@ -506,7 +506,7 @@ function createEmailLinksClient() {
 
 describe("application shell", () => {
   it("asks an unauthenticated user to sign in after setup", async () => {
-    render(
+    const { container } = render(
       <App
         authClient={createAuthClient({ authenticated: false })}
         setupClient={createSetupClient({
@@ -530,6 +530,79 @@ describe("application shell", () => {
       "autocomplete",
       "current-password",
     );
+    expect(screen.getByLabelText("Username")).toHaveAttribute(
+      "name",
+      "username",
+    );
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "name",
+      "password",
+    );
+    const skipLink = screen.getByRole("link", { name: "Skip to content" });
+    expect(skipLink).toHaveAttribute("href", "#main-content");
+    expect(container.querySelector("a")).toBe(skipLink);
+    expect(
+      screen.getByRole("link", { name: "Application Tracker home" }),
+    ).toHaveAttribute("href", "/");
+    expect(screen.queryByText("Installation")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Step 02/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Administrator ready/i)).not.toBeInTheDocument();
+  });
+
+  it("supports keyboard focus and password visibility on sign-in", async () => {
+    render(
+      <App
+        authClient={createAuthClient({ authenticated: false })}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Sign in to your workspace." });
+    const skipLink = screen.getByRole("link", { name: "Skip to content" });
+    skipLink.focus();
+    expect(skipLink).toHaveFocus();
+
+    const password = screen.getByLabelText("Password");
+    const visibility = screen.getByRole("button", { name: "Show password" });
+    visibility.focus();
+    expect(visibility).toHaveFocus();
+    expect(visibility).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(visibility);
+    expect(password).toHaveAttribute("type", "text");
+    expect(
+      screen.getByRole("button", { name: "Hide password" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("retries startup checks without requiring a page reload", async () => {
+    const setupClient = createSetupClient({
+      required: false,
+      tokenConfigured: false,
+    });
+    setupClient.getStatus.mockRejectedValueOnce(new Error("offline"));
+    render(
+      <App
+        authClient={createAuthClient({ authenticated: false })}
+        setupClient={setupClient}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Application Tracker could not start.",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Sign in to your workspace.",
+      }),
+    ).toBeInTheDocument();
+    expect(setupClient.getStatus).toHaveBeenCalledTimes(2);
   });
 
   it("opens the workspace for an existing authenticated session", async () => {
@@ -1349,7 +1422,7 @@ describe("application shell", () => {
 
   it("does not reveal which credential was rejected", async () => {
     const authClient = createAuthClient({ authenticated: false });
-    authClient.login.mockRejectedValue(
+    authClient.login.mockRejectedValueOnce(
       new AuthClientError("invalid_credentials"),
     );
     render(
@@ -1375,6 +1448,25 @@ describe("application shell", () => {
       "The username or password was not accepted.",
     );
     expect(screen.getByLabelText("Password")).toHaveValue("");
+    expect(screen.getByLabelText("Username")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "aria-describedby",
+      expect.stringContaining("login-recovery"),
+    );
+    expect(
+      screen.getByText(/contact the Application Tracker operator/i),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(
+      await screen.findByRole("heading", { name: "Your search, at a glance." }),
+    ).toBeInTheDocument();
   });
 
   it("revokes the session when the user signs out", async () => {
