@@ -6,7 +6,7 @@ this reference.
 ## Contents
 
 - [Required sequence](#required-sequence)
-- [Hosted Microsoft 365 mail contract](#hosted-microsoft-365-mail-contract)
+- [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
 - [Match input and result](#match-input-and-result)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
@@ -26,14 +26,22 @@ this reference.
 5. Call `upsert_application_from_email` for an authorized reconciliation.
 6. Call `get_application` for read-back verification.
 
-## Hosted Microsoft 365 mail contract
+## Microsoft 365 connector discovery
 
-Use the `ms365` Streamable HTTP server at
-`https://ms365-mcp.example.com/mcp`. Its tools must be visible in the current
-task before mailbox work starts. Do not register a local stdio replacement.
+Discover an already-connected `@softeria/ms-365-mcp-server` instance from the
+current task's MCP inventory. Do not require a fixed server name, URL, or
+transport. Choose one namespace containing both `list-mail-folder-messages`
+and `get-mail-message`, allowing hyphen/underscore normalization by the client.
+Prefer exact package, Softeria, `ms365`, `m365`, or Microsoft 365 provenance,
+but validate live schemas rather than trusting a label. When package metadata
+is hidden, report only that the selected surface is Softeria-compatible. Ask
+the user to choose if multiple candidates remain.
 
-Use `list-mail-folder-messages` to shortlist messages in `Inbox\Jobs`, then
-`get-mail-message` for the selected item. Explicitly select and verify both:
+Its tools must be visible in the current task before mailbox work starts. An
+existing hosted HTTP or local stdio instance is valid; do not register or
+launch a replacement. Use `list-mail-folder-messages` to shortlist messages in
+`Inbox\Jobs`, then `get-mail-message` from the same namespace for the selected
+item. Explicitly select and verify both:
 
 - `id`, the Microsoft Graph retrieval handle; and
 - `internetMessageId`, the stable RFC Message-ID used by
@@ -44,8 +52,9 @@ If it is absent or inconsistent, make no tracker write. For attachments, call
 `list-mail-attachments` before `download-bytes` and download only the selected
 named file attachment.
 
-The Outlook Email plugin is not the authoritative connector for this workflow.
-It may be used only if its live responses meet the same Message-ID and
+For attachments, require `list-mail-attachments` and `download-bytes` in the
+same namespace. An alternative Outlook plugin is allowed only when the user
+explicitly approves it and its live responses meet the same Message-ID and
 attachment requirements. A client showing a connector as connected does not
 prove that its tools are attached to the current task.
 
