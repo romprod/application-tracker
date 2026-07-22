@@ -598,6 +598,49 @@ function MissingTokenView() {
   );
 }
 
+interface LoginFailurePresentation {
+  clearPassword: boolean;
+  credentialsRejected: boolean;
+  message: string;
+}
+
+function retryGuidance(seconds: number | undefined): string {
+  if (seconds === undefined) return "Wait a moment and try again.";
+  return `Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
+}
+
+function presentLoginFailure(caught: unknown): LoginFailurePresentation {
+  if (caught instanceof AuthClientError) {
+    if (caught.code === "invalid_credentials") {
+      return {
+        clearPassword: true,
+        credentialsRejected: true,
+        message: "The username or password was not accepted.",
+      };
+    }
+    if (caught.code === "login_rate_limited") {
+      return {
+        clearPassword: false,
+        credentialsRejected: false,
+        message: `Too many sign-in attempts. ${retryGuidance(caught.retryAfterSeconds)}`,
+      };
+    }
+    if (caught.code === "login_capacity_reached") {
+      return {
+        clearPassword: false,
+        credentialsRejected: false,
+        message: `Sign-in is temporarily busy. ${retryGuidance(caught.retryAfterSeconds)}`,
+      };
+    }
+  }
+  return {
+    clearPassword: false,
+    credentialsRejected: false,
+    message:
+      "Sign in could not be completed. Check the connection and try again.",
+  };
+}
+
 function LoginView({
   authClient,
   notice,
@@ -611,7 +654,7 @@ function LoginView({
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<LoginFailurePresentation>();
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -621,13 +664,12 @@ function LoginView({
       .login({ password, username })
       .then(onAuthenticated)
       .catch((caught: unknown) => {
-        const message =
-          caught instanceof AuthClientError &&
-          caught.code === "invalid_credentials"
-            ? "The username or password was not accepted."
-            : "Sign in could not be completed. Check the connection and try again.";
-        setError(message);
-        setPassword("");
+        const failure = presentLoginFailure(caught);
+        setError(failure);
+        if (failure.clearPassword) {
+          setPassword("");
+          setPasswordVisible(false);
+        }
         setSubmitting(false);
       });
   }
@@ -685,7 +727,7 @@ function LoginView({
               aria-describedby={
                 error ? "login-error login-recovery" : undefined
               }
-              aria-invalid={error ? true : undefined}
+              aria-invalid={error?.credentialsRejected ? true : undefined}
               id="login-username"
               maxLength={64}
               minLength={3}
@@ -703,7 +745,7 @@ function LoginView({
                 aria-describedby={
                   error ? "login-error login-recovery" : undefined
                 }
-                aria-invalid={error ? true : undefined}
+                aria-invalid={error?.credentialsRejected ? true : undefined}
                 autoComplete="current-password"
                 id="login-password"
                 maxLength={128}
@@ -726,7 +768,7 @@ function LoginView({
           </div>
           {error && (
             <p className="form-error" id="login-error" role="alert">
-              {error}
+              {error.message}
             </p>
           )}
           <p className="login-recovery" id="login-recovery">

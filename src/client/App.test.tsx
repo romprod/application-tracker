@@ -1557,6 +1557,140 @@ describe("application shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the bounded retry delay and retains the password after throttling", async () => {
+    const authClient = createAuthClient({ authenticated: false });
+    authClient.login.mockRejectedValueOnce(
+      new AuthClientError("login_rate_limited", 47),
+    );
+    render(
+      <App
+        authClient={authClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Sign in to your workspace." });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Too many sign-in attempts. Try again in 47 seconds.",
+    );
+    expect(screen.getByLabelText("Password")).toHaveValue(
+      "correct horse battery staple",
+    );
+  });
+
+  it("explains temporary sign-in capacity and retains the password", async () => {
+    const authClient = createAuthClient({ authenticated: false });
+    authClient.login.mockRejectedValueOnce(
+      new AuthClientError("login_capacity_reached", 1),
+    );
+    render(
+      <App
+        authClient={authClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Sign in to your workspace." });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Sign-in is temporarily busy. Try again in 1 second.",
+    );
+    expect(screen.getByLabelText("Password")).toHaveValue(
+      "correct horse battery staple",
+    );
+  });
+
+  it("uses a safe throttling fallback when no retry delay is available", async () => {
+    const authClient = createAuthClient({ authenticated: false });
+    authClient.login.mockRejectedValueOnce(
+      new AuthClientError("login_rate_limited"),
+    );
+    render(
+      <App
+        authClient={authClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Sign in to your workspace." });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Too many sign-in attempts. Wait a moment and try again.",
+    );
+    expect(screen.getByLabelText("Password")).toHaveValue(
+      "correct horse battery staple",
+    );
+  });
+
+  it.each([
+    ["network failure", new TypeError("Failed to fetch")],
+    ["malformed response", new AuthClientError("invalid_response")],
+  ])(
+    "keeps connection guidance and the password after a %s",
+    async (_, error) => {
+      const authClient = createAuthClient({ authenticated: false });
+      authClient.login.mockRejectedValueOnce(error);
+      render(
+        <App
+          authClient={authClient}
+          setupClient={createSetupClient({
+            required: false,
+            tokenConfigured: false,
+          })}
+        />,
+      );
+
+      await screen.findByRole("heading", {
+        name: "Sign in to your workspace.",
+      });
+      fireEvent.change(screen.getByLabelText("Username"), {
+        target: { value: "alex" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "correct horse battery staple" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Sign in could not be completed. Check the connection and try again.",
+      );
+      expect(screen.getByLabelText("Password")).toHaveValue(
+        "correct horse battery staple",
+      );
+    },
+  );
+
   it("revokes the session when the user signs out", async () => {
     const authClient = createAuthClient(authenticatedSession);
     render(

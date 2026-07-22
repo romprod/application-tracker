@@ -49,6 +49,64 @@ describe("browserAuthClient", () => {
     });
   });
 
+  it("preserves bounded retry information for rate-limited logins", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "login_rate_limited" } }), {
+        headers: {
+          "content-type": "application/json",
+          "retry-after": "999999",
+        },
+        status: 429,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserAuthClient.login({ password: "secret", username: "alex" }),
+    ).rejects.toEqual(new AuthClientError("login_rate_limited", 3_600));
+  });
+
+  it("preserves capacity responses and their retry delay", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "login_capacity_reached" } }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "retry-after": "1",
+          },
+          status: 429,
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserAuthClient.login({ password: "secret", username: "alex" }),
+    ).rejects.toEqual(new AuthClientError("login_capacity_reached", 1));
+  });
+
+  it.each([undefined, "later", "-1", "1.5", "0"])(
+    "ignores a missing or malformed Retry-After value (%s)",
+    async (retryAfter) => {
+      const headers = new Headers({ "content-type": "application/json" });
+      if (retryAfter !== undefined) headers.set("retry-after", retryAfter);
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { code: "login_rate_limited" } }),
+            { headers, status: 429 },
+          ),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        browserAuthClient.login({ password: "secret", username: "alex" }),
+      ).rejects.toEqual(new AuthClientError("login_rate_limited"));
+    },
+  );
+
   it("accepts an empty successful logout response", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

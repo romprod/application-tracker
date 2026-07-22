@@ -28,11 +28,16 @@ export interface AuthClient {
 }
 
 export class AuthClientError extends Error {
-  public constructor(public readonly code: string) {
+  public constructor(
+    public readonly code: string,
+    public readonly retryAfterSeconds?: number,
+  ) {
     super(code);
     this.name = "AuthClientError";
   }
 }
+
+const maximumRetryAfterSeconds = 3_600;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -55,6 +60,14 @@ function errorCode(value: unknown): string {
     return value.error.code;
   }
   return "request_failed";
+}
+
+function retryAfterSeconds(response: Response): number | undefined {
+  const value = response.headers.get("Retry-After")?.trim();
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const seconds = Number(value);
+  if (!Number.isSafeInteger(seconds) || seconds < 1) return undefined;
+  return Math.min(seconds, maximumRetryAfterSeconds);
 }
 
 function parseSession(value: unknown): AuthSession {
@@ -85,7 +98,9 @@ function parseSession(value: unknown): AuthSession {
 
 async function readSessionResponse(response: Response): Promise<AuthSession> {
   const body = await readResponse(response);
-  if (!response.ok) throw new AuthClientError(errorCode(body));
+  if (!response.ok) {
+    throw new AuthClientError(errorCode(body), retryAfterSeconds(response));
+  }
   return parseSession(body);
 }
 

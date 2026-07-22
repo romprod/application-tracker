@@ -78,7 +78,11 @@ Submitting another valid login while the browser already has a session rotates
 the credential: the old database session is revoked and a fresh random token
 is issued. The client keeps the username and password only in component memory
 while the form is mounted. It does not write credentials or tokens to local or
-session storage.
+session storage. Invalid credentials clear the password field. Temporary
+throttling, verification-capacity, network, and malformed-response failures
+retain the in-memory password so the same submission can be retried. The login
+form displays a valid integer `Retry-After` delay for throttled responses,
+bounded to one hour; missing or malformed values use a generic wait message.
 
 Configure password-verification admission with
 `LOGIN_MAX_CONCURRENT_VERIFICATIONS` (range 1–32),
