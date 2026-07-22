@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
+  ApplicationConflictError,
   ApplicationNotFoundError,
   InvalidApplicationReferenceError,
 } from "../application/applications.js";
@@ -445,6 +446,11 @@ function executeWriteTool(
         ? failedToolResult("application_not_found")
         : failedToolResult("internal_error");
     }
+    if (error instanceof ApplicationConflictError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_conflict")
+        : failedToolResult("internal_error");
+    }
     if (error instanceof InvalidApplicationReferenceError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("invalid_application_reference")
@@ -723,7 +729,7 @@ export function createApplicationMcpServer(
     {
       annotations: writeAnnotations,
       description:
-        "Update selected application fields in the bound workspace when this connection has read-and-write access. Omitted fields remain unchanged; null clears nullable fields.",
+        "Update selected application fields in the bound workspace when this connection has read-and-write access. First read the application and pass its updatedAt value as update.expectedUpdatedAt. Omitted fields remain unchanged; null clears nullable fields. A stale value returns application_conflict; read the latest application before retrying.",
       inputSchema: z.strictObject({
         applicationId: applicationIdSchema,
         update: updateApplicationSchema,

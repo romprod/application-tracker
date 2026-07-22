@@ -79,8 +79,12 @@ The local server registers 17 tools:
 | `complete_document_import`         | Verify, store, and associate the original file     |
 | `cancel_document_import`           | Discard an unfinished transient transfer           |
 
-Tools return JSON text and structured content. Expected failures use stable
-codes such as `actor_unavailable` and `application_not_found`; unexpected
+Tools return JSON text and structured content. Before calling
+`update_application`, read the record and send its `updatedAt` value as
+`update.expectedUpdatedAt`. A concurrent change returns the stable
+`application_conflict` code; read the latest record before retrying. Other
+expected failures use stable codes such as `actor_unavailable` and
+`application_not_found`; unexpected
 failures return `internal_error` without exception details. Read tools are
 annotated as read-only, non-destructive, idempotent, and closed-world. Mutation
 application mutations are non-read-only and non-idempotent; deletion is also

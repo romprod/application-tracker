@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 
 import {
+  ApplicationConflictError,
   InvalidApplicationReferenceError,
   type ApplicationContact,
   type ApplicationEvent,
@@ -322,6 +323,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       if (!stored) return undefined;
       const [current] = this.hydrateApplications(input.workspaceId, [stored]);
       if (!current) return undefined;
+      if (current.updatedAt !== input.expectedUpdatedAt) {
+        throw new ApplicationConflictError(current);
+      }
 
       const statusId = input.statusId ?? current.statusId;
       const status =
@@ -342,7 +346,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         this.activeReference(input.workspaceId, roleTypeId, "role_type");
       }
 
-      this.database
+      const updateResult = this.database
         .prepare(
           `UPDATE applications
            SET company_name = ?, role_title = ?, legacy_status = ?,
@@ -350,7 +354,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
                role_type_reference_id = ?, location = ?, source_url = ?,
                applied_on = ?, next_action = ?, next_action_due = ?,
                notes = ?, updated_at = ?
-           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+             AND updated_at = ?`,
         )
         .run(
           input.companyName ?? current.companyName,
@@ -372,7 +377,21 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.updatedAt,
           input.workspaceId,
           input.applicationId,
+          input.expectedUpdatedAt,
         );
+
+      if (updateResult.changes !== 1) {
+        const latestStored = this.findStoredApplication(
+          input.workspaceId,
+          input.applicationId,
+        );
+        if (!latestStored) return undefined;
+        const [latest] = this.hydrateApplications(input.workspaceId, [
+          latestStored,
+        ]);
+        if (!latest) return undefined;
+        throw new ApplicationConflictError(latest);
+      }
 
       if (input.contacts !== undefined) {
         this.replaceContacts(

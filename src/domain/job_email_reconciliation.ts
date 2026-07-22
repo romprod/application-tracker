@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   createApplicationSchema,
-  updateApplicationSchema,
+  applicationChangesSchema,
 } from "./applications.js";
 import { jobBoardProviderSchema } from "./job_board.js";
 
@@ -85,7 +85,7 @@ export const upsertApplicationFromEmailSchema = z.strictObject({
   application: createApplicationSchema,
   email: jobEmailEvidenceSchema,
   posting: jobPostingEvidenceSchema.optional(),
-  update: updateApplicationSchema.optional(),
+  update: applicationChangesSchema.optional(),
 });
 
 export type JobPostingEvidenceInput = z.infer<typeof jobPostingEvidenceSchema>;

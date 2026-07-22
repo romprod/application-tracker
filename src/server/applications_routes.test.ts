@@ -312,8 +312,12 @@ describe("application ledger routes", () => {
       .expect(201);
     const application = createdApplication(created);
     const applicationId = application.id;
-    if (typeof applicationId !== "string") {
-      throw new Error("Expected an application ID");
+    const expectedUpdatedAt = application.updatedAt;
+    if (
+      typeof applicationId !== "string" ||
+      typeof expectedUpdatedAt !== "string"
+    ) {
+      throw new Error("Expected an application ID and concurrency value");
     }
 
     const updated = await sameOrigin(
@@ -322,6 +326,7 @@ describe("application ledger routes", () => {
       .set("Cookie", cookie)
       .send({
         contacts: [],
+        expectedUpdatedAt,
         links: [],
         location: "",
         nextAction: "Prepare interview questions.",
@@ -386,12 +391,58 @@ describe("application ledger routes", () => {
       .expect(400, { error: { code: "validation_error" } });
     await sameOrigin(request(app).patch(`/api/applications/${missingId}`))
       .set("Cookie", cookie)
-      .send({ statusId: references.interview })
+      .send({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        statusId: references.interview,
+      })
       .expect(404, { error: { code: "application_not_found" } });
     await request(app)
       .get(`/api/applications/${missingId}/events`)
       .set("Cookie", cookie)
       .expect(404, { error: { code: "application_not_found" } });
+  });
+
+  it("returns the latest application when an update is stale", async () => {
+    const { app, references } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput(references))
+      .expect(201);
+    const application = createdApplication(created);
+    const applicationId = application.id;
+    const expectedUpdatedAt = application.updatedAt;
+    if (
+      typeof applicationId !== "string" ||
+      typeof expectedUpdatedAt !== "string"
+    ) {
+      throw new Error("Expected an application ID and concurrency value");
+    }
+
+    const first = await sameOrigin(
+      request(app).patch(`/api/applications/${applicationId}`),
+    )
+      .set("Cookie", cookie)
+      .send({ companyName: "First editor wins", expectedUpdatedAt })
+      .expect(200);
+    const latest = createdApplication(first);
+    expect(latest.updatedAt).not.toBe(expectedUpdatedAt);
+
+    const stale = await sameOrigin(
+      request(app).patch(`/api/applications/${applicationId}`),
+    )
+      .set("Cookie", cookie)
+      .send({ companyName: "Stale overwrite", expectedUpdatedAt })
+      .expect(409);
+    expect(stale.body).toEqual({
+      application: latest,
+      error: { code: "application_conflict" },
+    });
+
+    await request(app)
+      .get("/api/applications")
+      .set("Cookie", cookie)
+      .expect(200, { applications: [latest] });
   });
 
   it("rejects a reference value from the wrong application list", async () => {
@@ -402,13 +453,17 @@ describe("application ledger routes", () => {
       .send(applicationInput(references))
       .expect(201);
     const applicationId = createdApplication(created).id;
-    if (typeof applicationId !== "string") {
-      throw new Error("Expected an application ID");
+    const expectedUpdatedAt = createdApplication(created).updatedAt;
+    if (
+      typeof applicationId !== "string" ||
+      typeof expectedUpdatedAt !== "string"
+    ) {
+      throw new Error("Expected an application ID and concurrency value");
     }
 
     await sameOrigin(request(app).patch(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)
-      .send({ statusId: references.referral })
+      .send({ expectedUpdatedAt, statusId: references.referral })
       .expect(400, { error: { code: "invalid_application_reference" } });
   });
 
@@ -422,8 +477,12 @@ describe("application ledger routes", () => {
       .expect(201);
     const application = createdApplication(created);
     const applicationId = application.id;
-    if (typeof applicationId !== "string") {
-      throw new Error("Expected an application ID");
+    const expectedUpdatedAt = application.updatedAt;
+    if (
+      typeof applicationId !== "string" ||
+      typeof expectedUpdatedAt !== "string"
+    ) {
+      throw new Error("Expected an application ID and concurrency value");
     }
 
     await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
@@ -439,7 +498,7 @@ describe("application ledger routes", () => {
       .expect(404, { error: { code: "application_not_found" } });
     await sameOrigin(request(app).patch(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)
-      .send({ companyName: "Hidden update" })
+      .send({ companyName: "Hidden update", expectedUpdatedAt })
       .expect(404, { error: { code: "application_not_found" } });
     await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)

@@ -187,6 +187,7 @@ describe("ApplicationLedgerService", () => {
     expect(
       service.updateApplication(actor, "application-1", {
         companyName: "Example Labs",
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
         statusId: interviewId,
       }),
     ).toMatchObject({ companyName: "Example Labs", status: "Interview" });
@@ -194,10 +195,28 @@ describe("ApplicationLedgerService", () => {
       actorUserId: "user-1",
       applicationId: "application-1",
       companyName: "Example Labs",
+      expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
       statusId: interviewId,
       updatedAt: "2026-07-18T13:00:00.000Z",
       workspaceId: "workspace-1",
     });
+  });
+
+  it("advances the concurrency value when the clock has not advanced", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-18T12:00:00.000Z"),
+    );
+
+    service.updateApplication(actor, "application-1", {
+      expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+      notes: "Same millisecond update",
+    });
+
+    expect(store.updateApplication).toHaveBeenCalledWith(
+      expect.objectContaining({ updatedAt: "2026-07-18T12:00:00.001Z" }),
+    );
   });
 
   it("lists history through the actor's workspace scope", () => {

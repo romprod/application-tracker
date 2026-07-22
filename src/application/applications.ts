@@ -130,6 +130,20 @@ export class InvalidApplicationReferenceError extends Error {
   }
 }
 
+export class ApplicationConflictError extends Error {
+  public constructor(public readonly application: ApplicationRecord) {
+    super("Application changed since it was read");
+    this.name = "ApplicationConflictError";
+  }
+}
+
+function nextUpdatedAt(expectedUpdatedAt: string, now: Date): string {
+  const expectedMilliseconds = new Date(expectedUpdatedAt).getTime();
+  return new Date(
+    Math.max(now.getTime(), expectedMilliseconds + 1),
+  ).toISOString();
+}
+
 export class ApplicationLedgerService {
   public constructor(
     private readonly repository: ApplicationsRepository,
@@ -201,7 +215,7 @@ export class ApplicationLedgerService {
       applicationId,
       ...(contacts ? { contacts: contacts.map(contactRecord) } : {}),
       ...(links ? { links: links.map(linkRecord) } : {}),
-      updatedAt: this.clock().toISOString(),
+      updatedAt: nextUpdatedAt(input.expectedUpdatedAt, this.clock()),
       workspaceId: actor.workspaceId,
     });
     if (!application) throw new ApplicationNotFoundError();

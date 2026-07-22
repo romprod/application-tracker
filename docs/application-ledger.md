@@ -85,6 +85,13 @@ members may use them:
 - `DELETE /api/applications/:applicationId` removes a record; and
 - `GET /api/applications/:applicationId/events` lists its timeline.
 
+Every application read includes `updatedAt`. A PATCH must send that value as
+`expectedUpdatedAt` together with at least one changed field. The database
+checks it atomically before updating fields, contacts, links, or stage history.
+A stale PATCH returns HTTP 409 with `application_conflict` and the latest
+application record; the browser keeps the edit open and offers to reload that
+version before the user retries.
+
 The application service derives the workspace and acting user from the
 authenticated session. Request bodies cannot select those values. A record
 outside the active workspace has the same not-found response as a missing or

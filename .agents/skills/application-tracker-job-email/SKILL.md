@@ -127,6 +127,9 @@ direct posting URL when appropriate.
 For updates:
 
 - retrieve the current application when its full state is needed;
+- pass its `updatedAt` value as `update.expectedUpdatedAt` when using generic
+  `update_application`, and read the latest record after
+  `application_conflict` before retrying;
 - send only fields supported by the email;
 - never replace a newer status with an older event;
 - preserve notes, contacts, links, source, and source URL unless replacement is

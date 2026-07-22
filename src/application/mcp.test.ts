@@ -368,6 +368,7 @@ describe("ApplicationMcpService", () => {
     expect(
       service.updateApplication("application-created", {
         companyName: "Updated Company",
+        expectedUpdatedAt: created.updatedAt,
       }),
     ).toBe(updated);
     expect(service.deleteApplication("application-created")).toEqual({
@@ -381,7 +382,10 @@ describe("ApplicationMcpService", () => {
     expect(applications.updateApplication).toHaveBeenCalledWith(
       actor,
       "application-created",
-      { companyName: "Updated Company" },
+      {
+        companyName: "Updated Company",
+        expectedUpdatedAt: created.updatedAt,
+      },
     );
     expect(applications.deleteApplication).toHaveBeenCalledWith(
       actor,

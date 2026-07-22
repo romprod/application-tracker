@@ -14,7 +14,7 @@ import type {
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
 import type { JobBoardProvider } from "../domain/job_board.js";
-import type { UpdateApplicationInput } from "../domain/applications.js";
+import type { ApplicationChangesInput } from "../domain/applications.js";
 
 export type JobEmailMatchLevel =
   "posting_id" | "canonical_url" | "email_message_id" | "company_title";
@@ -212,11 +212,11 @@ function samePosting(
 }
 
 function comparableUpdateValue(
-  key: keyof UpdateApplicationInput,
-  value: NonNullable<UpdateApplicationInput[keyof UpdateApplicationInput]>,
+  key: keyof ApplicationChangesInput,
+  value: NonNullable<ApplicationChangesInput[keyof ApplicationChangesInput]>,
 ): unknown {
   if (key === "contacts") {
-    return (value as NonNullable<UpdateApplicationInput["contacts"]>).map(
+    return (value as NonNullable<ApplicationChangesInput["contacts"]>).map(
       (contact) => ({
         email: contact.email ?? null,
         name: contact.name,
@@ -230,12 +230,12 @@ function comparableUpdateValue(
 
 function requiresApplicationUpdate(
   application: ApplicationRecord,
-  update: UpdateApplicationInput,
+  update: ApplicationChangesInput,
 ): boolean {
   for (const [key, rawValue] of Object.entries(update) as Array<
     [
-      keyof UpdateApplicationInput,
-      UpdateApplicationInput[keyof UpdateApplicationInput],
+      keyof ApplicationChangesInput,
+      ApplicationChangesInput[keyof ApplicationChangesInput],
     ]
   >) {
     if (rawValue === undefined) continue;
@@ -437,7 +437,7 @@ export class JobEmailReconciliationService {
         application = this.applications.updateApplication(
           actor,
           application.id,
-          input.update,
+          { ...input.update, expectedUpdatedAt: application.updatedAt },
         );
         updated = true;
       }

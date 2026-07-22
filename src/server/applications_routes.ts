@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 
 import {
+  ApplicationConflictError,
   ApplicationNotFoundError,
   InvalidApplicationReferenceError,
   type ApplicationLedgerService,
@@ -136,6 +137,13 @@ export function createApplicationsRouter(
         ),
       });
     } catch (error) {
+      if (error instanceof ApplicationConflictError) {
+        response.status(409).json({
+          application: error.application,
+          error: { code: "application_conflict" },
+        });
+        return;
+      }
       if (error instanceof ApplicationNotFoundError) {
         response.status(404).json({ error: { code: "application_not_found" } });
         return;

@@ -55,6 +55,8 @@ export function ApplicationWorkspace({
   const [editingApplication, setEditingApplication] =
     useState<ApplicationRecord>();
   const [formError, setFormError] = useState<string>();
+  const [conflictApplication, setConflictApplication] =
+    useState<ApplicationRecord>();
   const [submitting, setSubmitting] = useState(false);
   const [deletionTarget, setDeletionTarget] = useState<ApplicationRecord>();
   const [deleteError, setDeleteError] = useState<string>();
@@ -132,6 +134,7 @@ export function ApplicationWorkspace({
     }
     setFormMode("create");
     setEditingApplication(undefined);
+    setConflictApplication(undefined);
     setFormError(undefined);
     setNotice(undefined);
   }
@@ -139,6 +142,7 @@ export function ApplicationWorkspace({
   function beginEdit(application: ApplicationRecord) {
     setFormMode("edit");
     setEditingApplication(application);
+    setConflictApplication(undefined);
     setFormError(undefined);
     setNotice(undefined);
   }
@@ -147,6 +151,7 @@ export function ApplicationWorkspace({
     if (submitting) return;
     setFormMode(undefined);
     setEditingApplication(undefined);
+    setConflictApplication(undefined);
     setFormError(undefined);
   }
 
@@ -191,7 +196,7 @@ export function ApplicationWorkspace({
     const operation = editingId
       ? applicationsClient.updateApplication(
           editingId,
-          applicationUpdateInput(form),
+          applicationUpdateInput(form, editingApplication.updatedAt),
         )
       : applicationsClient.createApplication(applicationInput(form));
     void operation
@@ -210,12 +215,31 @@ export function ApplicationWorkspace({
         );
         setFormMode(undefined);
         setEditingApplication(undefined);
+        setConflictApplication(undefined);
         setSubmitting(false);
         if (editingId && selectedApplication?.id === editingId) {
           openApplication(saved);
         }
       })
       .catch((caught: unknown) => {
+        if (
+          caught instanceof ApplicationsClientError &&
+          caught.code === "application_conflict" &&
+          caught.application
+        ) {
+          const latest = caught.application;
+          setApplications((current) =>
+            current?.map((application) =>
+              application.id === latest.id ? latest : application,
+            ),
+          );
+          setConflictApplication(latest);
+          setFormError(
+            "This application changed after you opened it. Reload the latest version before saving.",
+          );
+          setSubmitting(false);
+          return;
+        }
         const action = editingId ? "updated" : "added";
         setFormError(
           caught instanceof ApplicationsClientError &&
@@ -282,12 +306,21 @@ export function ApplicationWorkspace({
       )}
       {formMode && (
         <ApplicationDialog
-          key={`${formMode}-${editingApplication?.id ?? "new"}`}
+          key={`${formMode}-${editingApplication?.id ?? "new"}-${editingApplication?.updatedAt ?? ""}`}
           application={editingApplication}
           emailLinksClient={emailLinksClient}
           error={formError}
           mode={formMode}
           onClose={closeForm}
+          {...(conflictApplication
+            ? {
+                onReloadLatest: () => {
+                  setEditingApplication(conflictApplication);
+                  setConflictApplication(undefined);
+                  setFormError(undefined);
+                },
+              }
+            : {})}
           onSave={saveApplication}
           referenceValues={referenceValues ?? []}
           submitting={submitting}

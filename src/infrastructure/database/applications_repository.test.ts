@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ApplicationConflictError } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
@@ -334,6 +335,7 @@ describe("SqliteApplicationsRepository", () => {
             role: "Hiring manager",
           },
         ],
+        expectedUpdatedAt: created.updatedAt,
         links: [
           {
             label: "Interview briefing",
@@ -392,10 +394,12 @@ describe("SqliteApplicationsRepository", () => {
           type: "application_created",
         }),
       ]);
+      if (!transitioned) throw new Error("Expected the update to succeed");
 
       repository.updateApplication({
         actorUserId: setup.administrator.id,
         applicationId: created.id,
+        expectedUpdatedAt: transitioned.updatedAt,
         notes: "Updated without changing stage.",
         nextAction: null,
         nextActionDue: null,
@@ -429,6 +433,87 @@ describe("SqliteApplicationsRepository", () => {
         nextAction: null,
         nextActionDue: null,
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects stale updates without changing fields, relations, or history", () => {
+    const { database, repository, setup } = createRepository();
+    const prospectId = referenceId(
+      database,
+      setup.workspace.id,
+      "status",
+      "Prospect",
+    );
+    const interviewId = referenceId(
+      database,
+      setup.workspace.id,
+      "status",
+      "Interview",
+    );
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        contacts: [
+          {
+            email: "original@example.com",
+            name: "Original Contact",
+            phone: null,
+            role: "Recruiter",
+          },
+        ],
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        links: [{ label: "Original", url: "https://example.com/original" }],
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        statusId: prospectId,
+        workspaceId: setup.workspace.id,
+      });
+      const latest = repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        companyName: "First editor wins",
+        expectedUpdatedAt: created.updatedAt,
+        statusId: interviewId,
+        updatedAt: "2026-07-18T13:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(() =>
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          expectedUpdatedAt: created.updatedAt,
+          companyName: "Stale overwrite",
+          contacts: [
+            {
+              email: "stale@example.com",
+              name: "Stale Contact",
+              phone: null,
+              role: null,
+            },
+          ],
+          expectedUpdatedAt: created.updatedAt,
+          links: [{ label: "Stale", url: "https://example.com/stale" }],
+          statusId: prospectId,
+          updatedAt: "2026-07-18T14:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrowError(ApplicationConflictError);
+      expect(repository.listApplications(setup.workspace.id)[0]).toEqual(
+        latest,
+      );
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toHaveLength(2);
     } finally {
       database.close();
     }
@@ -469,6 +554,7 @@ describe("SqliteApplicationsRepository", () => {
         repository.updateApplication({
           actorUserId: setup.administrator.id,
           applicationId: created.id,
+          expectedUpdatedAt: created.updatedAt,
           notes: "The historical status remains selected.",
           updatedAt: "2026-07-18T13:00:00.000Z",
           workspaceId: setup.workspace.id,
@@ -546,6 +632,7 @@ describe("SqliteApplicationsRepository", () => {
               role: null,
             },
           ],
+          expectedUpdatedAt: created.updatedAt,
           updatedAt: "2026-07-18T13:00:00.000Z",
           workspaceId: setup.workspace.id,
         }),
@@ -594,6 +681,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           companyName: "Cross-scope attempt",
+          expectedUpdatedAt: created.updatedAt,
           updatedAt: "2026-07-18T13:00:00.000Z",
           workspaceId: "workspace-00002",
         }),
@@ -655,6 +743,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           companyName: "Hidden update",
+          expectedUpdatedAt: created.updatedAt,
           updatedAt: "2026-07-18T16:00:00.000Z",
           workspaceId: setup.workspace.id,
         }),

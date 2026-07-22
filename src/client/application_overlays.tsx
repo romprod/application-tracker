@@ -127,11 +127,13 @@ export function applicationInput(
 
 export function applicationUpdateInput(
   form: ApplicationFormState,
+  expectedUpdatedAt: string,
 ): UpdateApplicationInput {
   return {
     appliedOn: form.appliedOn.trim() || null,
     companyName: form.companyName.trim(),
     contacts: form.contacts.map(contactInput),
+    expectedUpdatedAt,
     links: form.links.map(linkInput),
     location: form.location.trim() || null,
     nextAction: form.nextAction.trim() || null,
@@ -550,6 +552,7 @@ export function ApplicationDialog({
   error,
   mode,
   onClose,
+  onReloadLatest,
   onSave,
   referenceValues,
   submitting,
@@ -559,6 +562,7 @@ export function ApplicationDialog({
   error: string | undefined;
   mode: "create" | "edit";
   onClose: () => void;
+  onReloadLatest?: () => void;
   onSave: (form: ApplicationFormState) => void;
   referenceValues: ReferenceValue[];
   submitting: boolean;
@@ -1219,9 +1223,18 @@ export function ApplicationDialog({
             </div>
           </fieldset>
           {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
+            <div className="form-error" role="alert">
+              <p>{error}</p>
+              {onReloadLatest && (
+                <button
+                  className="tracker-button tracker-button-quiet"
+                  onClick={onReloadLatest}
+                  type="button"
+                >
+                  Reload latest version
+                </button>
+              )}
+            </div>
           )}
           <footer className="tracker-modal-footer">
             <p>

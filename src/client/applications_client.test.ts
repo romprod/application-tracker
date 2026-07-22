@@ -122,7 +122,11 @@ describe("browserApplicationsClient", () => {
         new Response(JSON.stringify({ application: updated }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    const input = { location: null, statusId: updated.statusId };
+    const input = {
+      expectedUpdatedAt: application.updatedAt,
+      location: null,
+      statusId: updated.statusId,
+    };
 
     await expect(
       browserApplicationsClient.updateApplication(application.id, input),
@@ -139,6 +143,36 @@ describe("browserApplicationsClient", () => {
         method: "PATCH",
       },
     );
+  });
+
+  it("returns the latest record with an application conflict", async () => {
+    const latest = {
+      ...application,
+      companyName: "Updated elsewhere",
+      updatedAt: "2026-07-18T12:16:00.000Z",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            application: latest,
+            error: { code: "application_conflict" },
+          }),
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await expect(
+      browserApplicationsClient.updateApplication(application.id, {
+        companyName: "My stale edit",
+        expectedUpdatedAt: application.updatedAt,
+      }),
+    ).rejects.toMatchObject({
+      application: latest,
+      code: "application_conflict",
+    });
   });
 
   it("deletes through the same-origin endpoint without expecting a body", async () => {

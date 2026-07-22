@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { AuthClientError } from "./auth_client";
 import {
+  ApplicationsClientError,
   browserApplicationsClient,
   type ApplicationEvent,
   type ApplicationRecord,
@@ -905,6 +906,7 @@ describe("application shell", () => {
           appliedOn: "2026-07-18",
           companyName: "Example Studio",
           contacts: applicationRecord.contacts,
+          expectedUpdatedAt: applicationRecord.updatedAt,
           links: applicationRecord.links,
           location: "Remote",
           nextAction: "Send the portfolio follow-up.",
@@ -924,6 +926,53 @@ describe("application shell", () => {
       }),
     ).not.toHaveLength(0);
     expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
+  });
+
+  it("offers to reload the latest record after an edit conflict", async () => {
+    const latest = {
+      ...applicationRecord,
+      companyName: "Updated elsewhere",
+      notes: "Saved by another editor.",
+      updatedAt: "2026-07-18T13:30:00.000Z",
+    };
+    const applicationsClient = createApplicationsClient();
+    applicationsClient.updateApplication.mockRejectedValueOnce(
+      new ApplicationsClientError("application_conflict", latest),
+    );
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit application" }));
+    fireEvent.change(screen.getByLabelText("Company"), {
+      target: { value: "My stale edit" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This application changed after you opened it.",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reload latest version" }),
+    );
+    expect(screen.getByLabelText("Company")).toHaveValue("Updated elsewhere");
+    expect(screen.getByLabelText("Notes")).toHaveValue(
+      "Saved by another editor.",
+    );
   });
 
   it("returns to sign-in when the session expires during a mutation", async () => {

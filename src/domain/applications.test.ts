@@ -144,6 +144,7 @@ describe("updateApplicationSchema", () => {
         appliedOn: null,
         companyName: "  Example Labs  ",
         contacts: [],
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
         links: [],
         location: "   ",
         nextAction: "  ",
@@ -157,6 +158,7 @@ describe("updateApplicationSchema", () => {
       appliedOn: null,
       companyName: "Example Labs",
       contacts: [],
+      expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
       links: [],
       location: null,
       nextAction: null,
@@ -171,16 +173,39 @@ describe("updateApplicationSchema", () => {
   it("rejects empty updates, unsafe links, and unknown fields", () => {
     expect(() => updateApplicationSchema.parse({})).toThrow();
     expect(() =>
-      updateApplicationSchema.parse({ sourceUrl: "javascript:alert(1)" }),
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+      }),
     ).toThrow();
     expect(() =>
-      updateApplicationSchema.parse({ nextActionDue: "21/07/2026" }),
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        sourceUrl: "javascript:alert(1)",
+      }),
     ).toThrow();
     expect(() =>
-      updateApplicationSchema.parse({ nextAction: "x".repeat(501) }),
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        nextActionDue: "21/07/2026",
+      }),
     ).toThrow();
     expect(() =>
-      updateApplicationSchema.parse({ workspaceId: "other" }),
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        nextAction: "x".repeat(501),
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        workspaceId: "other",
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        companyName: "Example Labs",
+        expectedUpdatedAt: "not-a-date",
+      }),
     ).toThrow();
   });
 });

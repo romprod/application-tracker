@@ -133,11 +133,16 @@ describe("MCP write integration", () => {
     });
     expect(created.isError).not.toBe(true);
     const applicationId = String(created.structuredContent?.id);
+    const expectedUpdatedAt = String(created.structuredContent?.updatedAt);
 
     const updated = await client.callTool({
       arguments: {
         applicationId,
-        update: { companyName: "Updated Company", notes: "Follow up" },
+        update: {
+          companyName: "Updated Company",
+          expectedUpdatedAt,
+          notes: "Follow up",
+        },
       },
       name: "update_application",
     });
@@ -145,6 +150,21 @@ describe("MCP write integration", () => {
       companyName: "Updated Company",
       notes: "Follow up",
     });
+
+    const stale = await client.callTool({
+      arguments: {
+        applicationId,
+        update: { companyName: "Stale overwrite", expectedUpdatedAt },
+      },
+      name: "update_application",
+    });
+    expect(stale.isError).toBe(true);
+    expect(stale.content).toEqual([
+      {
+        text: '{"error":{"code":"application_conflict"}}',
+        type: "text",
+      },
+    ]);
 
     const deleted = await client.callTool({
       arguments: { applicationId, confirm: true },
@@ -181,6 +201,11 @@ describe("MCP write integration", () => {
       {
         action: "update_application",
         result: "success",
+        transport: "local_stdio",
+      },
+      {
+        action: "update_application",
+        result: "error",
         transport: "local_stdio",
       },
       {

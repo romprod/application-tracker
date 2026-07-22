@@ -64,6 +64,7 @@ export interface UpdateApplicationInput {
   appliedOn?: string | null;
   companyName?: string;
   contacts?: ApplicationContactInput[];
+  expectedUpdatedAt: string;
   location?: string | null;
   links?: ApplicationLink[];
   nextAction?: string | null;
@@ -97,7 +98,10 @@ export interface ApplicationsClient {
 }
 
 export class ApplicationsClientError extends Error {
-  public constructor(public readonly code: string) {
+  public constructor(
+    public readonly code: string,
+    public readonly application?: ApplicationRecord,
+  ) {
     super(code);
     this.name = "ApplicationsClientError";
   }
@@ -377,7 +381,17 @@ export const browserApplicationsClient: ApplicationsClient = {
       },
       method: "PATCH",
     });
-    const body = await successfulBody(response);
+    const body = await readResponse(response);
+    if (!response.ok) {
+      const code = errorCode(body);
+      if (code === "application_conflict" && isRecord(body)) {
+        throw new ApplicationsClientError(
+          code,
+          parseApplication(body.application),
+        );
+      }
+      throw new ApplicationsClientError(code);
+    }
     if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
     return parseApplication(body.application);
   },

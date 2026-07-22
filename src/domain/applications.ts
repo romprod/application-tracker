@@ -74,44 +74,56 @@ export const createApplicationSchema = z.strictObject({
   statusId: referenceValueIdSchema,
 });
 
-export const updateApplicationSchema = z
-  .strictObject({
-    appliedOn: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
-    companyName: z.string().trim().min(1).max(160).optional(),
-    contacts: z
-      .array(applicationContactSchema)
-      .max(maximumApplicationRelations)
-      .optional(),
-    links: z
-      .array(applicationLinkSchema)
-      .max(maximumApplicationRelations)
-      .optional(),
-    location: nullableText(160).optional(),
-    nextAction: nullableText(500).optional(),
-    nextActionDue: z
-      .preprocess(blankToNull, z.iso.date().nullable())
-      .optional(),
-    notes: nullableText(5000).optional(),
-    roleTypeId: referenceValueIdSchema.nullable().optional(),
-    roleTitle: z.string().trim().min(1).max(160).optional(),
-    sourceId: referenceValueIdSchema.nullable().optional(),
-    sourceUrl: z
-      .preprocess(
-        blankToNull,
-        z
-          .url({ protocol: /^https?$/ })
-          .trim()
-          .max(2048)
-          .nullable(),
-      )
-      .optional(),
-    statusId: referenceValueIdSchema.optional(),
-  })
+const applicationUpdateFields = {
+  appliedOn: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
+  companyName: z.string().trim().min(1).max(160).optional(),
+  contacts: z
+    .array(applicationContactSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
+  links: z
+    .array(applicationLinkSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
+  location: nullableText(160).optional(),
+  nextAction: nullableText(500).optional(),
+  nextActionDue: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
+  notes: nullableText(5000).optional(),
+  roleTypeId: referenceValueIdSchema.nullable().optional(),
+  roleTitle: z.string().trim().min(1).max(160).optional(),
+  sourceId: referenceValueIdSchema.nullable().optional(),
+  sourceUrl: z
+    .preprocess(
+      blankToNull,
+      z
+        .url({ protocol: /^https?$/ })
+        .trim()
+        .max(2048)
+        .nullable(),
+    )
+    .optional(),
+  statusId: referenceValueIdSchema.optional(),
+};
+
+export const applicationChangesSchema = z
+  .strictObject(applicationUpdateFields)
   .refine((input) => Object.keys(input).length > 0, {
     message: "At least one application field must be supplied",
   });
 
+export const updateApplicationSchema = z
+  .strictObject({
+    ...applicationUpdateFields,
+    expectedUpdatedAt: z.iso.datetime(),
+  })
+  .refine(
+    (input) =>
+      Object.keys(input).some((field) => field !== "expectedUpdatedAt"),
+    { message: "At least one application field must be supplied" },
+  );
+
 export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
 export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
+export type ApplicationChangesInput = z.infer<typeof applicationChangesSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;

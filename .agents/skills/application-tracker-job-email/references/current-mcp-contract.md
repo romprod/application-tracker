@@ -60,7 +60,9 @@ It optionally accepts:
 
 - `email.webUrl`, an HTTP(S) URL up to 2048 characters;
 - `posting`, using the match posting schema; and
-- `update`, using the normal non-empty `update_application` update schema.
+- `update`, using the non-empty application field schema. The reconciliation
+  service reads and supplies the matched record's concurrency value internally;
+  callers do not add `expectedUpdatedAt` to this nested update.
 
 `application` is the create fallback if no record matches. `update` is applied
 only when at least one supplied value differs. Reusing the same Message-ID
