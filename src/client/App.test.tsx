@@ -36,6 +36,7 @@ import type {
 import type { EmailLinksClient } from "./email_links_client";
 
 afterEach(() => {
+  window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -603,6 +604,93 @@ describe("application shell", () => {
       }),
     ).toBeInTheDocument();
     expect(setupClient.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("authenticates a deep link before opening its protected section", async () => {
+    window.history.replaceState(null, "", "/documents");
+    const authClient = createAuthClient({ authenticated: false });
+    const documentsClient = createDocumentsClient();
+    render(
+      <App
+        authClient={authClient}
+        documentsClient={documentsClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Sign in to your workspace." });
+    expect(documentsClient.listDocuments).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Documents" }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/documents");
+  });
+
+  it("writes navigation to history and responds to popstate", async () => {
+    window.history.replaceState(null, "", "/dashboard");
+    const pushState = vi.spyOn(window.history, "pushState");
+    render(
+      <App
+        applicationsClient={createApplicationsClient()}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    expect(pushState).toHaveBeenCalledWith(null, "", "/applications");
+    expect(window.location.pathname).toBe("/applications");
+
+    window.history.replaceState(null, "", "/dashboard");
+    fireEvent.popState(window);
+    expect(
+      await screen.findByRole("heading", { name: "Your search, at a glance." }),
+    ).toBeInTheDocument();
+  });
+
+  it("redirects a member away from administrator-only deep links", async () => {
+    window.history.replaceState(null, "", "/settings/users");
+    const usersClient = createUsersClient();
+    const memberSession: AuthenticatedSession = {
+      ...authenticatedSession,
+      user: { ...authenticatedSession.user, role: "member" },
+    };
+    render(
+      <App
+        authClient={createAuthClient(memberSession)}
+        referenceValuesClient={createReferenceValuesClient()}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+        usersClient={usersClient}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Make the tracker fit your search.",
+      }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings/lists");
+    expect(usersClient.listUsers).not.toHaveBeenCalled();
   });
 
   it("opens the workspace for an existing authenticated session", async () => {

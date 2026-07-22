@@ -341,6 +341,14 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   ).toBeLessThanOrEqual(390);
   await page.setViewportSize({ width: 1280, height: 720 });
 
+  await page.goto("/documents");
+  await expect(
+    page.getByRole("heading", { name: "Sign in to your workspace." }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Documents" })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/documents$/);
+  await page.goto("/");
+
   await page.getByLabel("Username").fill(e2eAdministrator.username);
   await page
     .getByLabel("Password", { exact: true })
@@ -353,6 +361,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(
     page.getByRole("heading", { name: "Your search, at a glance." }),
   ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
   const dashboardHero = page.getByRole("region", {
     name: "Your search, at a glance.",
   });
@@ -360,8 +369,26 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     dashboardHero.getByRole("button", { name: "Log application" }),
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Applications" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Applications", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/applications$/);
+
   await page.getByRole("button", { name: "Documents" }).click();
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+  await expect(page).toHaveURL(/\/documents$/);
+  await page.goBack();
+  await expect(
+    page.getByRole("heading", { name: "Applications", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/applications$/);
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+  await expect(page).toHaveURL(/\/documents$/);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+  await expect(page).toHaveURL(/\/documents$/);
 
   await uploadDocument(page, {
     buffer: Buffer.from('{"applications":[]}'),

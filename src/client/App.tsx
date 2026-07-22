@@ -47,14 +47,13 @@ import {
   type ReferenceValue,
   type ReferenceValuesClient,
 } from "./reference_values_client";
+import {
+  resolveWorkspaceRoute,
+  workspacePagePath,
+  type WorkspacePage,
+} from "./workspace_routes";
 
-type ReadyPage =
-  | "applications"
-  | "documents"
-  | "overview"
-  | "settings-lists"
-  | "settings-mcp"
-  | "settings-users";
+type ReadyPage = WorkspacePage;
 
 type AppView =
   | { kind: "loading" }
@@ -79,6 +78,17 @@ interface AppProps {
   referenceValuesClient?: ReferenceValuesClient;
   setupClient?: SetupClient;
   usersClient?: UsersClient;
+}
+
+function routeForSession(session: AuthenticatedSession): ReadyPage {
+  const route = resolveWorkspaceRoute(
+    window.location.pathname,
+    session.user.role,
+  );
+  if (window.location.pathname !== route.path) {
+    window.history.replaceState(null, "", route.path);
+  }
+  return route.page;
 }
 
 export function App({
@@ -129,7 +139,7 @@ export function App({
           session.authenticated
             ? {
                 kind: "ready",
-                page: "overview",
+                page: routeForSession(session),
                 session,
                 signingOut: false,
               }
@@ -144,6 +154,29 @@ export function App({
       active = false;
     };
   }, [authClient, setupClient, startupAttempt]);
+
+  const readySession = view.kind === "ready" ? view.session : undefined;
+
+  useEffect(() => {
+    if (!readySession) return;
+    const session = readySession;
+
+    function handlePopState() {
+      const page = routeForSession(session);
+      setView((current) => {
+        if (current.kind !== "ready") return current;
+        return {
+          kind: "ready",
+          page,
+          session: current.session,
+          signingOut: current.signingOut,
+        };
+      });
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [readySession]);
 
   function retryStartup() {
     setView({ kind: "loading" });
@@ -178,9 +211,16 @@ export function App({
 
   function navigate(page: ReadyPage) {
     if (view.kind !== "ready") return;
+    const route = resolveWorkspaceRoute(
+      workspacePagePath(page),
+      view.session.user.role,
+    );
+    if (window.location.pathname !== route.path) {
+      window.history.pushState(null, "", route.path);
+    }
     setView({
       kind: "ready",
-      page,
+      page: route.page,
       session: view.session,
       signingOut: view.signingOut,
     });
@@ -257,7 +297,7 @@ export function App({
               setView({
                 kind: "ready",
                 notice: `Welcome, ${authenticated.user.displayName}.`,
-                page: "overview",
+                page: routeForSession(authenticated),
                 session: authenticated,
                 signingOut: false,
               })
