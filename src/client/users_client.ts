@@ -1,3 +1,5 @@
+import { browserApiFetch } from "./browser_api_fetch";
+
 export interface ExternalIdentityLink {
   createdAt: string;
   id: string;
@@ -128,7 +130,7 @@ function parseUserResponse(value: unknown): ManagedUser {
 
 export const browserUsersClient: UsersClient = {
   async listUsers() {
-    const response = await fetch("/api/settings/users", {
+    const response = await browserApiFetch("/api/settings/users", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -149,7 +151,7 @@ export const browserUsersClient: UsersClient = {
   },
 
   async createUser(input) {
-    const response = await fetch("/api/settings/users", {
+    const response = await browserApiFetch("/api/settings/users", {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {
@@ -162,7 +164,7 @@ export const browserUsersClient: UsersClient = {
   },
 
   async setStatus(userId, status) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/users/${encodeURIComponent(userId)}/status`,
       {
         body: JSON.stringify({ status }),
@@ -178,7 +180,7 @@ export const browserUsersClient: UsersClient = {
   },
 
   async linkExternalIdentity(userId, subject) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/users/${encodeURIComponent(userId)}/external-identities`,
       {
         body: JSON.stringify({ subject }),
@@ -194,7 +196,7 @@ export const browserUsersClient: UsersClient = {
   },
 
   async unlinkExternalIdentity(userId, identityId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/users/${encodeURIComponent(userId)}/external-identities/${encodeURIComponent(identityId)}`,
       {
         credentials: "same-origin",

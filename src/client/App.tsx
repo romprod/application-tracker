@@ -6,6 +6,7 @@ import {
   type AuthClient,
   type AuthenticatedSession,
 } from "./auth_client";
+import { observeAuthenticationRequired } from "./browser_api_fetch";
 import {
   browserApplicationsClient,
   type ApplicationsClient,
@@ -91,6 +92,21 @@ export function App({
   usersClient = browserUsersClient,
 }: AppProps) {
   const [view, setView] = useState<AppView>({ kind: "loading" });
+
+  useEffect(
+    () =>
+      observeAuthenticationRequired(() => {
+        setView((current) =>
+          current.kind === "ready"
+            ? {
+                kind: "login",
+                notice: "Your session expired. Sign in again.",
+              }
+            : current,
+        );
+      }),
+    [],
+  );
 
   useEffect(() => {
     let active = true;

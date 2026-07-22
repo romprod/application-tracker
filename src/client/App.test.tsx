@@ -9,10 +9,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { AuthClientError } from "./auth_client";
-import type {
-  ApplicationEvent,
-  ApplicationRecord,
-  ApplicationsClient,
+import {
+  browserApplicationsClient,
+  type ApplicationEvent,
+  type ApplicationRecord,
+  type ApplicationsClient,
 } from "./applications_client";
 import type {
   AuthClient,
@@ -34,6 +35,7 @@ import type {
 import type { EmailLinksClient } from "./email_links_client";
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -46,6 +48,16 @@ const authenticatedSession: AuthenticatedSession = {
   },
   workspace: { name: "Applications" },
 };
+
+function authenticationRequiredResponse(): Response {
+  return new Response(
+    JSON.stringify({ error: { code: "authentication_required" } }),
+    {
+      headers: { "Content-Type": "application/json" },
+      status: 401,
+    },
+  );
+}
 
 const applicationRecord: ApplicationRecord = {
   appliedOn: "2026-07-18",
@@ -550,6 +562,41 @@ describe("application shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("returns to sign-in when the session expires during a list request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(authenticationRequiredResponse())),
+    );
+    const applicationsClient = createApplicationsClient();
+    applicationsClient.listApplications.mockImplementation(() =>
+      browserApplicationsClient.listApplications(),
+    );
+
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Sign in to your workspace.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your session expired. Sign in again.",
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Your search, at a glance." }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the application ledger for an authenticated user", async () => {
     const applicationsClient = createApplicationsClient();
     render(
@@ -877,6 +924,56 @@ describe("application shell", () => {
       }),
     ).not.toHaveLength(0);
     expect(screen.getByText("Example Studio was updated.")).toBeInTheDocument();
+  });
+
+  it("returns to sign-in when the session expires during a mutation", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(authenticationRequiredResponse()),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const applicationsClient = createApplicationsClient();
+    applicationsClient.updateApplication.mockImplementation((id, input) =>
+      browserApplicationsClient.updateApplication(id, input),
+    );
+
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit application" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Sign in to your workspace.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your session expired. Sign in again.",
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Edit application" }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${applicationRecord.id}`,
+      expect.objectContaining({ method: "PATCH" }),
+    );
   });
 
   it("adds contacts and related links to a new application", async () => {

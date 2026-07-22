@@ -1,3 +1,5 @@
+import { browserApiFetch } from "./browser_api_fetch";
+
 export interface DocumentApplicationAssociation {
   companyName: string;
   id: string;
@@ -257,7 +259,7 @@ async function successfulBody(response: Response): Promise<unknown> {
 
 export const browserDocumentsClient: DocumentsClient = {
   async getDocumentPreview(documentId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/documents/${encodeURIComponent(documentId)}/preview`,
       {
         cache: "no-store",
@@ -271,7 +273,7 @@ export const browserDocumentsClient: DocumentsClient = {
   },
 
   async listDocuments() {
-    const response = await fetch("/api/documents", {
+    const response = await browserApiFetch("/api/documents", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -297,7 +299,7 @@ export const browserDocumentsClient: DocumentsClient = {
     form.append("documentTypeId", input.documentTypeId);
     form.append("applicationIds", JSON.stringify(input.applicationIds));
     form.append("file", input.file);
-    const response = await fetch("/api/documents", {
+    const response = await browserApiFetch("/api/documents", {
       body: form,
       credentials: "same-origin",
       headers: { Accept: "application/json" },

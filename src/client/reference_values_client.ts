@@ -1,3 +1,5 @@
+import { browserApiFetch } from "./browser_api_fetch";
+
 export type ReferenceCategory =
   "status" | "source" | "role_type" | "document_type";
 
@@ -128,7 +130,7 @@ function parseValueResponse(value: unknown): ReferenceValue {
 
 export const browserReferenceValuesClient: ReferenceValuesClient = {
   async listValues() {
-    const response = await fetch("/api/settings/lists", {
+    const response = await browserApiFetch("/api/settings/lists", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -141,7 +143,7 @@ export const browserReferenceValuesClient: ReferenceValuesClient = {
   },
 
   async createValue(input) {
-    const response = await fetch("/api/settings/lists", {
+    const response = await browserApiFetch("/api/settings/lists", {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {
@@ -154,7 +156,7 @@ export const browserReferenceValuesClient: ReferenceValuesClient = {
   },
 
   async updateValue(referenceValueId, input) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/lists/${encodeURIComponent(referenceValueId)}`,
       {
         body: JSON.stringify(input),
@@ -170,7 +172,7 @@ export const browserReferenceValuesClient: ReferenceValuesClient = {
   },
 
   async deleteValue(referenceValueId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/lists/${encodeURIComponent(referenceValueId)}`,
       {
         credentials: "same-origin",

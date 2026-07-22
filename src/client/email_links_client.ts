@@ -1,4 +1,5 @@
 import { jobBoardProviders, type JobBoardProvider } from "../domain/job_board";
+import { browserApiFetch } from "./browser_api_fetch";
 
 export { jobBoardProviders, type JobBoardProvider } from "../domain/job_board";
 
@@ -110,15 +111,18 @@ function errorCode(value: unknown): string {
 
 export const browserEmailLinksClient: EmailLinksClient = {
   async extractJobLinks(content) {
-    const response = await fetch("/api/documents/email-links/extract", {
-      body: JSON.stringify({ content }),
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const response = await browserApiFetch(
+      "/api/documents/email-links/extract",
+      {
+        body: JSON.stringify({ content }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
       },
-      method: "POST",
-    });
+    );
     const body = await readResponse(response);
     if (!response.ok) throw new EmailLinksClientError(errorCode(body));
     if (

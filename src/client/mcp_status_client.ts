@@ -1,3 +1,5 @@
+import { browserApiFetch } from "./browser_api_fetch";
+
 export interface McpStatus {
   availability: "available" | "degraded" | "planned";
   capabilities: {
@@ -379,7 +381,7 @@ async function responseBody(response: Response): Promise<unknown> {
 
 export const browserMcpStatusClient: McpStatusClient = {
   async createClient(input) {
-    const response = await fetch("/api/settings/mcp/clients", {
+    const response = await browserApiFetch("/api/settings/mcp/clients", {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {
@@ -393,7 +395,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseCredentialResult(body);
   },
   async deleteClient(clientId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/mcp/clients/${encodeURIComponent(clientId)}/permanent`,
       {
         credentials: "same-origin",
@@ -407,7 +409,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseStatus(body.status);
   },
   async deleteOAuthClient(clientId, actorUserId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/mcp/oauth-clients/${encodeURIComponent(clientId)}/users/${encodeURIComponent(actorUserId)}`,
       {
         credentials: "same-origin",
@@ -421,7 +423,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseStatus(body.status);
   },
   async getStatus() {
-    const response = await fetch("/api/settings/mcp", {
+    const response = await browserApiFetch("/api/settings/mcp", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -432,7 +434,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseStatus(body.status);
   },
   async updateClientAccessMode(clientId, accessMode) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/mcp/clients/${encodeURIComponent(clientId)}`,
       {
         body: JSON.stringify({ accessMode }),
@@ -450,7 +452,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseStatus(body.status);
   },
   async rotateClient(clientId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/mcp/clients/${encodeURIComponent(clientId)}/rotate`,
       {
         body: "{}",
@@ -467,7 +469,7 @@ export const browserMcpStatusClient: McpStatusClient = {
     return parseCredentialResult(body);
   },
   async revokeClient(clientId) {
-    const response = await fetch(
+    const response = await browserApiFetch(
       `/api/settings/mcp/clients/${encodeURIComponent(clientId)}`,
       {
         credentials: "same-origin",

@@ -66,8 +66,12 @@ authenticate. Expired rows are cleaned up during login.
 
 The browser checks `GET /api/auth/session` when it opens. An unauthenticated
 visitor sees the local login form; a successful `POST /api/auth/login` opens
-the workspace without exposing the session token to JavaScript. Signing out
-uses `POST /api/auth/logout`, and the browser returns to the login form only
+the workspace without exposing the session token to JavaScript. A shared API
+boundary also watches authenticated requests: `401 authentication_required`
+unmounts the workspace, clears its in-memory data and forms, and returns to the
+login screen with a session-expiry notice. Other validation, permission,
+conflict, and network errors stay with the page that made the request. Signing
+out uses `POST /api/auth/logout`, and the browser returns to the login form only
 after the server has revoked the session.
 
 Submitting another valid login while the browser already has a session rotates

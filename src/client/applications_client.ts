@@ -1,3 +1,5 @@
+import { browserApiFetch } from "./browser_api_fetch";
+
 export type ApplicationStatus = string;
 
 export interface ApplicationContact {
@@ -308,7 +310,7 @@ async function successfulBody(response: Response): Promise<unknown> {
 
 export const browserApplicationsClient: ApplicationsClient = {
   async listApplications() {
-    const response = await fetch("/api/applications", {
+    const response = await browserApiFetch("/api/applications", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -321,7 +323,7 @@ export const browserApplicationsClient: ApplicationsClient = {
   },
 
   async createApplication(input) {
-    const response = await fetch("/api/applications", {
+    const response = await browserApiFetch("/api/applications", {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {
@@ -337,7 +339,7 @@ export const browserApplicationsClient: ApplicationsClient = {
 
   async deleteApplication(applicationId) {
     const encodedId = encodeURIComponent(applicationId);
-    const response = await fetch(`/api/applications/${encodedId}`, {
+    const response = await browserApiFetch(`/api/applications/${encodedId}`, {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
       method: "DELETE",
@@ -349,11 +351,14 @@ export const browserApplicationsClient: ApplicationsClient = {
 
   async listApplicationEvents(applicationId) {
     const encodedId = encodeURIComponent(applicationId);
-    const response = await fetch(`/api/applications/${encodedId}/events`, {
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/events`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
     const body = await successfulBody(response);
     if (!isRecord(body) || !Array.isArray(body.events)) {
       throw new ApplicationsClientError("invalid_response");
@@ -363,7 +368,7 @@ export const browserApplicationsClient: ApplicationsClient = {
 
   async updateApplication(applicationId, input) {
     const encodedId = encodeURIComponent(applicationId);
-    const response = await fetch(`/api/applications/${encodedId}`, {
+    const response = await browserApiFetch(`/api/applications/${encodedId}`, {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {
