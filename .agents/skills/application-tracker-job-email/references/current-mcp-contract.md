@@ -6,6 +6,7 @@ this reference.
 ## Contents
 
 - [Required sequence](#required-sequence)
+- [Hosted Microsoft 365 mail contract](#hosted-microsoft-365-mail-contract)
 - [Job-link extraction](#job-link-extraction)
 - [Match input and result](#match-input-and-result)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
@@ -24,6 +25,29 @@ this reference.
 4. Call `match_job_application_email` before a write.
 5. Call `upsert_application_from_email` for an authorized reconciliation.
 6. Call `get_application` for read-back verification.
+
+## Hosted Microsoft 365 mail contract
+
+Use the `ms365` Streamable HTTP server at
+`https://ms365-mcp.example.com/mcp`. Its tools must be visible in the current
+task before mailbox work starts. Do not register a local stdio replacement.
+
+Use `list-mail-folder-messages` to shortlist messages in `Inbox\Jobs`, then
+`get-mail-message` for the selected item. Explicitly select and verify both:
+
+- `id`, the Microsoft Graph retrieval handle; and
+- `internetMessageId`, the stable RFC Message-ID used by
+  `match_job_application_email` and `upsert_application_from_email`.
+
+The same non-empty `internetMessageId` must appear in list and detail results.
+If it is absent or inconsistent, make no tracker write. For attachments, call
+`list-mail-attachments` before `download-bytes` and download only the selected
+named file attachment.
+
+The Outlook Email plugin is not the authoritative connector for this workflow.
+It may be used only if its live responses meet the same Message-ID and
+attachment requirements. A client showing a connector as connected does not
+prove that its tools are attached to the current task.
 
 ## Job-link extraction
 

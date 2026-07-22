@@ -24,13 +24,22 @@ Require these Application Tracker MCP tools:
 - `get_application`; and
 - `upsert_application_from_email` for mutations.
 
-Also require an email connector that can read the requested folder or message,
-or email content supplied by the user. Tool names may be namespaced by the
-client; resolve them by final tool name.
+For this deployment, require the hosted `ms365` Streamable HTTP server at
+`https://ms365-mcp.example.com/mcp`. Confirm its tools are attached to the
+current task; a connected status elsewhere in the client is not sufficient.
+Use its `list-mail-folder-messages` and `get-mail-message` tools, and request
+`internetMessageId` explicitly. Treat the Graph item `id` only as a retrieval
+handle; persist the RFC `internetMessageId` as tracker email evidence.
 
-When attachments are in scope, also require connector operations that can list
-attachment metadata without downloading content and materialize one selected
-attachment by message and attachment ID. Require these tracker tools:
+Do not install, register, or launch a local stdio M365 server as a silent
+fallback. Do not substitute the Outlook Email plugin for this reconciliation
+unless its live list and fetch results both expose the same non-empty RFC
+`internetMessageId`. If the hosted tools are absent or authentication fails,
+stop before tracker mutation and ask the user to attach or reconnect `ms365`.
+
+When attachments are in scope, require the hosted M365
+`list-mail-attachments` and `download-bytes` tools so metadata can be inspected
+before materializing one selected attachment. Also require these tracker tools:
 
 - `get_document_import_capabilities`;
 - `begin_document_import`;
@@ -56,10 +65,13 @@ differs from the reference.
 
 1. Resolve the exact mailbox and folder. For a general request, use
    `Inbox\Jobs`; do not expand to the whole mailbox without authorization.
-2. Call `get_tracker_context` before other tracker operations.
-3. For writes, require `read_write`. If access is `read_only`, complete the
+2. Confirm the hosted `ms365` and Application Tracker tool surfaces are both
+   available in the current task. Never create a replacement connector from
+   the shell.
+3. Call `get_tracker_context` before other tracker operations.
+4. For writes, require `read_write`. If access is `read_only`, complete the
    read-only analysis and report the blocker without retrying mutations.
-4. Call `get_reference_data`. Use only active IDs from the bound workspace.
+5. Call `get_reference_data`. Use only active IDs from the bound workspace.
 
 ### 2. Read and classify emails
 

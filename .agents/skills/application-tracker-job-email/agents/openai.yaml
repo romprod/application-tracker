@@ -1,16 +1,20 @@
 interface:
   display_name: "Application Tracker Job Email"
   short_description: "Match job emails to tracked applications safely"
-  default_prompt: "Use $application-tracker-job-email to reconcile job emails with Application Tracker through MCP."
+  default_prompt: "Use $application-tracker-job-email with the hosted M365 and Application Tracker MCP servers."
 
 dependencies:
   tools:
     - type: "mcp"
-      value: "application-tracker"
+      value: "application-tracker-production"
       description: "Application Tracker MCP server for authoritative reads and writes"
+      transport: "streamable_http"
+      url: "https://applicationtracker.example.com/mcp"
     - type: "mcp"
-      value: "outlook-email"
-      description: "Outlook email access for the requested job-search folder"
+      value: "ms365"
+      description: "Hosted Microsoft 365 mail access for the requested job-search folder"
+      transport: "streamable_http"
+      url: "https://ms365-mcp.example.com/mcp"
 
 policy:
   allow_implicit_invocation: true
