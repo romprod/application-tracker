@@ -1,7 +1,11 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmailLinkExtractionService } from "./email_links.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("EmailLinkExtractionService", () => {
   const service = new EmailLinkExtractionService();
@@ -31,6 +35,7 @@ describe("EmailLinkExtractionService", () => {
   });
 
   it("unwraps Outlook Safe Links and Google redirect links", () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
     const safeTarget = "https://jobs.lever.co/example/role-id";
     const googleTarget = "https://example.org/careers/platform-engineer";
     const content = [
@@ -52,6 +57,7 @@ describe("EmailLinkExtractionService", () => {
         url: googleTarget,
       },
     ]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("handles quoted-printable email text without decoding attachments", () => {
@@ -66,6 +72,54 @@ describe("EmailLinkExtractionService", () => {
         host: "jobs.example.com",
         provider: "generic",
         url: "https://jobs.example.com/openings/123?source=email&campaign=weekly",
+      },
+    ]);
+  });
+
+  it("repairs connector-wrapped Markdown and HTML URL destinations", () => {
+    expect(
+      service.extract({
+        content: [
+          "[LinkedIn role](https://www.linkedin.com/jobs/view/4405\n273020?trackingId=email)",
+          '<a href="https://www.cv-library.co.uk/job/2253\n88377?utm_source=email">CV-Library role</a>',
+        ].join("\n"),
+      }),
+    ).toEqual([
+      {
+        externalPostingId: "4405273020",
+        host: "www.linkedin.com",
+        provider: "linkedin",
+        url: "https://www.linkedin.com/jobs/view/4405273020",
+      },
+      {
+        externalPostingId: "225388377",
+        host: "www.cv-library.co.uk",
+        provider: "cv_library",
+        url: "https://www.cv-library.co.uk/job/225388377",
+      },
+    ]);
+  });
+
+  it("joins punctuation-marked bare URL wraps without joining prose", () => {
+    expect(
+      service.extract({
+        content: [
+          "https://careers.example.com/jobs/platform-\nengineer?source=email",
+          "https://careers.example.com/jobs/security-lead\nApply before Friday",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      {
+        externalPostingId: null,
+        host: "careers.example.com",
+        provider: "generic",
+        url: "https://careers.example.com/jobs/platform-engineer?source=email",
+      },
+      {
+        externalPostingId: null,
+        host: "careers.example.com",
+        provider: "generic",
+        url: "https://careers.example.com/jobs/security-lead",
       },
     ]);
   });
@@ -92,16 +146,21 @@ describe("EmailLinkExtractionService", () => {
     }
   });
 
-  it("rejects noise, credential-bearing URLs, and non-web schemes", () => {
+  it("rejects opaque, non-posting, credential-bearing, and non-web links", () => {
     expect(
       service.extract({
         content: [
           "https://example.com/privacy",
           "https://example.com/help",
+          "https://careers.example.com/account/jobs/123",
+          "https://careers.example.com/campaign/jobs/123",
+          "https://careers.example.com/recruiter/jobs/123",
           "https://user:secret@example.com/jobs/123",
           "javascript:alert(1)",
           "https://example.com/news",
           "https://www.linkedin.com/in/example-person",
+          "https://www.linkedin.com/jobs/search/?keywords=platform",
+          "https://clicks.cv-library.co.uk/f/a/opaque-campaign-id",
         ].join(" "),
       }),
     ).toEqual([]);

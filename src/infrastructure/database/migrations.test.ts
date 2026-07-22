@@ -96,6 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        21,
       ]);
       expect(
         database
@@ -679,7 +680,7 @@ describe("migrateDatabase", () => {
     }
   });
 
-  it("preserves read audit events while adding write actions", () => {
+  it("preserves audit events while extending the action allowlist", () => {
     const database = new Database(":memory:");
 
     try {
@@ -752,6 +753,19 @@ describe("migrateDatabase", () => {
              )`,
           )
           .run("2026-07-19T12:01:00.000Z"),
+      ).not.toThrow();
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO mcp_audit_events
+               (id, workspace_id, actor_user_id, transport, action,
+                target_type, result, occurred_at)
+             VALUES (
+               'audit-event-4', 'workspace-audit', 'user-audit',
+               'remote_http', 'extract_job_links', 'job_email', 'success', ?
+             )`,
+          )
+          .run("2026-07-19T12:02:00.000Z"),
       ).not.toThrow();
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
@@ -993,6 +1007,7 @@ describe("migrateDatabase", () => {
         .get();
       expect(auditSql).toContain("match_job_application_email");
       expect(auditSql).toContain("upsert_application_from_email");
+      expect(auditSql).toContain("extract_job_links");
       expect(auditSql).toContain("job_email");
     } finally {
       database.close();

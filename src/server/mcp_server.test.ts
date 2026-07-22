@@ -29,6 +29,16 @@ function fakeTools(): McpApplicationTools {
     completeDocumentImport: vi.fn(),
     createApplication: vi.fn(),
     deleteApplication: vi.fn(),
+    extractJobLinks: vi.fn(() => ({
+      candidates: [
+        {
+          externalPostingId: "4405273020",
+          host: "www.linkedin.com",
+          provider: "linkedin" as const,
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      ],
+    })),
     exportDocumentChunk: vi.fn(),
     getApplication: vi.fn(() => {
       throw new ApplicationNotFoundError();
@@ -107,7 +117,7 @@ describe("local MCP server", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual(
       applicationMcpToolNames,
     );
-    for (const tool of listed.tools.slice(0, 9)) {
+    for (const tool of listed.tools.slice(0, 10)) {
       expect(tool.annotations).toMatchObject({
         destructiveHint: false,
         idempotentHint: true,
@@ -115,14 +125,14 @@ describe("local MCP server", () => {
         readOnlyHint: true,
       });
     }
-    for (const tool of listed.tools.slice(9, 12)) {
+    for (const tool of listed.tools.slice(10, 13)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: false,
         openWorldHint: false,
         readOnlyHint: false,
       });
     }
-    for (const tool of listed.tools.slice(12)) {
+    for (const tool of listed.tools.slice(13)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: true,
         openWorldHint: false,
@@ -167,6 +177,25 @@ describe("local MCP server", () => {
     expect(referenceData.isError).not.toBe(true);
     expect(referenceData.structuredContent).toEqual({ values: [] });
 
+    const extracted = await client.callTool({
+      arguments: {
+        content:
+          "Apply at https://www.linkedin.com/jobs/view/4405273020?trackingId=email",
+      },
+      name: "extract_job_links",
+    });
+    expect(extracted.isError).not.toBe(true);
+    expect(extracted.structuredContent).toEqual({
+      candidates: [
+        {
+          externalPostingId: "4405273020",
+          host: "www.linkedin.com",
+          provider: "linkedin",
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      ],
+    });
+
     const missing = await client.callTool({
       arguments: {
         applicationId: "11111111-1111-4111-8111-111111111111",
@@ -180,7 +209,7 @@ describe("local MCP server", () => {
         type: "text",
       },
     ]);
-    expect(record).toHaveBeenCalledTimes(5);
+    expect(record).toHaveBeenCalledTimes(6);
     expect(record).toHaveBeenNthCalledWith(1, {
       action: "get_tracker_context",
       actorUserId: "actor-user-1",
@@ -190,6 +219,14 @@ describe("local MCP server", () => {
       workspaceId: "workspace-1",
     });
     expect(record).toHaveBeenNthCalledWith(5, {
+      action: "extract_job_links",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(6, {
       action: "get_application",
       actorUserId: "actor-user-1",
       result: "not_found",

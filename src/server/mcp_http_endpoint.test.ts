@@ -108,6 +108,7 @@ function initializedEndpoint(
         deleteApplication: () => {
           throw new Error("not used");
         },
+        extractJobLinks: () => ({ candidates: [] }),
         exportDocumentChunk: () => {
           throw new Error("not used");
         },
@@ -153,7 +154,15 @@ function initializedEndpoint(
           returned: 0,
           total: 0,
         }),
+        matchJobApplicationEmail: () => ({
+          level: null,
+          matches: [],
+          outcome: "none",
+        }),
         updateApplication: () => {
+          throw new Error("not used");
+        },
+        upsertApplicationFromEmail: () => {
           throw new Error("not used");
         },
       };

@@ -83,6 +83,7 @@ export interface McpAuditEvent {
     | "complete_document_import"
     | "create_application"
     | "delete_application"
+    | "extract_job_links"
     | "export_document_chunk"
     | "get_application"
     | "get_document_import_capabilities"
@@ -172,6 +173,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "complete_document_import" &&
       value.action !== "create_application" &&
       value.action !== "delete_application" &&
+      value.action !== "extract_job_links" &&
       value.action !== "export_document_chunk" &&
       value.action !== "get_application" &&
       value.action !== "get_document_import_capabilities" &&

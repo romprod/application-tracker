@@ -46,6 +46,7 @@ import {
   updateApplicationSchema,
 } from "../domain/applications.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
+import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import {
   matchJobApplicationEmailSchema,
@@ -200,6 +201,15 @@ const jobEmailMatchResultSchema = z.strictObject({
     .nullable(),
   matches: z.array(jobEmailMatchCandidateSchema),
   outcome: z.enum(["matched", "none", "ambiguous", "conflict"]),
+});
+const emailLinkCandidateSchema = z.strictObject({
+  externalPostingId: z.string().nullable(),
+  host: z.string(),
+  provider: jobBoardProviderSchema,
+  url: z.url(),
+});
+const emailLinkCandidatesSchema = z.strictObject({
+  candidates: z.array(emailLinkCandidateSchema).max(20),
 });
 const upsertApplicationFromEmailResultSchema = z.strictObject({
   action: z.enum(["created", "matched", "updated"]),
@@ -615,6 +625,22 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.matchJobApplicationEmail(input),
+      ),
+  );
+
+  server.registerTool(
+    "extract_job_links",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Extract up to 20 deterministic job-link candidates from bounded email text or HTML without making network requests. Pass trustworthy candidates to match_job_application_email.",
+      inputSchema: emailLinkExtractionInputSchema,
+      outputSchema: emailLinkCandidatesSchema,
+      title: "Extract job links",
+    },
+    (input) =>
+      executeTool("extract_job_links", "job_email", logger, options.audit, () =>
+        tools.extractJobLinks(input),
       ),
   );
 

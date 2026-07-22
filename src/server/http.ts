@@ -80,6 +80,7 @@ async function startApplication(): Promise<void> {
       documentsRepository,
       config.documents,
     );
+    const emailLinksService = new EmailLinkExtractionService();
     const documentPreviewService = new DocumentPreviewService(
       documentsRepository,
       new SqliteDocumentPreviewsRepository(database),
@@ -172,6 +173,7 @@ async function startApplication(): Promise<void> {
                 accessPolicy,
                 documentsService,
                 mcpDocumentImports,
+                emailLinksService,
                 jobEmailReconciliationService,
               ),
               {
@@ -223,7 +225,7 @@ async function startApplication(): Promise<void> {
       },
       authService,
       documents: {
-        emailLinksService: new EmailLinkExtractionService(),
+        emailLinksService,
         maxConcurrentUploads: config.documents.maxConcurrentUploads,
         maxUploadBytes: config.documents.maxUploadBytes,
         previewService: documentPreviewService,

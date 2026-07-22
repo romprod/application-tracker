@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ApplicationRecord } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
+import { EmailLinkExtractionService } from "./email_links.js";
 import {
   ApplicationMcpService,
   LocalMcpActorProvider,
@@ -142,6 +143,7 @@ describe("ApplicationMcpService", () => {
       },
       documents,
       imports,
+      new EmailLinkExtractionService(),
       undefined,
       () => new Date("2026-01-10T12:00:00.000Z"),
     );
@@ -205,6 +207,21 @@ describe("ApplicationMcpService", () => {
       maxDocumentBytes: 1024 * 1024,
       maxDocumentChunkBytes: 12 * 1024,
     });
+    expect(
+      service.extractJobLinks({
+        content:
+          "https://www.linkedin.com/jobs/view/4405273020?trackingId=email",
+      }),
+    ).toEqual({
+      candidates: [
+        {
+          externalPostingId: "4405273020",
+          host: "www.linkedin.com",
+          provider: "linkedin",
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      ],
+    });
     expect(service.listDocuments({ limit: 50, offset: 0 })).toEqual({
       documents: [],
       nextOffset: null,
@@ -260,6 +277,7 @@ describe("ApplicationMcpService", () => {
       },
       documents,
       imports,
+      new EmailLinkExtractionService(),
     );
 
     expect(
@@ -310,6 +328,7 @@ describe("ApplicationMcpService", () => {
       },
       documents,
       imports,
+      new EmailLinkExtractionService(),
     );
 
     expect(service.getTrackerContext().actor.username).toBe("alex");
@@ -350,6 +369,7 @@ describe("ApplicationMcpService", () => {
       },
       documents,
       imports,
+      new EmailLinkExtractionService(),
     );
     const createInput = {
       companyName: "Example Company",

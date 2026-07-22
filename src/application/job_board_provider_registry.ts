@@ -27,11 +27,22 @@ const knownGenericJobHosts = [
   "workable.com",
   "workday.com",
 ] as const;
+const knownProviderHosts = [
+  "cord.co",
+  "cord.com",
+  "cv-library.co.uk",
+  "hackajob.com",
+  "indeed.com",
+  "linkedin.com",
+  "michaelpage.co.uk",
+  "talent.com",
+  "totaljobs.com",
+] as const;
 
 const jobPathPattern =
   /(?:^|\/)(?:careers?|jobs?|openings?|opportunities|positions?|roles?|vacancies)(?:\/|$)/i;
 const noisePattern =
-  /(?:^|\/)(?:help|privacy|preferences|support|terms|unsubscribe)(?:\/|$)/i;
+  /(?:^|\/)(?:accounts?|campaigns?|clicks?|help|privacy|preferences|recruiters?|search(?:-results?)?|support|terms|unsubscribe)(?:\/|$)/i;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -277,6 +288,13 @@ const genericAdapter: JobBoardAdapter = {
   match(url) {
     if (noisePattern.test(url.pathname)) return undefined;
     const hostname = url.hostname.toLowerCase();
+    if (
+      knownProviderHosts.some(
+        (host) => hostname === host || hostname.endsWith(`.${host}`),
+      )
+    ) {
+      return undefined;
+    }
     if (
       !knownGenericJobHosts.some(
         (host) => hostname === host || hostname.endsWith(`.${host}`),

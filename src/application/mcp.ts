@@ -12,6 +12,10 @@ import type {
   ImportDocumentInput,
 } from "./documents.js";
 import {
+  type EmailLinkCandidate,
+  type EmailLinkExtractionService,
+} from "./email_links.js";
+import {
   type BeginMcpDocumentImportInput,
   type McpDocumentImportManager,
   type McpDocumentImportProgress,
@@ -34,6 +38,7 @@ import type {
   MatchJobApplicationEmailInput,
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
+import type { EmailLinkExtractionInput } from "../domain/email_links.js";
 
 export const applicationMcpToolNames = [
   "get_tracker_context",
@@ -41,6 +46,7 @@ export const applicationMcpToolNames = [
   "list_applications",
   "get_application",
   "match_job_application_email",
+  "extract_job_links",
   "get_reference_data",
   "get_document_import_capabilities",
   "list_documents",
@@ -175,6 +181,10 @@ export interface McpReferenceData {
   values: ReferenceValue[];
 }
 
+export interface McpEmailLinkCandidates {
+  candidates: EmailLinkCandidate[];
+}
+
 export interface ListMcpApplicationsInput {
   limit: number;
   offset: number;
@@ -218,6 +228,7 @@ export interface McpApplicationTools {
     applicationId: string;
     deleted: true;
   };
+  extractJobLinks(input: EmailLinkExtractionInput): McpEmailLinkCandidates;
   exportDocumentChunk(input: {
     documentId: string;
     offset: number;
@@ -301,6 +312,7 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly accessPolicy: McpAccessPolicy,
     private readonly documents: McpDocumentsService,
     private readonly documentImports: McpDocumentImportManager,
+    private readonly emailLinks: EmailLinkExtractionService,
     private readonly jobEmails?: JobEmailReconciliationService,
     private readonly clock: () => Date = () => new Date(),
   ) {}
@@ -411,6 +423,13 @@ export class ApplicationMcpService implements McpApplicationTools {
   ): JobEmailMatchResult {
     const actor = this.actorProvider.getActor();
     return this.jobEmailService().match(actor, input);
+  }
+
+  public extractJobLinks(
+    input: EmailLinkExtractionInput,
+  ): McpEmailLinkCandidates {
+    this.actorProvider.getActor();
+    return { candidates: this.emailLinks.extract(input) };
   }
 
   public getReferenceData(): McpReferenceData {

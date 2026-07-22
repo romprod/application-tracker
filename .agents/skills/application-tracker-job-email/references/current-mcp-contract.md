@@ -6,6 +6,7 @@ this reference.
 ## Contents
 
 - [Required sequence](#required-sequence)
+- [Job-link extraction](#job-link-extraction)
 - [Match input and result](#match-input-and-result)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
 - [Application detail evidence](#application-detail-evidence)
@@ -18,9 +19,25 @@ this reference.
    `read_only` or `read_write` access.
 2. Call `get_reference_data` and use only active, category-correct reference
    IDs from this workspace.
-3. Call `match_job_application_email` before a write.
-4. Call `upsert_application_from_email` for an authorized reconciliation.
-5. Call `get_application` for read-back verification.
+3. Call `extract_job_links` when bounded email content contains posting links.
+4. Call `match_job_application_email` before a write.
+5. Call `upsert_application_from_email` for an authorized reconciliation.
+6. Call `get_application` for read-back verification.
+
+## Job-link extraction
+
+`extract_job_links` accepts `content`, a 1 to 200,000 character email text or
+HTML string. It returns up to 20 candidates with canonical `url`, `provider`,
+nullable `externalPostingId`, and `host`. The tool performs no network
+requests. It repairs Markdown and HTML destinations split by connector line
+wrapping, joins bare URL lines only at URL punctuation, and unwraps only
+deterministic targets such as supported Outlook Safe Links, Google redirects,
+Cord links, hackajob links, and Totaljobs return URLs.
+
+Opaque campaign, recruiter, account, search-result, and unsubscribe links are
+not candidates. Pass a trustworthy returned candidate to
+`match_job_application_email` as `posting.url`; do not decode rejected links or
+follow their redirects independently.
 
 ## Match input and result
 

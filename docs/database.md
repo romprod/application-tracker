@@ -156,6 +156,10 @@ and source-email Message-IDs beside applications. It also extends MCP audit
 actions for deterministic email matching and idempotent reconciliation. Email
 bodies are not stored in either evidence table.
 
+The twenty-first migration extends the immutable MCP audit action allowlist for
+read-only deterministic job-link extraction while preserving existing audit
+rows and immutability triggers.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

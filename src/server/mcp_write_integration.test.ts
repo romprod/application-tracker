@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { DocumentLibraryService } from "../application/documents.js";
+import { EmailLinkExtractionService } from "../application/email_links.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import {
   ApplicationMcpService,
@@ -76,6 +77,7 @@ describe("MCP write integration", () => {
       access,
       documents,
       new McpDocumentImportManager(documentPolicy.maxUploadBytes),
+      new EmailLinkExtractionService(),
     );
     const server = createLocalMcpServer(tools, {
       audit: {
@@ -274,6 +276,7 @@ describe("MCP write integration", () => {
       access,
       documents,
       new McpDocumentImportManager(documentPolicy.maxUploadBytes),
+      new EmailLinkExtractionService(),
     );
     const server = createLocalMcpServer(tools, {
       audit: {
@@ -475,6 +478,7 @@ describe("MCP write integration", () => {
       new McpConnectionAccessPolicy("read_write"),
       documents,
       new McpDocumentImportManager(documentPolicy.maxUploadBytes),
+      new EmailLinkExtractionService(),
       jobEmails,
     );
     const server = createLocalMcpServer(tools, {
@@ -516,6 +520,26 @@ describe("MCP write integration", () => {
         url: "https://www.linkedin.com/comm/jobs/view/4405273020?trackingId=email",
       },
     };
+
+    const extracted = await client.callTool({
+      arguments: {
+        content: [
+          "[Role](https://www.linkedin.com/jobs/view/4405\n273020?trackingId=email)",
+          "https://click.example.com/campaign/opaque",
+        ].join("\n"),
+      },
+      name: "extract_job_links",
+    });
+    expect(extracted.structuredContent).toEqual({
+      candidates: [
+        {
+          externalPostingId: "4405273020",
+          host: "www.linkedin.com",
+          provider: "linkedin",
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      ],
+    });
 
     const first = await client.callTool({
       arguments: arguments_,
@@ -604,6 +628,7 @@ describe("MCP write integration", () => {
         .prepare(
           `SELECT action FROM mcp_audit_events
            WHERE action IN (
+             'extract_job_links',
              'match_job_application_email',
              'upsert_application_from_email'
            )
@@ -612,6 +637,7 @@ describe("MCP write integration", () => {
         .pluck()
         .all(),
     ).toEqual([
+      "extract_job_links",
       "upsert_application_from_email",
       "upsert_application_from_email",
       "match_job_application_email",

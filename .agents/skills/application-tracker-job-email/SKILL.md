@@ -19,6 +19,7 @@ Require these Application Tracker MCP tools:
 
 - `get_tracker_context`;
 - `get_reference_data`;
+- `extract_job_links` when the email contains posting links;
 - `match_job_application_email`;
 - `get_application`; and
 - `upsert_application_from_email` for mutations.
@@ -69,6 +70,13 @@ track the opportunity. A job-board sender is not the employer. Do not infer an
 undisclosed employer from an agency or recruiter name.
 
 ### 3. Extract identity without guessing
+
+When the connector returns email text or HTML, call `extract_job_links` with
+that bounded content. The tool repairs narrowly recognized connector line
+wraps, unwraps only transparently encoded targets, and returns at most 20
+canonical candidates without making network requests. Pass a trustworthy
+candidate's `url` as `posting.url` to `match_job_application_email`; do not
+invent a provider or external posting ID from a rejected link.
 
 Prefer a direct posting URL. Pass supported email click URLs only when their
 target is encoded transparently; the server owns provider-specific

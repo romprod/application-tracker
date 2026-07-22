@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 17 tools:
+The local server registers 18 tools:
 
 | Tool                               | Result                                             |
 | ---------------------------------- | -------------------------------------------------- |
@@ -66,6 +66,7 @@ The local server registers 17 tools:
 | `list_applications`                | A bounded, optionally filtered summary page        |
 | `get_application`                  | One full record, events, and job-email evidence    |
 | `match_job_application_email`      | Deterministic posting, email, or company match     |
+| `extract_job_links`                | Offline canonical job-link candidates              |
 | `get_reference_data`               | Statuses, sources, role types, and document types  |
 | `get_document_import_capabilities` | Accepted document and chunk sizes                  |
 | `list_documents`                   | A bounded metadata and association page            |

@@ -10,6 +10,47 @@ export interface EmailLinkCandidate {
 }
 const urlPattern = /https?:\/\/[^\s<>"'`]+/gi;
 const encodedAmpersandPattern = /(?:&amp;|&#38;|&#x26;)/gi;
+const urlContinuationPunctuation = /[-._~:/?#[\]@!$&()*+,;=%]/;
+
+function compactDelimitedUrl(
+  match: string,
+  prefix: string,
+  url: string,
+  suffix: string,
+): string {
+  if (!/\r?\n/.test(url)) return match;
+  const compact = url.replace(/\r?\n[ \t]*/g, "");
+  return compact.length <= 2048 ? `${prefix}${compact}${suffix}` : match;
+}
+
+function joinWrappedUrls(value: string): string {
+  let joined = value
+    .replace(/(\]\(\s*)(https?:\/\/[^)]{1,4096})(\))/gi, compactDelimitedUrl)
+    .replace(
+      /(\bhref\s*=\s*")(https?:\/\/[^"]{1,4096})(")/gi,
+      compactDelimitedUrl,
+    )
+    .replace(
+      /(\bhref\s*=\s*')(https?:\/\/[^']{1,4096})(')/gi,
+      compactDelimitedUrl,
+    );
+
+  for (let index = 0; index < 20; index += 1) {
+    const next = joined.replace(
+      /(https?:\/\/[^\s<>"'`]{1,2048})\r?\n([^\s<>"'`])/gi,
+      (match, before: string, after: string) => {
+        const previous = before.at(-1) ?? "";
+        return urlContinuationPunctuation.test(previous) ||
+          urlContinuationPunctuation.test(after)
+          ? `${before}${after}`
+          : match;
+      },
+    );
+    if (next === joined) break;
+    joined = next;
+  }
+  return joined;
+}
 
 function decodeQuotedPrintable(value: string): string {
   if (!/^content-transfer-encoding:\s*quoted-printable\s*$/im.test(value)) {
@@ -52,7 +93,7 @@ export class EmailLinkExtractionService {
   public extract(input: EmailLinkExtractionInput): EmailLinkCandidate[] {
     const candidates: EmailLinkCandidate[] = [];
     const seen = new Set<string>();
-    const content = decodeQuotedPrintable(input.content);
+    const content = joinWrappedUrls(decodeQuotedPrintable(input.content));
     for (const match of content.matchAll(urlPattern)) {
       if (candidates.length >= 20) break;
       const raw = cleanCandidate(match[0]);

@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { DocumentLibraryService } from "../application/documents.js";
+import { EmailLinkExtractionService } from "../application/email_links.js";
 import {
   ApplicationMcpService,
   LocalMcpActorProvider,
@@ -63,6 +64,7 @@ async function startLocalMcpServer(): Promise<void> {
         config.documents,
       ),
       new McpDocumentImportManager(config.documents.maxUploadBytes),
+      new EmailLinkExtractionService(),
       new JobEmailReconciliationService(
         new SqliteJobEmailReconciliationRepository(database),
         applicationsService,
