@@ -74,8 +74,17 @@ export interface ApplicationEvent {
   fromStatus: string | null;
   id: string;
   occurredAt: string;
+  processedAt: string;
+  sourceEmailMessageId: string | null;
+  statusOverrideReason: string | null;
   toStatus: string;
   type: ApplicationEventType;
+}
+
+export interface ApplicationStatusEventInput {
+  effectiveAt: string;
+  overrideReason: string | null;
+  sourceEmailMessageId: string;
 }
 
 export type UpdateApplicationRecord = Omit<
@@ -86,6 +95,7 @@ export type UpdateApplicationRecord = Omit<
   applicationId: string;
   contacts?: ApplicationContact[];
   links?: ApplicationLink[];
+  statusEvent?: ApplicationStatusEventInput;
   updatedAt: string;
   workspaceId: string;
 };
@@ -134,6 +144,29 @@ export class ApplicationConflictError extends Error {
   public constructor(public readonly application: ApplicationRecord) {
     super("Application changed since it was read");
     this.name = "ApplicationConflictError";
+  }
+}
+
+export class ApplicationStatusEventConflictError extends Error {
+  public constructor() {
+    super("The email status event conflicts with an existing event");
+    this.name = "ApplicationStatusEventConflictError";
+  }
+}
+
+export class ApplicationStatusRegressionError extends Error {
+  public constructor() {
+    super(
+      "The email status event would regress the current application status",
+    );
+    this.name = "ApplicationStatusRegressionError";
+  }
+}
+
+export class ApplicationStatusStaleError extends Error {
+  public constructor() {
+    super("The email status event is older than the current status event");
+    this.name = "ApplicationStatusStaleError";
   }
 }
 
@@ -215,6 +248,27 @@ export class ApplicationLedgerService {
       applicationId,
       ...(contacts ? { contacts: contacts.map(contactRecord) } : {}),
       ...(links ? { links: links.map(linkRecord) } : {}),
+      updatedAt: nextUpdatedAt(input.expectedUpdatedAt, this.clock()),
+      workspaceId: actor.workspaceId,
+    });
+    if (!application) throw new ApplicationNotFoundError();
+    return application;
+  }
+
+  public updateApplicationFromEmail(
+    actor: AuthenticatedActor,
+    applicationId: string,
+    input: UpdateApplicationInput,
+    statusEvent: ApplicationStatusEventInput,
+  ): ApplicationRecord {
+    const { contacts, links, ...fields } = input;
+    const application = this.repository.updateApplication({
+      ...fields,
+      actorUserId: actor.userId,
+      applicationId,
+      ...(contacts ? { contacts: contacts.map(contactRecord) } : {}),
+      ...(links ? { links: links.map(linkRecord) } : {}),
+      statusEvent,
       updatedAt: nextUpdatedAt(input.expectedUpdatedAt, this.clock()),
       workspaceId: actor.workspaceId,
     });

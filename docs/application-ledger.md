@@ -74,6 +74,12 @@ The timeline identifies the member who made each recorded change and displays
 the newest event first. Events retain the status labels used at the time of the
 change, so later list renames do not rewrite history.
 
+Email-driven changes use the source email's received timestamp as the event's
+effective time and retain the later processing timestamp separately. The
+source Message-ID makes accepted email transitions idempotent. The server
+rejects older or lower-order email stages unless the caller explicitly supplies
+an override reason; accepted reasons remain part of immutable read-back.
+
 ## Authorization and HTTP boundary
 
 All ledger routes require an active browser session. Both administrators and
@@ -131,6 +137,11 @@ rebuilds event storage to retain arbitrary status-label snapshots. The original
 stage column remains as an internal compatibility field and is no longer part
 of the repository or HTTP contract.
 
+Migration 22 adds processing time, source email identity, and optional override
+reason fields to immutable application events. It backfills existing processing
+times from their effective timestamps and adds a workspace-unique partial index
+for email-sourced status events.
+
 Foreign keys bind records, contacts, links, events, and deletion audits to a
 workspace and its members. Creation, editing, and removal transactions update
 related state atomically. Database triggers reject event updates and deletions.
@@ -139,6 +150,7 @@ workspace-first indexes for ledger, relation, and timeline reads.
 
 ## Deferred behavior
 
-Configurable transition rules remain deferred. Statuses can represent open or
-closed outcomes, but the application does not restrict which transitions a
-member may make.
+Configurable rules for member-driven transitions remain deferred. Statuses can
+represent open or closed outcomes, but the browser does not restrict which
+manual transition a member may make. Email-driven transitions use the ordering
+guard described above.

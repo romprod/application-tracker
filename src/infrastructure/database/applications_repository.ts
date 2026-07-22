@@ -4,6 +4,9 @@ import type Database from "better-sqlite3";
 
 import {
   ApplicationConflictError,
+  ApplicationStatusEventConflictError,
+  ApplicationStatusRegressionError,
+  ApplicationStatusStaleError,
   InvalidApplicationReferenceError,
   type ApplicationContact,
   type ApplicationEvent,
@@ -213,8 +216,10 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         .prepare(
           `INSERT INTO application_events
              (id, workspace_id, application_id, actor_user_id, event_type,
-              from_status, to_status, occurred_at)
-           VALUES (?, ?, ?, ?, 'application_created', NULL, ?, ?)`,
+              from_status, to_status, occurred_at, processed_at,
+              source_email_message_id, status_override_reason)
+           VALUES (?, ?, ?, ?, 'application_created', NULL, ?, ?, ?, NULL,
+                   NULL)`,
         )
         .run(
           eventId,
@@ -222,6 +227,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           id,
           input.createdByUserId,
           status.label,
+          input.createdAt,
           input.createdAt,
         );
       this.replaceContacts(input.workspaceId, id, input.contacts ?? []);
@@ -301,9 +307,12 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
            events.id,
            events.event_type AS type,
            events.from_status AS fromStatus,
-           events.to_status AS toStatus,
-           events.occurred_at AS occurredAt,
-           actors.display_name AS actorDisplayName
+         events.to_status AS toStatus,
+         events.occurred_at AS occurredAt,
+         events.processed_at AS processedAt,
+         events.source_email_message_id AS sourceEmailMessageId,
+         events.status_override_reason AS statusOverrideReason,
+         actors.display_name AS actorDisplayName
          FROM application_events AS events
          JOIN users AS actors ON actors.id = events.actor_user_id
          WHERE events.workspace_id = ? AND events.application_id = ?
@@ -333,8 +342,69 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           ? {
               isTerminal: current.statusIsTerminal,
               label: current.status,
+              sortOrder: this.statusSortOrder(
+                input.workspaceId,
+                current.statusId,
+              ),
             }
           : this.activeReference(input.workspaceId, statusId, "status");
+
+      if (statusId !== current.statusId && input.statusEvent) {
+        const existingSourceEvent = this.database
+          .prepare(
+            `SELECT application_id AS applicationId, to_status AS toStatus,
+                    occurred_at AS occurredAt
+             FROM application_events
+             WHERE workspace_id = ? AND source_email_message_id = ?`,
+          )
+          .get(input.workspaceId, input.statusEvent.sourceEmailMessageId) as
+          | { applicationId: string; occurredAt: string; toStatus: string }
+          | undefined;
+        if (existingSourceEvent) {
+          if (
+            existingSourceEvent.applicationId === input.applicationId &&
+            existingSourceEvent.occurredAt === input.statusEvent.effectiveAt &&
+            existingSourceEvent.toStatus === status.label
+          ) {
+            return current;
+          }
+          throw new ApplicationStatusEventConflictError();
+        }
+
+        const latestStatusEvent = this.database
+          .prepare(
+            `SELECT occurred_at AS occurredAt
+             FROM application_events
+             WHERE workspace_id = ? AND application_id = ?
+             ORDER BY occurred_at DESC, rowid DESC
+             LIMIT 1`,
+          )
+          .get(input.workspaceId, input.applicationId) as
+          { occurredAt: string } | undefined;
+        if (
+          latestStatusEvent &&
+          input.statusEvent.effectiveAt === latestStatusEvent.occurredAt
+        ) {
+          throw new ApplicationStatusEventConflictError();
+        }
+        if (
+          !input.statusEvent.overrideReason &&
+          latestStatusEvent &&
+          input.statusEvent.effectiveAt < latestStatusEvent.occurredAt
+        ) {
+          throw new ApplicationStatusStaleError();
+        }
+        const currentStatusSortOrder = this.statusSortOrder(
+          input.workspaceId,
+          current.statusId,
+        );
+        if (
+          !input.statusEvent.overrideReason &&
+          status.sortOrder < currentStatusSortOrder
+        ) {
+          throw new ApplicationStatusRegressionError();
+        }
+      }
       const sourceId =
         input.sourceId === undefined ? current.sourceId : input.sourceId;
       const roleTypeId =
@@ -409,8 +479,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           .prepare(
             `INSERT INTO application_events
                (id, workspace_id, application_id, actor_user_id, event_type,
-                from_status, to_status, occurred_at)
-             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?)`,
+                from_status, to_status, occurred_at, processed_at,
+                source_email_message_id, status_override_reason)
+             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             randomUUID(),
@@ -419,7 +490,10 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             input.actorUserId,
             current.status,
             status.label,
+            input.statusEvent?.effectiveAt ?? input.updatedAt,
             input.updatedAt,
+            input.statusEvent?.sourceEmailMessageId ?? null,
+            input.statusEvent?.overrideReason ?? null,
           );
       }
       const updatedStored = this.findStoredApplication(
@@ -440,17 +514,39 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     workspaceId: string,
     referenceValueId: string,
     category: "role_type" | "source" | "status",
-  ): { isTerminal: boolean; label: string } {
+  ): { isTerminal: boolean; label: string; sortOrder: number } {
     const row = this.database
       .prepare(
-        `SELECT label, is_terminal AS isTerminal
+        `SELECT label, is_terminal AS isTerminal, sort_order AS sortOrder
          FROM reference_values
          WHERE workspace_id = ? AND id = ? AND category = ? AND is_active = 1`,
       )
       .get(workspaceId, referenceValueId, category) as
-      { isTerminal: number; label: string } | undefined;
+      { isTerminal: number; label: string; sortOrder: number } | undefined;
     if (!row) throw new InvalidApplicationReferenceError();
-    return { isTerminal: row.isTerminal === 1, label: row.label };
+    return {
+      isTerminal: row.isTerminal === 1,
+      label: row.label,
+      sortOrder: row.sortOrder,
+    };
+  }
+
+  private statusSortOrder(
+    workspaceId: string,
+    referenceValueId: string,
+  ): number {
+    const sortOrder = this.database
+      .prepare(
+        `SELECT sort_order
+         FROM reference_values
+         WHERE workspace_id = ? AND id = ? AND category = 'status'`,
+      )
+      .pluck()
+      .get(workspaceId, referenceValueId);
+    if (typeof sortOrder !== "number") {
+      throw new InvalidApplicationReferenceError();
+    }
+    return sortOrder;
   }
 
   private findStoredApplication(

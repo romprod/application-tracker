@@ -160,6 +160,13 @@ The twenty-first migration extends the immutable MCP audit action allowlist for
 read-only deterministic job-link extraction while preserving existing audit
 rows and immutability triggers.
 
+The twenty-second migration separates a status event's effective time from its
+processing time and records the source email Message-ID for idempotent email
+transitions. A partial unique index prevents one source email from creating
+multiple status events. Optional override reasons are stored with the immutable
+event so an explicitly accepted stale or regressive transition remains
+explainable during read-back.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

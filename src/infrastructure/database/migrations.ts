@@ -23,6 +23,7 @@ import { mcpConnectionAccessMigration } from "./migrations/018_mcp_connection_ac
 import { structuredDocumentPreviewsMigration } from "./migrations/019_structured_document_previews.js";
 import { jobEmailReconciliationMigration } from "./migrations/020_job_email_reconciliation.js";
 import { mcpEmailLinkExtractionAuditMigration } from "./migrations/021_mcp_email_link_extraction_audit.js";
+import { emailStatusEventOrderingMigration } from "./migrations/022_email_status_event_ordering.js";
 
 export interface Migration {
   name: string;
@@ -65,6 +66,7 @@ export const applicationMigrations: readonly Migration[] = [
   structuredDocumentPreviewsMigration,
   jobEmailReconciliationMigration,
   mcpEmailLinkExtractionAuditMigration,
+  emailStatusEventOrderingMigration,
 ];
 
 const createMigrationTable = `

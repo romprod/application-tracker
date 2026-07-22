@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { ApplicationLedgerService } from "./applications.js";
+import {
+  ApplicationLedgerService,
+  ApplicationStatusEventConflictError,
+  ApplicationStatusRegressionError,
+  ApplicationStatusStaleError,
+} from "./applications.js";
 import { LocalMcpActorProvider } from "./mcp.js";
 import {
   InvalidJobPostingEvidenceError,
@@ -25,17 +30,17 @@ function fixture() {
     new SqliteMcpActorRepository(database),
     { username: "alex", workspaceSlug: "default" },
   ).getActor();
-  const statusId = database
-    .prepare(
-      `SELECT id FROM reference_values
-       WHERE workspace_id = ? AND category = 'status'
-       ORDER BY sort_order LIMIT 1`,
-    )
-    .pluck()
-    .get(setup.workspace.id) as string;
+  const statusId = (label: string) =>
+    database
+      .prepare(
+        `SELECT id FROM reference_values
+         WHERE workspace_id = ? AND category = 'status' AND label = ?`,
+      )
+      .pluck()
+      .get(setup.workspace.id, label) as string;
   const applications = new ApplicationLedgerService(
     new SqliteApplicationsRepository(database),
-    () => new Date("2026-07-21T10:00:00.000Z"),
+    () => new Date("2026-07-21T09:00:00.000Z"),
   );
   const reconciliation = new JobEmailReconciliationService(
     new SqliteJobEmailReconciliationRepository(database),
@@ -43,7 +48,20 @@ function fixture() {
     (operation) => database.transaction(operation).immediate(),
     () => new Date("2026-07-21T10:05:00.000Z"),
   );
-  return { actor, applications, database, reconciliation, statusId };
+  return {
+    actor,
+    applications,
+    database,
+    reconciliation,
+    statusId: statusId("Prospect"),
+    statuses: {
+      applied: statusId("Applied"),
+      closed: statusId("Closed"),
+      interview: statusId("Interview"),
+      offer: statusId("Offer"),
+      prospect: statusId("Prospect"),
+    },
+  };
 }
 
 describe("JobEmailReconciliationService", () => {
@@ -260,6 +278,182 @@ describe("JobEmailReconciliationService", () => {
       expect(
         database.prepare("SELECT count(*) FROM applications").pluck().get(),
       ).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("applies forward email status events once and retains both timestamps", () => {
+    const { actor, applications, database, reconciliation, statuses } =
+      fixture();
+    try {
+      const application = applications.createApplication(actor, {
+        companyName: "Ordered Events Ltd",
+        roleTitle: "Platform Engineer",
+        statusId: statuses.prospect,
+      });
+      const input = {
+        application: {
+          companyName: application.companyName,
+          roleTitle: application.roleTitle,
+          statusId: statuses.prospect,
+        },
+        email: {
+          messageId: "<applied@example.com>",
+          receivedAt: "2026-07-21T09:30:00.000Z",
+        },
+        update: { statusId: statuses.applied },
+      } as const;
+
+      const first = reconciliation.upsert(actor, input);
+      const repeated = reconciliation.upsert(actor, input);
+
+      expect(first).toMatchObject({
+        action: "updated",
+        application: { status: "Applied" },
+      });
+      expect(repeated).toMatchObject({
+        action: "matched",
+        application: { status: "Applied" },
+      });
+      expect(
+        applications.listApplicationEvents(actor, application.id)[0],
+      ).toMatchObject({
+        occurredAt: "2026-07-21T09:30:00.000Z",
+        processedAt: "2026-07-21T09:00:00.001Z",
+        sourceEmailMessageId: "<applied@example.com>",
+        statusOverrideReason: null,
+        toStatus: "Applied",
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT count(*) FROM application_events
+             WHERE source_email_message_id = ?`,
+          )
+          .pluck()
+          .get("<applied@example.com>"),
+      ).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects stale, regressive, and conflicting email status events", () => {
+    const { actor, applications, database, reconciliation, statuses } =
+      fixture();
+    try {
+      const application = applications.createApplication(actor, {
+        companyName: "Guarded Events Ltd",
+        roleTitle: "Platform Engineer",
+        statusId: statuses.prospect,
+      });
+      const baseApplication = {
+        companyName: application.companyName,
+        roleTitle: application.roleTitle,
+        statusId: statuses.prospect,
+      };
+      reconciliation.upsert(actor, {
+        application: baseApplication,
+        email: {
+          messageId: "<interview@example.com>",
+          receivedAt: "2026-07-21T11:00:00.000Z",
+        },
+        update: { statusId: statuses.interview },
+      });
+
+      expect(() =>
+        reconciliation.upsert(actor, {
+          application: baseApplication,
+          email: {
+            messageId: "<stale-applied@example.com>",
+            receivedAt: "2026-07-21T10:00:00.000Z",
+          },
+          update: { statusId: statuses.applied },
+        }),
+      ).toThrow(ApplicationStatusStaleError);
+      expect(() =>
+        reconciliation.upsert(actor, {
+          application: baseApplication,
+          email: {
+            messageId: "<newer-applied@example.com>",
+            receivedAt: "2026-07-21T12:00:00.000Z",
+          },
+          update: { statusId: statuses.applied },
+        }),
+      ).toThrow(ApplicationStatusRegressionError);
+      expect(() =>
+        reconciliation.upsert(actor, {
+          application: baseApplication,
+          email: {
+            messageId: "<interview@example.com>",
+            receivedAt: "2026-07-21T11:00:00.000Z",
+          },
+          update: { statusId: statuses.offer },
+        }),
+      ).toThrow(ApplicationStatusEventConflictError);
+      expect(applications.listApplications(actor)[0]?.status).toBe("Interview");
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_events")
+          .pluck()
+          .get(),
+      ).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves the reason for an explicitly overridden stale terminal event", () => {
+    const { actor, applications, database, reconciliation, statuses } =
+      fixture();
+    try {
+      const application = applications.createApplication(actor, {
+        companyName: "Override Events Ltd",
+        roleTitle: "Platform Engineer",
+        statusId: statuses.prospect,
+      });
+      const baseApplication = {
+        companyName: application.companyName,
+        roleTitle: application.roleTitle,
+        statusId: statuses.prospect,
+      };
+      reconciliation.upsert(actor, {
+        application: baseApplication,
+        email: {
+          messageId: "<offer@example.com>",
+          receivedAt: "2026-07-21T11:00:00.000Z",
+        },
+        update: { statusId: statuses.offer },
+      });
+      const overridden = reconciliation.upsert(actor, {
+        application: baseApplication,
+        email: {
+          messageId: "<late-rejection@example.com>",
+          receivedAt: "2026-07-21T10:00:00.000Z",
+        },
+        statusOverride: {
+          allowStaleOrRegressive: true,
+          reason: "Recruiter confirmed the rejection applies to this role.",
+        },
+        update: { statusId: statuses.closed },
+      });
+
+      expect(overridden.application.status).toBe("Closed");
+      expect(
+        applications
+          .listApplicationEvents(actor, application.id)
+          .find(
+            ({ sourceEmailMessageId }) =>
+              sourceEmailMessageId === "<late-rejection@example.com>",
+          ),
+      ).toMatchObject({
+        occurredAt: "2026-07-21T10:00:00.000Z",
+        sourceEmailMessageId: "<late-rejection@example.com>",
+        statusOverrideReason:
+          "Recruiter confirmed the rejection applies to this role.",
+        toStatus: "Closed",
+      });
     } finally {
       database.close();
     }

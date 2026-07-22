@@ -82,6 +82,9 @@ export interface ApplicationEvent {
   fromStatus: ApplicationStatus | null;
   id: string;
   occurredAt: string;
+  processedAt: string;
+  sourceEmailMessageId: string | null;
+  statusOverrideReason: string | null;
   toStatus: ApplicationStatus;
   type: "application_created" | "status_changed";
 }
@@ -261,6 +264,11 @@ function parseApplicationEvent(value: unknown): ApplicationEvent {
     typeof value.actorDisplayName !== "string" ||
     typeof value.id !== "string" ||
     typeof value.occurredAt !== "string" ||
+    typeof value.processedAt !== "string" ||
+    (value.sourceEmailMessageId !== null &&
+      typeof value.sourceEmailMessageId !== "string") ||
+    (value.statusOverrideReason !== null &&
+      typeof value.statusOverrideReason !== "string") ||
     !isReferenceLabel(value.toStatus) ||
     (value.type !== "application_created" && value.type !== "status_changed")
   ) {
@@ -282,6 +290,9 @@ function parseApplicationEvent(value: unknown): ApplicationEvent {
     fromStatus,
     id: value.id,
     occurredAt: value.occurredAt,
+    processedAt: value.processedAt,
+    sourceEmailMessageId: value.sourceEmailMessageId,
+    statusOverrideReason: value.statusOverrideReason,
     toStatus: value.toStatus,
     type: value.type,
   };

@@ -5,6 +5,9 @@ import { z } from "zod";
 import {
   ApplicationConflictError,
   ApplicationNotFoundError,
+  ApplicationStatusEventConflictError,
+  ApplicationStatusRegressionError,
+  ApplicationStatusStaleError,
   InvalidApplicationReferenceError,
 } from "../application/applications.js";
 import {
@@ -160,6 +163,9 @@ const applicationEventSchema = z.strictObject({
   fromStatus: z.string().nullable(),
   id: z.string(),
   occurredAt: z.iso.datetime(),
+  processedAt: z.iso.datetime(),
+  sourceEmailMessageId: z.string().nullable(),
+  statusOverrideReason: z.string().nullable(),
   toStatus: z.string(),
   type: z.enum(["application_created", "status_changed"]),
 });
@@ -459,6 +465,19 @@ function executeWriteTool(
     if (error instanceof ApplicationConflictError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("application_conflict")
+        : failedToolResult("internal_error");
+    }
+    const statusEventErrorCode =
+      error instanceof ApplicationStatusStaleError
+        ? "job_email_status_stale"
+        : error instanceof ApplicationStatusRegressionError
+          ? "job_email_status_regression"
+          : error instanceof ApplicationStatusEventConflictError
+            ? "job_email_status_conflict"
+            : undefined;
+    if (statusEventErrorCode) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(statusEventErrorCode)
         : failedToolResult("internal_error");
     }
     if (error instanceof InvalidApplicationReferenceError) {
@@ -801,7 +820,7 @@ export function createApplicationMcpServer(
     {
       annotations: idempotentWriteAnnotations,
       description:
-        "Idempotently match or create an application, apply an optional selected-field update, and persist workspace-unique posting and email evidence. Reusing the same email Message-ID cannot create a duplicate application.",
+        "Idempotently match or create an application, apply an optional selected-field update, and persist workspace-unique posting and email evidence. email.receivedAt is the effective time for a requested status change; stale or regressive changes are rejected unless statusOverride explicitly supplies a reason. Reusing the same email Message-ID cannot create a duplicate application or status event.",
       inputSchema: upsertApplicationFromEmailSchema,
       outputSchema: upsertApplicationFromEmailResultSchema,
       title: "Upsert application from email",

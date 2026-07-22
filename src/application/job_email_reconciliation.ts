@@ -434,12 +434,24 @@ export class JobEmailReconciliationService {
         input.update &&
         requiresApplicationUpdate(application, input.update)
       ) {
-        application = this.applications.updateApplication(
-          actor,
-          application.id,
-          { ...input.update, expectedUpdatedAt: application.updatedAt },
-        );
-        updated = true;
+        const previousUpdatedAt = application.updatedAt;
+        const update = {
+          ...input.update,
+          expectedUpdatedAt: application.updatedAt,
+        };
+        application = input.update.statusId
+          ? this.applications.updateApplicationFromEmail(
+              actor,
+              application.id,
+              update,
+              {
+                effectiveAt: new Date(input.email.receivedAt).toISOString(),
+                overrideReason: input.statusOverride?.reason ?? null,
+                sourceEmailMessageId: input.email.messageId,
+              },
+            )
+          : this.applications.updateApplication(actor, application.id, update);
+        updated = application.updatedAt !== previousUpdatedAt;
       }
 
       const occurredAt = this.clock().toISOString();

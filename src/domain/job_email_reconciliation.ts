@@ -81,12 +81,28 @@ export const matchJobApplicationEmailSchema = z
     }
   });
 
-export const upsertApplicationFromEmailSchema = z.strictObject({
-  application: createApplicationSchema,
-  email: jobEmailEvidenceSchema,
-  posting: jobPostingEvidenceSchema.optional(),
-  update: applicationChangesSchema.optional(),
-});
+export const upsertApplicationFromEmailSchema = z
+  .strictObject({
+    application: createApplicationSchema,
+    email: jobEmailEvidenceSchema,
+    posting: jobPostingEvidenceSchema.optional(),
+    statusOverride: z
+      .strictObject({
+        allowStaleOrRegressive: z.literal(true),
+        reason: z.string().trim().min(1).max(500),
+      })
+      .optional(),
+    update: applicationChangesSchema.optional(),
+  })
+  .superRefine((input, context) => {
+    if (input.statusOverride && !input.update?.statusId) {
+      context.addIssue({
+        code: "custom",
+        message: "A status override requires update.statusId",
+        path: ["statusOverride"],
+      });
+    }
+  });
 
 export type JobPostingEvidenceInput = z.infer<typeof jobPostingEvidenceSchema>;
 export type JobEmailEvidenceInput = z.infer<typeof jobEmailEvidenceSchema>;

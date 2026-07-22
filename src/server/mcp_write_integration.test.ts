@@ -573,6 +573,102 @@ describe("MCP write integration", () => {
       matchLevel: "posting_id",
       postingLinked: false,
     });
+    const statusIds = Object.fromEntries(
+      database
+        .prepare(
+          `SELECT label, id FROM reference_values
+           WHERE workspace_id = ? AND category = 'status'`,
+        )
+        .all(setup.workspace.id)
+        .map((row) => {
+          const value = row as { id: string; label: string };
+          return [value.label, value.id];
+        }),
+    );
+    const emailStatusInput = (
+      messageId: string,
+      receivedAt: string,
+      nextStatusId: string,
+    ) => ({
+      ...arguments_,
+      email: { messageId, receivedAt },
+      update: { statusId: nextStatusId },
+    });
+    const applied = await client.callTool({
+      arguments: emailStatusInput(
+        "<applied@example.com>",
+        "2026-07-21T16:30:00.000Z",
+        String(statusIds.Applied),
+      ),
+      name: "upsert_application_from_email",
+    });
+    const interviewInput = emailStatusInput(
+      "<interview@example.com>",
+      "2026-07-21T17:00:00.000Z",
+      String(statusIds.Interview),
+    );
+    const interviewed = await client.callTool({
+      arguments: interviewInput,
+      name: "upsert_application_from_email",
+    });
+    const interviewRetry = await client.callTool({
+      arguments: interviewInput,
+      name: "upsert_application_from_email",
+    });
+    const stale = await client.callTool({
+      arguments: emailStatusInput(
+        "<stale-closed@example.com>",
+        "2026-07-21T16:45:00.000Z",
+        String(statusIds.Closed),
+      ),
+      name: "upsert_application_from_email",
+    });
+    const regression = await client.callTool({
+      arguments: emailStatusInput(
+        "<newer-applied@example.com>",
+        "2026-07-21T17:30:00.000Z",
+        String(statusIds.Applied),
+      ),
+      name: "upsert_application_from_email",
+    });
+    const conflict = await client.callTool({
+      arguments: emailStatusInput(
+        "<interview@example.com>",
+        "2026-07-21T17:00:00.000Z",
+        String(statusIds.Closed),
+      ),
+      name: "upsert_application_from_email",
+    });
+    expect(applied.structuredContent).toMatchObject({
+      action: "updated",
+      application: { status: "Applied" },
+    });
+    expect(interviewed.structuredContent).toMatchObject({
+      action: "updated",
+      application: { status: "Interview" },
+    });
+    expect(interviewRetry.structuredContent).toMatchObject({
+      action: "matched",
+      application: { status: "Interview" },
+    });
+    expect(stale.content).toEqual([
+      {
+        text: '{"error":{"code":"job_email_status_stale"}}',
+        type: "text",
+      },
+    ]);
+    expect(regression.content).toEqual([
+      {
+        text: '{"error":{"code":"job_email_status_regression"}}',
+        type: "text",
+      },
+    ]);
+    expect(conflict.content).toEqual([
+      {
+        text: '{"error":{"code":"job_email_status_conflict"}}',
+        type: "text",
+      },
+    ]);
     const matched = await client.callTool({
       arguments: {
         posting: {
@@ -591,9 +687,31 @@ describe("MCP write integration", () => {
       name: "get_application",
     });
     expect(detail.structuredContent).toMatchObject({
-      emailEvidence: [{ messageId: "<linkedin-4405273020@example.com>" }],
       jobPostings: [{ externalPostingId: "4405273020", provider: "linkedin" }],
     });
+    expect(detail.structuredContent?.emailEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          messageId: "<linkedin-4405273020@example.com>",
+        }),
+      ]),
+    );
+    expect(detail.structuredContent?.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          occurredAt: "2026-07-21T17:00:00.000Z",
+          sourceEmailMessageId: "<interview@example.com>",
+          statusOverrideReason: null,
+          toStatus: "Interview",
+        }),
+        expect.objectContaining({
+          occurredAt: "2026-07-21T16:30:00.000Z",
+          sourceEmailMessageId: "<applied@example.com>",
+          statusOverrideReason: null,
+          toStatus: "Applied",
+        }),
+      ]),
+    );
     expect(
       database
         .prepare("SELECT count(*) FROM applications WHERE deleted_at IS NULL")
@@ -638,6 +756,12 @@ describe("MCP write integration", () => {
         .all(),
     ).toEqual([
       "extract_job_links",
+      "upsert_application_from_email",
+      "upsert_application_from_email",
+      "upsert_application_from_email",
+      "upsert_application_from_email",
+      "upsert_application_from_email",
+      "upsert_application_from_email",
       "upsert_application_from_email",
       "upsert_application_from_email",
       "match_job_application_email",

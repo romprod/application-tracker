@@ -80,11 +80,20 @@ It optionally accepts:
 - `update`, using the non-empty application field schema. The reconciliation
   service reads and supplies the matched record's concurrency value internally;
   callers do not add `expectedUpdatedAt` to this nested update.
+- `statusOverride` only when a stale or regressive status change has been
+  explicitly verified. It requires `allowStaleOrRegressive: true` and a
+  concise reason retained with the immutable event.
 
 `application` is the create fallback if no record matches. `update` is applied
 only when at least one supplied value differs. Reusing the same Message-ID
 returns the linked application instead of creating a duplicate. Exact retries
 do not duplicate posting rows, email rows, or unchanged application updates.
+When `update.statusId` is present, `email.receivedAt` is the status event's
+effective time. The server retains processing time separately, rejects an
+event older than the latest stage event, rejects a transition to a lower-order
+status, and binds an accepted status event to the source Message-ID. Stable
+failures are `job_email_status_stale`, `job_email_status_regression`, and
+`job_email_status_conflict`.
 
 The result contains:
 
@@ -103,7 +112,8 @@ Stable expected failures include `job_email_ambiguous`,
 `get_application` returns:
 
 - `application` with normal contacts, links, notes, source, and status fields;
-- immutable stage `events`;
+- immutable stage `events`, including effective `occurredAt`, `processedAt`,
+  the source email Message-ID when applicable, and any override reason;
 - `jobPostings`; and
 - `emailEvidence`.
 

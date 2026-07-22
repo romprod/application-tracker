@@ -177,9 +177,12 @@ function eventHeading(event: ApplicationEvent): string {
 }
 
 function eventDetail(event: ApplicationEvent): string {
-  return event.type === "application_created"
-    ? `Filed in ${event.toStatus}`
-    : "Stage changed";
+  if (event.type === "application_created") return `Filed in ${event.toStatus}`;
+  if (!event.sourceEmailMessageId) return "Stage changed";
+  const processingDetail = `Email status · processed ${formatDateTime(event.processedAt)}`;
+  return event.statusOverrideReason
+    ? `${processingDetail} · Override: ${event.statusOverrideReason}`
+    : processingDetail;
 }
 
 function linkHost(value: string): string {

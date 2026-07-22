@@ -126,6 +126,12 @@ decision is clear. Supply:
 - `posting` when trustworthy evidence exists; and
 - `update` only for selected fields that should change on an existing match.
 
+For `update.statusId`, treat `email.receivedAt` as the source event's effective
+time. The server rejects stale, lower-order, or conflicting events. Do not
+retry those failures with a different timestamp. Use `statusOverride` only
+after the user has explicitly verified the transition, and record a concrete
+reason; the server preserves that reason with immutable stage history.
+
 Use `Applied` only for clear submission or acknowledgement evidence. Use
 `Prospect` for a posting-only opportunity the user explicitly asked to track.
 Set `appliedOn` only when the date is known. Select `sourceId` from active
@@ -139,7 +145,8 @@ For updates:
   `update_application`, and read the latest record after
   `application_conflict` before retrying;
 - send only fields supported by the email;
-- never replace a newer status with an older event;
+- handle `job_email_status_stale`, `job_email_status_regression`, and
+  `job_email_status_conflict` as no-write outcomes;
 - preserve notes, contacts, links, source, and source URL unless replacement is
   explicitly intended; and
 - remember that generic `update_application` semantics replace contacts and

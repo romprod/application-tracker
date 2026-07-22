@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21,
+        21, 22,
       ]);
       expect(
         database
@@ -251,6 +251,24 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBe("application_events_by_application_time");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'index' AND name = 'application_events_by_source_email'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe("application_events_by_source_email");
+      const eventTableSql = database
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'application_events'",
+        )
+        .pluck()
+        .get();
+      expect(eventTableSql).toContain("processed_at TEXT NOT NULL");
+      expect(eventTableSql).toContain("source_email_message_id TEXT");
+      expect(eventTableSql).toContain("status_override_reason TEXT");
       expect(
         database
           .prepare(
