@@ -86,10 +86,11 @@ Configure password-verification admission with
 `SESSION_COOKIE_SECURE`. The absolute lifetime must exceed the idle lifetime,
 and the refresh interval must be shorter than the idle lifetime.
 
-The source bucket uses Express's resolved client address. It uses the direct
-socket address when `HTTP_TRUST_PROXY_HOPS=0` and the bounded trusted chain when
-the setting is nonzero. Keep a proxy or edge login limit as a second layer and
-tune the application threshold for the expected login volume.
+Browser and built-in MCP authorization logins use the same Express-resolved
+client address. The source bucket uses the direct socket address when
+`HTTP_TRUST_PROXY_HOPS=0` and the bounded trusted chain when the setting is
+nonzero. Keep a proxy or edge login limit as a second layer and tune the
+application threshold for the expected login volume.
 
 ## Transport boundary
 

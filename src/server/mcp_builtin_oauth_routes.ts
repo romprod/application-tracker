@@ -34,6 +34,7 @@ import {
 } from "../application/mcp_builtin_oauth.js";
 import {
   createSessionCookie,
+  requestClientAddress,
   requestSessionToken,
   type AuthCookieOptions,
 } from "./auth_routes.js";
@@ -244,7 +245,7 @@ class ApplicationTrackerOAuthProvider implements OAuthServerProvider {
         const login = await this.options.authService.login(
           { password, username },
           requestSessionToken(response.req),
-          response.req.socket.remoteAddress ?? "unknown",
+          requestClientAddress(response.req),
         );
         response.setHeader(
           "Set-Cookie",

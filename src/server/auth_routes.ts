@@ -21,6 +21,10 @@ export function requestSessionToken(request: Request): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+export function requestClientAddress(request: Request): string {
+  return request.ip ?? request.socket.remoteAddress ?? "unknown";
+}
+
 export function createSessionCookie(
   token: string,
   options: AuthCookieOptions,
@@ -73,7 +77,7 @@ export function createAuthRouter(
       const result = await authService.login(
         parsed.data,
         requestSessionToken(request),
-        request.socket.remoteAddress ?? "unknown",
+        requestClientAddress(request),
       );
       response.setHeader(
         "Set-Cookie",

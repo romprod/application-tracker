@@ -72,6 +72,62 @@ function sessionCookie(response: request.Response): string {
 }
 
 describe("authentication routes", () => {
+  it("uses only the trusted proxy chain to resolve the login source", async () => {
+    const login = vi.fn<AuthService["login"]>(() =>
+      Promise.resolve({
+        session: {
+          authenticated: true,
+          user: {
+            displayName: "Alex Example",
+            role: "admin",
+            username: "alex",
+          },
+          workspace: { name: "Applications" },
+        },
+        token: "opaque-session-token",
+      }),
+    );
+    const authService = {
+      getSession: vi.fn(() => undefined),
+      login,
+      logout: vi.fn(),
+    } as unknown as AuthService;
+    const cookie = { maxAgeSeconds: 86_400, secure: false };
+    const credentials = {
+      password: "schema-valid password",
+      username: "alex",
+    };
+
+    await request(createApp({ authCookie: cookie, authService }))
+      .post("/api/auth/login")
+      .set("X-Forwarded-For", "203.0.113.10")
+      .send(credentials)
+      .expect(200);
+
+    const directSource = login.mock.calls[0]?.[2];
+    expect(directSource).toMatch(/127\.0\.0\.1$/);
+    expect(directSource).not.toBe("203.0.113.10");
+
+    login.mockClear();
+    await request(
+      createApp({
+        authCookie: cookie,
+        authService,
+        trustProxyHops: 2,
+      }),
+    )
+      .post("/api/auth/login")
+      .set("X-Forwarded-For", "203.0.113.10, 10.0.0.2")
+      .send(credentials)
+      .expect(200);
+
+    expect(login).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      "203.0.113.10",
+    );
+  });
+
   it("returns a retryable limit response when password verification is full", async () => {
     const authService = {
       getSession: vi.fn(() => undefined),
