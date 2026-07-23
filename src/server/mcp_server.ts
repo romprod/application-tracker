@@ -158,6 +158,44 @@ const applicationRecordSchema = z.strictObject({
   statusIsTerminal: z.boolean(),
   updatedAt: z.iso.datetime(),
 });
+const maximumBulkApplicationUpdates = 25;
+const bulkApplicationUpdatesSchema = z
+  .strictObject({
+    updates: z
+      .array(
+        z.strictObject({
+          applicationId: applicationIdSchema,
+          update: updateApplicationSchema,
+        }),
+      )
+      .min(1)
+      .max(maximumBulkApplicationUpdates),
+  })
+  .superRefine(({ updates }, context) => {
+    const applicationIds = new Set<string>();
+    updates.forEach(({ applicationId }, index) => {
+      if (applicationIds.has(applicationId)) {
+        context.addIssue({
+          code: "custom",
+          message: "Each applicationId may appear only once",
+          path: ["updates", index, "applicationId"],
+        });
+      }
+      applicationIds.add(applicationId);
+    });
+  });
+const bulkApplicationUpdateResultSchema = z.strictObject({
+  applications: z
+    .array(
+      z.strictObject({
+        id: applicationIdSchema,
+        updatedAt: z.iso.datetime(),
+      }),
+    )
+    .min(1)
+    .max(maximumBulkApplicationUpdates),
+  updated: z.number().int().min(1).max(maximumBulkApplicationUpdates),
+});
 const applicationEventSchema = z.strictObject({
   actorDisplayName: z.string(),
   fromStatus: z.string().nullable(),
@@ -789,6 +827,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.updateApplication(applicationId, update),
+      ),
+  );
+
+  server.registerTool(
+    "bulk_update_applications",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Atomically update selected fields on 1 to 25 applications in the bound workspace when this connection has read-and-write access. Supply each application's current updatedAt as update.expectedUpdatedAt. Omitted fields remain unchanged; null clears nullable fields. If any application is missing, stale, or invalid, no updates are committed. A stale value returns application_conflict; read the latest applications before retrying.",
+      inputSchema: bulkApplicationUpdatesSchema,
+      outputSchema: bulkApplicationUpdateResultSchema,
+      title: "Bulk update applications",
+    },
+    ({ updates }) =>
+      executeWriteTool(
+        "bulk_update_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.bulkUpdateApplications(updates),
       ),
   );
 

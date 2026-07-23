@@ -232,7 +232,7 @@ const mcpStatus: McpStatus = {
     auditEvents: true,
     clientCredentials: true,
     oauthVerification: false,
-    registeredTools: 18,
+    registeredTools: 19,
   },
   clients: {
     actors: [
@@ -1766,7 +1766,7 @@ describe("application shell", () => {
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
-    expect(screen.getByText("18 tools registered")).toBeInTheDocument();
+    expect(screen.getByText("19 tools registered")).toBeInTheDocument();
     expect(
       screen.queryByRole("radiogroup", { name: "MCP access mode" }),
     ).not.toBeInTheDocument();

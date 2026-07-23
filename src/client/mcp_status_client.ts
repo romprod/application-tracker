@@ -79,6 +79,7 @@ export interface McpAuditEvent {
   action:
     | "append_document_chunk"
     | "begin_document_import"
+    | "bulk_update_applications"
     | "cancel_document_import"
     | "complete_document_import"
     | "create_application"
@@ -169,6 +170,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
     !isRecord(value) ||
     (value.action !== "append_document_chunk" &&
       value.action !== "begin_document_import" &&
+      value.action !== "bulk_update_applications" &&
       value.action !== "cancel_document_import" &&
       value.action !== "complete_document_import" &&
       value.action !== "create_application" &&

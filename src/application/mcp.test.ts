@@ -391,6 +391,22 @@ describe("ApplicationMcpService", () => {
         expectedUpdatedAt: created.updatedAt,
       }),
     ).toBe(updated);
+    expect(
+      service.bulkUpdateApplications([
+        {
+          applicationId: "application-created",
+          update: {
+            expectedUpdatedAt: updated.updatedAt,
+            notes: "Bulk update",
+          },
+        },
+      ]),
+    ).toEqual({
+      applications: [
+        { id: "application-created", updatedAt: updated.updatedAt },
+      ],
+      updated: 1,
+    });
     expect(service.deleteApplication("application-created")).toEqual({
       applicationId: "application-created",
       deleted: true,
@@ -405,6 +421,14 @@ describe("ApplicationMcpService", () => {
       {
         companyName: "Updated Company",
         expectedUpdatedAt: created.updatedAt,
+      },
+    );
+    expect(applications.updateApplication).toHaveBeenCalledWith(
+      actor,
+      "application-created",
+      {
+        expectedUpdatedAt: updated.updatedAt,
+        notes: "Bulk update",
       },
     );
     expect(applications.deleteApplication).toHaveBeenCalledWith(
