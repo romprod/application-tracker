@@ -53,6 +53,7 @@ export const applicationMcpToolNames = [
   "export_document_chunk",
   "create_application",
   "update_application",
+  "bulk_update_applications",
   "delete_application",
   "upsert_application_from_email",
   "begin_document_import",
@@ -185,6 +186,19 @@ export interface McpEmailLinkCandidates {
   candidates: EmailLinkCandidate[];
 }
 
+export interface McpBulkApplicationUpdate {
+  applicationId: string;
+  update: UpdateApplicationInput;
+}
+
+export interface McpBulkApplicationUpdateResult {
+  applications: {
+    id: string;
+    updatedAt: string;
+  }[];
+  updated: number;
+}
+
 export interface ListMcpApplicationsInput {
   limit: number;
   offset: number;
@@ -221,6 +235,9 @@ export interface McpApplicationTools {
   beginDocumentImport(
     input: BeginMcpDocumentImportInput,
   ): McpDocumentImportProgress;
+  bulkUpdateApplications(
+    updates: McpBulkApplicationUpdate[],
+  ): McpBulkApplicationUpdateResult;
   cancelDocumentImport(uploadId: string): { cancelled: true };
   completeDocumentImport(uploadId: string): DocumentRecord;
   createApplication(input: CreateApplicationInput): ApplicationRecord;
@@ -535,6 +552,22 @@ export class ApplicationMcpService implements McpApplicationTools {
     const actor = this.actorProvider.getActor();
     this.accessPolicy.requireWriteAccess(actor);
     return this.applications.createApplication(actor, input);
+  }
+
+  public bulkUpdateApplications(
+    updates: McpBulkApplicationUpdate[],
+  ): McpBulkApplicationUpdateResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    const applications = updates.map(({ applicationId, update }) => {
+      const application = this.applications.updateApplication(
+        actor,
+        applicationId,
+        update,
+      );
+      return { id: application.id, updatedAt: application.updatedAt };
+    });
+    return { applications, updated: applications.length };
   }
 
   public updateApplication(

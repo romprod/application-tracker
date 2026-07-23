@@ -131,6 +131,31 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
+  it("accepts bulk application update audit events", async () => {
+    const bulkUpdated = {
+      ...status,
+      recentAuditEvents: [
+        {
+          ...status.recentAuditEvents[0],
+          action: "bulk_update_applications",
+          targetType: "application_collection",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: bulkUpdated }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      bulkUpdated,
+    );
+  });
+
   it("accepts job-email audit actions and targets", async () => {
     const reconciled = {
       ...status,

@@ -57,32 +57,35 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 18 tools:
+The local server registers 19 tools:
 
-| Tool                               | Result                                                   |
-| ---------------------------------- | -------------------------------------------------------- |
-| `get_tracker_context`              | Bound actor, workspace, role, and access mode            |
-| `get_job_search_summary`           | Status totals and due-action counts                      |
-| `list_applications`                | A bounded, optionally filtered summary page              |
-| `get_application`                  | One full record, events, and job-email evidence          |
-| `match_job_application_email`      | Deterministic posting, email, or company match           |
-| `extract_job_links`                | Offline canonical job-link candidates                    |
-| `get_reference_data`               | Statuses, sources, role types, and document types        |
-| `get_document_import_capabilities` | Accepted document and chunk sizes                        |
-| `list_documents`                   | A bounded metadata and association page                  |
-| `export_document_chunk`            | Hash-verified original-document bytes                    |
-| `create_application`               | Create one validated workspace application               |
-| `update_application`               | Update selected fields on one application                |
-| `delete_application`               | Confirmed, audited soft deletion                         |
-| `upsert_application_from_email`    | Ordered, idempotent application and email reconciliation |
-| `begin_document_import`            | Begin or resume a bounded document transfer              |
-| `append_document_chunk`            | Append or replay one hash-verified chunk                 |
-| `complete_document_import`         | Verify, store, and associate the original file           |
-| `cancel_document_import`           | Discard an unfinished transient transfer                 |
+| Tool                               | Result                                                     |
+| ---------------------------------- | ---------------------------------------------------------- |
+| `get_tracker_context`              | Bound actor, workspace, role, and access mode              |
+| `get_job_search_summary`           | Status totals and due-action counts                        |
+| `list_applications`                | A bounded, optionally filtered summary page                |
+| `get_application`                  | One full record, events, and job-email evidence            |
+| `match_job_application_email`      | Deterministic posting, email, or company match             |
+| `extract_job_links`                | Offline canonical job-link candidates                      |
+| `get_reference_data`               | Statuses, sources, role types, and document types          |
+| `get_document_import_capabilities` | Accepted document and chunk sizes                          |
+| `list_documents`                   | A bounded metadata and association page                    |
+| `export_document_chunk`            | Hash-verified original-document bytes                      |
+| `create_application`               | Create one validated workspace application                 |
+| `update_application`               | Update selected fields on one application                  |
+| `bulk_update_applications`         | Atomically update selected fields on up to 25 applications |
+| `delete_application`               | Confirmed, audited soft deletion                           |
+| `upsert_application_from_email`    | Ordered, idempotent application and email reconciliation   |
+| `begin_document_import`            | Begin or resume a bounded document transfer                |
+| `append_document_chunk`            | Append or replay one hash-verified chunk                   |
+| `complete_document_import`         | Verify, store, and associate the original file             |
+| `cancel_document_import`           | Discard an unfinished transient transfer                   |
 
 Tools return JSON text and structured content. Before calling
 `update_application`, read the record and send its `updatedAt` value as
-`update.expectedUpdatedAt`. A concurrent change returns the stable
+`update.expectedUpdatedAt`. `bulk_update_applications` accepts 1–25 such
+per-record updates and commits them atomically; one missing, stale, or invalid
+record rolls back the entire batch. A concurrent change returns the stable
 `application_conflict` code; read the latest record before retrying. Other
 expected failures use stable codes such as `actor_unavailable` and
 `application_not_found`; unexpected

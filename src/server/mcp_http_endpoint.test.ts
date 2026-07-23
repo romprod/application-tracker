@@ -96,6 +96,9 @@ function initializedEndpoint(
         beginDocumentImport: () => {
           throw new Error("not used");
         },
+        bulkUpdateApplications: () => {
+          throw new Error("not used");
+        },
         cancelDocumentImport: () => {
           throw new Error("not used");
         },

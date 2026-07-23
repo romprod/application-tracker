@@ -25,6 +25,7 @@ function fakeTools(): McpApplicationTools {
   return {
     appendDocumentChunk: vi.fn(),
     beginDocumentImport: vi.fn(),
+    bulkUpdateApplications: vi.fn(),
     cancelDocumentImport: vi.fn(),
     completeDocumentImport: vi.fn(),
     createApplication: vi.fn(),
@@ -94,6 +95,8 @@ function fakeTools(): McpApplicationTools {
 describe("local MCP server", () => {
   it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
+    const bulkUpdateApplications = vi.fn();
+    tools.bulkUpdateApplications = bulkUpdateApplications;
     const listApplications = vi.spyOn(tools, "listApplications");
     const record = vi.fn();
     const recorder: McpAuditRecorder = { record };
@@ -125,14 +128,14 @@ describe("local MCP server", () => {
         readOnlyHint: true,
       });
     }
-    for (const tool of listed.tools.slice(10, 13)) {
+    for (const tool of listed.tools.slice(10, 14)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: false,
         openWorldHint: false,
         readOnlyHint: false,
       });
     }
-    for (const tool of listed.tools.slice(13)) {
+    for (const tool of listed.tools.slice(14)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: true,
         openWorldHint: false,
@@ -148,6 +151,30 @@ describe("local MCP server", () => {
       expect(tool.inputSchema.properties).not.toHaveProperty("workspace");
       expect(tool.inputSchema.properties).not.toHaveProperty("username");
     }
+    const duplicateApplicationId = "11111111-1111-4111-8111-111111111111";
+    const duplicateBulkUpdate = await client.callTool({
+      arguments: {
+        updates: [
+          {
+            applicationId: duplicateApplicationId,
+            update: {
+              expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+              notes: "First update",
+            },
+          },
+          {
+            applicationId: duplicateApplicationId,
+            update: {
+              expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+              notes: "Duplicate update",
+            },
+          },
+        ],
+      },
+      name: "bulk_update_applications",
+    });
+    expect(duplicateBulkUpdate.isError).toBe(true);
+    expect(bulkUpdateApplications).not.toHaveBeenCalled();
 
     const context = await client.callTool({
       arguments: {},

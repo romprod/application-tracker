@@ -168,6 +168,84 @@ describe("MCP write integration", () => {
       },
     ]);
 
+    const secondCreated = await client.callTool({
+      arguments: {
+        companyName: "Second Company",
+        roleTitle: "Designer",
+        statusId,
+      },
+      name: "create_application",
+    });
+    expect(secondCreated.isError).not.toBe(true);
+    const secondApplicationId = String(secondCreated.structuredContent?.id);
+    const secondExpectedUpdatedAt = String(
+      secondCreated.structuredContent?.updatedAt,
+    );
+    const bulkUpdated = await client.callTool({
+      arguments: {
+        updates: [
+          {
+            applicationId,
+            update: {
+              companyName: "Bulk Updated Company",
+              expectedUpdatedAt: String(updated.structuredContent?.updatedAt),
+            },
+          },
+          {
+            applicationId: secondApplicationId,
+            update: {
+              expectedUpdatedAt: secondExpectedUpdatedAt,
+              notes: "Updated in bulk",
+            },
+          },
+        ],
+      },
+      name: "bulk_update_applications",
+    });
+    expect(bulkUpdated.isError).not.toBe(true);
+    expect(bulkUpdated.structuredContent).toMatchObject({
+      applications: [{ id: applicationId }, { id: secondApplicationId }],
+      updated: 2,
+    });
+    const bulkApplications = bulkUpdated.structuredContent?.applications as {
+      id: string;
+      updatedAt: string;
+    }[];
+    const bulkRolledBack = await client.callTool({
+      arguments: {
+        updates: [
+          {
+            applicationId,
+            update: {
+              companyName: "Must Roll Back",
+              expectedUpdatedAt: bulkApplications[0]?.updatedAt,
+            },
+          },
+          {
+            applicationId: secondApplicationId,
+            update: {
+              expectedUpdatedAt: secondExpectedUpdatedAt,
+              notes: "Stale overwrite",
+            },
+          },
+        ],
+      },
+      name: "bulk_update_applications",
+    });
+    expect(bulkRolledBack.isError).toBe(true);
+    expect(bulkRolledBack.content).toEqual([
+      {
+        text: '{"error":{"code":"application_conflict"}}',
+        type: "text",
+      },
+    ]);
+    expect(
+      database
+        .prepare("SELECT company_name FROM applications WHERE id = ?")
+        .pluck()
+        .get(applicationId),
+    ).toBe("Bulk Updated Company");
+
     const deleted = await client.callTool({
       arguments: { applicationId, confirm: true },
       name: "delete_application",
@@ -176,12 +254,20 @@ describe("MCP write integration", () => {
       applicationId,
       deleted: true,
     });
+    const secondDeleted = await client.callTool({
+      arguments: { applicationId: secondApplicationId, confirm: true },
+      name: "delete_application",
+    });
+    expect(secondDeleted.structuredContent).toEqual({
+      applicationId: secondApplicationId,
+      deleted: true,
+    });
     expect(
       database
         .prepare("SELECT count(*) FROM application_deletions")
         .pluck()
         .get(),
-    ).toBe(1);
+    ).toBe(2);
     expect(
       database
         .prepare(
@@ -208,6 +294,26 @@ describe("MCP write integration", () => {
       {
         action: "update_application",
         result: "error",
+        transport: "local_stdio",
+      },
+      {
+        action: "create_application",
+        result: "success",
+        transport: "local_stdio",
+      },
+      {
+        action: "bulk_update_applications",
+        result: "success",
+        transport: "local_stdio",
+      },
+      {
+        action: "bulk_update_applications",
+        result: "error",
+        transport: "local_stdio",
+      },
+      {
+        action: "delete_application",
+        result: "success",
         transport: "local_stdio",
       },
       {
