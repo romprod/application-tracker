@@ -1,6 +1,7 @@
 import {
   lstatSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -87,6 +88,43 @@ describe("SQLite backup and restore", () => {
     }
   });
 
+  it("leaves no SQLite sidecars beside created or verified artifacts", async () => {
+    const directory = temporaryDirectory();
+    const databasePath = join(directory, "live.sqlite");
+    const backupDirectory = join(directory, "backups");
+    const backupPath = join(backupDirectory, "snapshot.sqlite");
+    const { database } = createPopulatedDatabase(databasePath);
+
+    try {
+      await createVerifiedBackup(database, backupPath);
+    } finally {
+      database.close();
+    }
+
+    expect(readdirSync(backupDirectory)).toEqual(["snapshot.sqlite"]);
+
+    await verifyDatabaseArtifact(backupPath);
+
+    expect(readdirSync(backupDirectory)).toEqual(["snapshot.sqlite"]);
+  });
+
+  it("does not delete sidecar paths that existed before verification", async () => {
+    const directory = temporaryDirectory();
+    const corruptPath = join(directory, "corrupt.sqlite");
+    const sharedMemoryPath = `${corruptPath}-shm`;
+    const writeAheadLogPath = `${corruptPath}-wal`;
+    writeFileSync(corruptPath, "not a sqlite database");
+    writeFileSync(sharedMemoryPath, "keep shared memory");
+    writeFileSync(writeAheadLogPath, "keep write-ahead log");
+
+    await expect(verifyDatabaseArtifact(corruptPath)).rejects.toThrow(
+      "Database verification failed",
+    );
+
+    expect(() => lstatSync(sharedMemoryPath)).not.toThrow();
+    expect(() => lstatSync(writeAheadLogPath)).not.toThrow();
+  });
+
   it("restores a verified backup into a new database and verifies the result", async () => {
     const directory = temporaryDirectory();
     const databasePath = join(directory, "live.sqlite");
@@ -113,6 +151,15 @@ describe("SQLite backup and restore", () => {
       schemaVersion: 22,
     });
     expect(lstatSync(restorePath).mode & 0o777).toBe(0o600);
+    expect(
+      readdirSync(directory).filter((entry) =>
+        entry.startsWith("snapshot.sqlite-"),
+      ),
+    ).toEqual([]);
+    expect(readdirSync(join(directory, "restore"))).toEqual([
+      "application-tracker.sqlite",
+    ]);
+
     const restored = new Database(restorePath, {
       fileMustExist: true,
       readonly: true,
@@ -173,6 +220,8 @@ describe("SQLite backup and restore", () => {
     await expect(verifyDatabaseArtifact(corruptPath)).rejects.toThrow(
       "Database verification failed",
     );
+    expect(() => lstatSync(`${corruptPath}-shm`)).toThrow();
+    expect(() => lstatSync(`${corruptPath}-wal`)).toThrow();
 
     const invalidPath = join(directory, "invalid.sqlite");
     const { database } = createPopulatedDatabase(invalidPath);
