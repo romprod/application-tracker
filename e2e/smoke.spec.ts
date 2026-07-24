@@ -415,7 +415,9 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(appliedOpportunity).toContainText("£70,000–£80,000");
   await expect(appliedOpportunity).toContainText("Hybrid");
 
-  await page.setViewportSize({ width: 320, height: 800 });
+  // Android Chrome leaves a 320 × 458 CSS-pixel content viewport on a
+  // 320 × 568 device while its browser chrome is visible.
+  await page.setViewportSize({ width: 320, height: 458 });
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
@@ -434,11 +436,28 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(
     page.getByRole("combobox", { name: "Sort Opportunities" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", {
-      name: "Open Example Studio · Product Designer",
-    }),
-  ).toBeInViewport();
+  await expect(page.getByPlaceholder("Search opportunities…")).toBeVisible();
+  const mobileOpportunity = page.getByRole("button", {
+    name: "Open Example Studio · Product Designer",
+  });
+  await expect(mobileOpportunity).toBeInViewport();
+  const mobileNavigationBox = await page
+    .locator(".workspace-sidebar nav")
+    .boundingBox();
+  const mobileOpportunityBox = await mobileOpportunity.boundingBox();
+  expect(mobileNavigationBox).not.toBeNull();
+  expect(mobileOpportunityBox).not.toBeNull();
+  expect(mobileOpportunityBox!.y).toBeLessThanOrEqual(
+    mobileNavigationBox!.y - 44,
+  );
+  const mobileTouchTargetHeights = await page
+    .locator(
+      ".tracker-page-actions button, .tracker-mobile-register-tools select, .tracker-mobile-filter-row button",
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().height),
+    );
+  expect(Math.min(...mobileTouchTargetHeights)).toBeGreaterThanOrEqual(44);
   await page
     .locator(".tracker-mobile-filter-row")
     .getByRole("button", { name: "Stage" })
@@ -452,6 +471,47 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   ).toBeInViewport();
   await mobileStageFilter.getByRole("button", { name: "Done" }).click();
 
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(
+    page.getByRole("list", { name: "Opportunities mobile records" }),
+  ).toBeVisible();
+  await expect(opportunitiesTable).toBeHidden();
+  const landscapeNavigationColumns = await mobileNavigation.evaluateAll(
+    (buttons) =>
+      buttons.map((button) => Math.round(button.getBoundingClientRect().left)),
+  );
+  const landscapeNavigationRows = await mobileNavigation.evaluateAll(
+    (buttons) =>
+      buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+  );
+  expect(new Set(landscapeNavigationColumns).size).toBe(1);
+  expect(new Set(landscapeNavigationRows).size).toBe(5);
+  for (const navigationButton of await mobileNavigation.all()) {
+    await expect(navigationButton).toBeInViewport();
+  }
+
+  // A 568 × 320 Android screen can expose a content viewport as short as
+  // 216 CSS pixels. Keep every destination reachable in that state.
+  await page.setViewportSize({ width: 568, height: 216 });
+  const shortLandscapeNavigationColumns = await mobileNavigation.evaluateAll(
+    (buttons) =>
+      buttons.map((button) => Math.round(button.getBoundingClientRect().left)),
+  );
+  const shortLandscapeNavigationRows = await mobileNavigation.evaluateAll(
+    (buttons) =>
+      buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+  );
+  expect(new Set(shortLandscapeNavigationColumns).size).toBe(5);
+  expect(new Set(shortLandscapeNavigationRows).size).toBe(1);
+  for (const navigationButton of await mobileNavigation.all()) {
+    await expect(navigationButton).toBeInViewport();
+  }
+  await expect(
+    page.getByRole("list", { name: "Opportunities mobile records" }),
+  ).toBeVisible();
+  await expect(opportunitiesTable).toBeHidden();
+
+  await page.setViewportSize({ width: 320, height: 458 });
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your search, at a glance." }),

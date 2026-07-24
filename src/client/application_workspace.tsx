@@ -688,7 +688,7 @@ function ApplicationsPage({
           </label>
           <input
             id="application-search"
-            placeholder={`Search ${pageNameLower} by end company, agency, role, salary, work arrangement, contact, or notes…`}
+            placeholder={`Search ${pageNameLower}…`}
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
