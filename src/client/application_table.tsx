@@ -30,6 +30,42 @@ interface ApplicationFilterOption {
 }
 
 const missingFilterValue = "\u0000not-recorded";
+const mobileFilterColumns: {
+  key: ApplicationSortKey;
+  label: string;
+}[] = [
+  { key: "status", label: "Stage" },
+  { key: "agency", label: "Agency" },
+  { key: "workArrangement", label: "Work style" },
+  { key: "rating", label: "Rating" },
+];
+const mobileSortOptions: {
+  label: string;
+  sort: ApplicationSort | null;
+  value: string;
+}[] = [
+  { label: "Ledger order", sort: null, value: "ledger" },
+  {
+    label: "Recently updated",
+    sort: { direction: "descending", key: "updatedAt" },
+    value: "updatedAt-descending",
+  },
+  {
+    label: "Company A–Z",
+    sort: { direction: "ascending", key: "company" },
+    value: "company-ascending",
+  },
+  {
+    label: "Applied date",
+    sort: { direction: "descending", key: "appliedOn" },
+    value: "appliedOn-descending",
+  },
+  {
+    label: "Next action due",
+    sort: { direction: "ascending", key: "nextAction" },
+    value: "nextAction-ascending",
+  },
+];
 
 export function ApplicationTable({
   applications,
@@ -95,12 +131,22 @@ export function ApplicationTable({
     onColumnFiltersChange(next);
   }
 
+  function openColumnFilter(
+    key: ApplicationSortKey,
+    anchor: HTMLButtonElement,
+  ) {
+    if (openFilter === key) {
+      setOpenFilter(null);
+      setFilterAnchor(null);
+      return;
+    }
+    setOpenFilter(key);
+    setFilterAnchor(anchor);
+  }
+
   function sortableHeader(headerLabel: string, key: ApplicationSortKey) {
     const direction = sort?.key === key ? sort.direction : undefined;
     const selected = columnFilters?.[key] ?? [];
-    const filterOptions = filteringEnabled
-      ? applicationFilterOptions(applications, key)
-      : [];
     return (
       <th
         className={selected.length > 0 ? "tracker-column-filtered" : undefined}
@@ -119,7 +165,7 @@ export function ApplicationTable({
                 ? "↑"
                 : direction === "descending"
                   ? "↓"
-                  : "↕"}
+                  : null}
             </span>
             <span className="sr-only">
               {direction
@@ -138,15 +184,7 @@ export function ApplicationTable({
                   ? `Filter ${headerLabel}, ${selected.length} selected`
                   : `Filter ${headerLabel}`
               }
-              onClick={(event) => {
-                if (openFilter === key) {
-                  setOpenFilter(null);
-                  setFilterAnchor(null);
-                  return;
-                }
-                setOpenFilter(key);
-                setFilterAnchor(event.currentTarget);
-              }}
+              onClick={(event) => openColumnFilter(key, event.currentTarget)}
             >
               <FilterIcon />
               {selected.length > 0 && (
@@ -157,25 +195,101 @@ export function ApplicationTable({
             </button>
           )}
         </div>
-        {openFilter === key &&
-          createPortal(
-            <ColumnFilterMenu
-              anchor={filterAnchor}
-              columnLabel={headerLabel}
-              onClear={() => clearFilter(key)}
-              onClose={closeOpenFilter}
-              onToggle={(value) => toggleFilter(key, value)}
-              options={filterOptions}
-              selected={selected}
-            />,
-            document.querySelector(".workspace-app-shell") ?? document.body,
-          )}
       </th>
     );
   }
 
+  const openFilterColumn = openFilter
+    ? (mobileFilterColumns.find(({ key }) => key === openFilter) ?? {
+        key: openFilter,
+        label: applicationColumnLabel(openFilter),
+      })
+    : undefined;
+  const mobileSortValue =
+    mobileSortOptions.find(
+      ({ sort: option }) =>
+        option?.direction === sort?.direction && option?.key === sort?.key,
+    )?.value ?? "ledger";
+
   return (
     <div className={`tracker-table-shell${compact ? " compact" : ""}`}>
+      <div className="tracker-mobile-register">
+        {!compact && (
+          <div className="tracker-mobile-register-tools">
+            <label>
+              <span>Sort records</span>
+              <select
+                aria-label={`Sort ${label}`}
+                value={mobileSortValue}
+                onChange={(event) => {
+                  const selected = mobileSortOptions.find(
+                    ({ value }) => value === event.target.value,
+                  );
+                  setSort(selected?.sort ?? null);
+                }}
+              >
+                {mobileSortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {filteringEnabled && (
+              <div
+                className="tracker-mobile-filter-row"
+                role="group"
+                aria-label={`Filter ${label}`}
+              >
+                {mobileFilterColumns.map(({ key, label: columnLabel }) => {
+                  const selected = columnFilters?.[key] ?? [];
+                  return (
+                    <button
+                      key={key}
+                      className={
+                        selected.length > 0 ? "has-active-filter" : undefined
+                      }
+                      type="button"
+                      aria-expanded={openFilter === key}
+                      aria-haspopup="dialog"
+                      onClick={(event) =>
+                        openColumnFilter(key, event.currentTarget)
+                      }
+                    >
+                      <FilterIcon />
+                      {columnLabel}
+                      {selected.length > 0 && (
+                        <span aria-label={`${selected.length} selected`}>
+                          {selected.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        <ol aria-label={`${label} mobile records`}>
+          {rows.length === 0 ? (
+            <li className="tracker-mobile-empty">
+              <span aria-hidden="true">⌕</span>
+              <strong>No records match these filters.</strong>
+              <small>
+                Clear a filter or change the search above to see more.
+              </small>
+            </li>
+          ) : (
+            rows.map((application) => (
+              <MobileApplicationCard
+                application={application}
+                key={application.id}
+                onOpen={onOpen}
+              />
+            ))
+          )}
+        </ol>
+      </div>
       <table className="tracker-applications-table" aria-label={label}>
         <thead>
           <tr>
@@ -263,8 +377,115 @@ export function ApplicationTable({
           )}
         </tbody>
       </table>
+      {openFilterColumn &&
+        createPortal(
+          <ColumnFilterMenu
+            anchor={filterAnchor}
+            columnLabel={openFilterColumn.label}
+            onClear={() => clearFilter(openFilterColumn.key)}
+            onClose={closeOpenFilter}
+            onToggle={(value) => toggleFilter(openFilterColumn.key, value)}
+            options={applicationFilterOptions(
+              applications,
+              openFilterColumn.key,
+            )}
+            selected={columnFilters?.[openFilterColumn.key] ?? []}
+          />,
+          document.querySelector(".workspace-app-shell") ?? document.body,
+        )}
     </div>
   );
+}
+
+function MobileApplicationCard({
+  application,
+  onOpen,
+}: {
+  application: ApplicationRecord;
+  onOpen: (application: ApplicationRecord) => void;
+}) {
+  const due = application.nextAction
+    ? dueLabel(application.nextActionDue)
+    : undefined;
+  return (
+    <li>
+      <button
+        type="button"
+        aria-label={`Open ${application.companyName} · ${application.roleTitle}`}
+        onClick={() => onOpen(application)}
+      >
+        <span className="tracker-mobile-card-topline">
+          <span className="tracker-reference">
+            {applicationReference(application.id)}
+          </span>
+          <StatusChip status={application.status} />
+        </span>
+        <span className="tracker-mobile-card-title">
+          <strong>{application.companyName}</strong>
+          <span>{application.roleTitle}</span>
+        </span>
+        <span className="tracker-mobile-card-facts">
+          <span>
+            <small>Agency</small>
+            {application.agency ?? "Not recorded"}
+          </span>
+          <span>
+            <small>Work style</small>
+            {formatWorkArrangement(application.workArrangement)}
+          </span>
+          <span>
+            <small>Applied</small>
+            {formatDate(application.appliedOn)}
+          </span>
+          <span>
+            <small>Updated</small>
+            {formatDate(application.updatedAt)}
+          </span>
+        </span>
+        <span className="tracker-mobile-card-action">
+          <span>
+            <small>Next action</small>
+            <strong>
+              {application.nextAction ?? "No next action recorded"}
+            </strong>
+          </span>
+          {due && (
+            <span className={`tracker-due-label ${due.tone}`}>{due.text}</span>
+          )}
+          <span className="tracker-mobile-open" aria-hidden="true">
+            →
+          </span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function applicationColumnLabel(key: ApplicationSortKey): string {
+  switch (key) {
+    case "agency":
+      return "Agency";
+    case "appliedOn":
+      return "Applied";
+    case "company":
+      return "End company / role";
+    case "location":
+      return "Location";
+    case "nextAction":
+      return "Next action";
+    case "rating":
+      return "Rating";
+    case "reference":
+      return "Ref";
+    case "salary":
+      return "Salary";
+    case "status":
+      return "Stage";
+    case "updatedAt":
+      return "Updated";
+    case "workArrangement":
+      return "Work arrangement";
+  }
 }
 
 function FilterIcon() {

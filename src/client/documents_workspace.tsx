@@ -131,7 +131,7 @@ export function DocumentsWorkspace({
             type="button"
             onClick={openUpload}
           >
-            <span aria-hidden="true">＋</span>
+            <span aria-hidden="true">+</span>
             Upload document
           </button>
         </header>
@@ -711,7 +711,7 @@ function UploadDocumentDialog({
                 }}
               />
               <div aria-hidden="true">
-                <span>{file ? fileMonogram(file.name) : "＋"}</span>
+                <span>{file ? fileMonogram(file.name) : "+"}</span>
                 <strong>{file ? file.name : "Select an original file"}</strong>
                 <small>
                   {file
