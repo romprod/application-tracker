@@ -336,6 +336,70 @@ function DocumentLibrary({
               </tbody>
             </table>
           </div>
+          <ul
+            className="document-mobile-list"
+            aria-label="Documents mobile records"
+          >
+            {documents.map((document) => (
+              <li key={document.id}>
+                <div className="document-mobile-heading">
+                  <span aria-hidden="true">
+                    {fileMonogram(document.originalFilename)}
+                  </span>
+                  <div>
+                    <strong>{document.originalFilename}</strong>
+                    <small>
+                      {document.documentType} · {formatBytes(document.byteSize)}
+                    </small>
+                  </div>
+                </div>
+                <dl className="document-mobile-facts">
+                  <div>
+                    <dt>Stored</dt>
+                    <dd>{formatStoredDate(document.createdAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Uploaded by</dt>
+                    <dd>{document.uploadedByDisplayName}</dd>
+                  </div>
+                  <div className="document-mobile-links">
+                    <dt>Linked roles</dt>
+                    <dd>
+                      {document.applications.length === 0 ? (
+                        <span>Not linked</span>
+                      ) : (
+                        <ul>
+                          {document.applications.map((application) => (
+                            <li key={application.id}>
+                              <strong>{application.companyName}</strong>
+                              <span>{application.roleTitle}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="document-mobile-actions">
+                  {supportsInlinePreview(document) && (
+                    <button
+                      type="button"
+                      aria-label={`Preview ${document.originalFilename}`}
+                      onClick={() => onPreview(document)}
+                    >
+                      Preview
+                    </button>
+                  )}
+                  <a
+                    href={`/api/documents/${encodeURIComponent(document.id)}/download`}
+                  >
+                    Download
+                    <span aria-hidden="true">↓</span>
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </>
