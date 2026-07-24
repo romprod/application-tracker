@@ -466,6 +466,13 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     name: "Filter Stage",
   });
   await expect(mobileStageFilter).toBeInViewport();
+  const mobileStageFilterBox = await mobileStageFilter.boundingBox();
+  expect(mobileStageFilterBox).not.toBeNull();
+  const mobileFilterNavigationGap =
+    mobileNavigationBox!.y -
+    (mobileStageFilterBox!.y + mobileStageFilterBox!.height);
+  expect(mobileFilterNavigationGap).toBeGreaterThanOrEqual(0);
+  expect(mobileFilterNavigationGap).toBeLessThanOrEqual(16);
   await expect(
     mobileStageFilter.getByRole("button", { name: "Done" }),
   ).toBeInViewport();

@@ -3474,9 +3474,7 @@
 
   .tracker-column-filter-menu {
     top: auto !important;
-    bottom: calc(
-      64px + env(safe-area-inset-bottom) + max(0px, calc(100vh - 100dvh))
-    );
+    bottom: calc(64px + env(safe-area-inset-bottom));
     left: 12px !important;
     width: calc(100dvw - 24px);
     max-height: calc(100dvh - 88px - env(safe-area-inset-bottom));
