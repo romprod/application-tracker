@@ -31,10 +31,9 @@ function meaningfulReviewReason(pullRequestBody) {
   const followingText = pullRequestBody
     .slice((match.index ?? 0) + match[0].length)
     .split(nextSectionPattern, 1)[0];
-  const withoutComments = `${match[1]}\n${followingText}`
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .trim();
-  return withoutComments.length >= 12 ? withoutComments : null;
+  const reason = `${match[1]}\n${followingText}`.trim();
+  if (reason.includes("<!--") || reason.includes("-->")) return null;
+  return reason.length >= 12 ? reason : null;
 }
 
 export function isJobEmailSensitivePath(filePath) {

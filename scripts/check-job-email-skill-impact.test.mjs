@@ -107,4 +107,17 @@ describe("job-email skill impact guard", () => {
       ),
     ).toThrow("without a completed skill-impact review");
   });
+
+  it("rejects nested HTML comment markers in a review reason", () => {
+    expect(() =>
+      evaluateJobEmailSkillImpact(
+        ["src/server/mcp_server.ts"],
+        [
+          "- [x] Job-email skill update is not applicable.",
+          "",
+          "Job-email skill review reason: <!-- <!-- -->Injected explanation -->",
+        ].join("\n"),
+      ),
+    ).toThrow("without a completed skill-impact review");
+  });
 });
