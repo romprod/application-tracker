@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24,
+        21, 22, 23, 24, 25,
       ]);
       expect(
         database
@@ -226,6 +226,10 @@ describe("migrateDatabase", () => {
         .pluck()
         .get();
       expect(tableSql).toContain("STRICT");
+      expect(tableSql).toContain("agency TEXT");
+      expect(tableSql).toContain("salary TEXT");
+      expect(tableSql).toContain("rating INTEGER");
+      expect(tableSql).toContain("work_arrangement TEXT");
       expect(
         database
           .prepare(

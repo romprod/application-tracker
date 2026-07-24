@@ -11,8 +11,10 @@ default password.
 
 ## Features
 
-- Dashboard metrics, searchable applications, sortable tables, detail drawers,
-  modal editing, contacts, links, due actions, and immutable history
+- Dashboard metrics, searchable Opportunities and applied-only Applications
+  views, separate end-company and agency fields, salary, rating, and work
+  arrangement columns, sortable tables, detail drawers, modal editing,
+  contacts, links, due actions, and immutable history
 - Configurable statuses, sources, role types, and document types
 - Local administrator and member accounts with revocable sessions
 - Original document storage, SHA-256 deduplication, application associations,
@@ -102,6 +104,35 @@ other external identity provider is required.
 Fresh workspaces are read-only through MCP. An administrator can enable
 **Read and write** under **Settings → MCP**. The server rechecks this policy on
 every mutation, including calls made through existing sessions.
+
+### Example prompts for ChatGPT.com
+
+After connecting Application Tracker to ChatGPT.com, try prompts such as:
+
+```text
+Using Application Tracker, give me a read-only summary of my open opportunities. Group them by stage and include the end company, agency, role, salary, rating, work arrangement, and next action. Put overdue actions first.
+```
+
+```text
+List only the opportunities I have applied for, meaning records with an applied date. Sort them by rating from highest to lowest and show the end company, agency, role, salary, work arrangement, stage, and applied date. Do not change anything.
+```
+
+```text
+Find my open remote or hybrid opportunities rated 4 or 5. Recommend the five I should focus on next, using the recorded salary, stage, next action, and notes. Tell me which important fields are missing.
+```
+
+When MCP write access is enabled under **Settings → MCP**, ChatGPT.com can also
+create or update records:
+
+```text
+Create an opportunity for Senior Product Designer at Example Studio. The agency is Example Recruitment, the salary is £75,000–£85,000, the rating is 4, and the work arrangement is hybrid. Use the Prospect stage and leave the applied date empty. Show me the completed record before making any further changes.
+```
+
+With both Outlook Email and Application Tracker connected:
+
+```text
+Check my Outlook Jobs folder for recent job-application messages and reconcile them with Application Tracker. Store each supported message's stable RFC Message-ID and Outlook web link as email evidence. Do not create duplicates or guess when a match is ambiguous, and report any message for which Outlook does not expose a stable Message-ID.
+```
 
 ### Job-email agent skill
 

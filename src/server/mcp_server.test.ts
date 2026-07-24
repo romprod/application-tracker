@@ -153,6 +153,33 @@ describe("local MCP server", () => {
       expect(tool.inputSchema.properties).not.toHaveProperty("workspace");
       expect(tool.inputSchema.properties).not.toHaveProperty("username");
     }
+    const createApplicationTool = listed.tools.find(
+      ({ name }) => name === "create_application",
+    );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "salary",
+    );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "rating",
+    );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "agency",
+    );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "workArrangement",
+    );
+    expect(
+      JSON.stringify(
+        listed.tools.find(({ name }) => name === "list_applications")
+          ?.outputSchema,
+      ),
+    ).toContain('"salary"');
+    expect(
+      JSON.stringify(
+        listed.tools.find(({ name }) => name === "get_application")
+          ?.outputSchema,
+      ),
+    ).toContain('"rating"');
     const duplicateApplicationId = "11111111-1111-4111-8111-111111111111";
     const duplicateBulkUpdate = await client.callTool({
       arguments: {

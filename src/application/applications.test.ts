@@ -32,9 +32,11 @@ function repository() {
       nextAction: input.nextAction,
       nextActionDue: input.nextActionDue,
       notes: input.notes,
+      rating: input.rating,
       roleType: null,
       roleTypeId: input.roleTypeId,
       roleTitle: input.roleTitle,
+      salary: input.salary,
       source: null,
       sourceId: input.sourceId,
       sourceUrl: input.sourceUrl,
@@ -62,9 +64,11 @@ function repository() {
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: null,
+      rating: input.rating ?? null,
       roleType: null,
       roleTypeId: null,
       roleTitle: "Product Designer",
+      salary: input.salary ?? null,
       source: null,
       sourceId: null,
       sourceUrl: null,
@@ -115,7 +119,9 @@ describe("ApplicationLedgerService", () => {
         ],
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
+        rating: 4,
         roleTitle: "Product Designer",
+        salary: "£70,000–£80,000",
         statusId: prospectId,
       }),
     ).toMatchObject({
@@ -138,6 +144,7 @@ describe("ApplicationLedgerService", () => {
       status: "Prospect",
     });
     expect(store.createApplication).toHaveBeenCalledWith({
+      agency: null,
       appliedOn: null,
       companyName: "Example Studio",
       contacts: [
@@ -160,11 +167,14 @@ describe("ApplicationLedgerService", () => {
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
       notes: null,
+      rating: 4,
       roleTypeId: null,
       roleTitle: "Product Designer",
+      salary: "£70,000–£80,000",
       sourceId: null,
       sourceUrl: null,
       statusId: prospectId,
+      workArrangement: null,
       workspaceId: "workspace-1",
     });
   });

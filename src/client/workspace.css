@@ -703,12 +703,23 @@
 
 .tracker-applications-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 1320px;
   border-collapse: collapse;
 }
 
 .tracker-table-shell.compact .tracker-applications-table {
   min-width: 680px;
+}
+
+.tracker-rating {
+  color: var(--tracker-coral-dark);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tracker-rating span span {
+  color: #c9c3b9;
 }
 
 .tracker-applications-table th {
@@ -1022,8 +1033,24 @@
 }
 
 .tracker-drawer-company {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
   color: var(--tracker-ink-soft);
   font-size: 17px;
+}
+
+.tracker-drawer-company span {
+  color: #7a817e;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tracker-drawer-company strong {
+  color: var(--tracker-ink-soft);
+  font-weight: 500;
 }
 
 .tracker-drawer-facts {

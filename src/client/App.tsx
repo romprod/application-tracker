@@ -306,7 +306,9 @@ export function App({
           />
         )}
         {view.kind === "ready" &&
-          (view.page === "overview" || view.page === "applications") && (
+          (view.page === "overview" ||
+            view.page === "opportunities" ||
+            view.page === "applications") && (
             <ApplicationWorkspace
               applicationsClient={applicationsClient}
               emailLinksClient={emailLinksClient}
@@ -492,13 +494,26 @@ function Sidebar({
           <li>
             <button
               type="button"
+              aria-current={activePage === "opportunities" ? "page" : undefined}
+              className={
+                activePage === "opportunities" ? "active-navigation" : ""
+              }
+              onClick={() => onNavigate("opportunities")}
+            >
+              <span aria-hidden="true">02</span>
+              Opportunities
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
               aria-current={activePage === "applications" ? "page" : undefined}
               className={
                 activePage === "applications" ? "active-navigation" : ""
               }
               onClick={() => onNavigate("applications")}
             >
-              <span aria-hidden="true">02</span>
+              <span aria-hidden="true">03</span>
               Applications
             </button>
           </li>
@@ -509,7 +524,7 @@ function Sidebar({
               className={activePage === "documents" ? "active-navigation" : ""}
               onClick={() => onNavigate("documents")}
             >
-              <span aria-hidden="true">03</span>
+              <span aria-hidden="true">04</span>
               Documents
             </button>
           </li>
@@ -524,7 +539,7 @@ function Sidebar({
               }
               onClick={() => onNavigate("settings-lists")}
             >
-              <span aria-hidden="true">04</span>
+              <span aria-hidden="true">05</span>
               Settings
             </button>
           </li>

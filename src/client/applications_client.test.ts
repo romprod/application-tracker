@@ -6,6 +6,7 @@ import {
 } from "./applications_client";
 
 const application = {
+  agency: "Example Recruitment",
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
   contacts: [
@@ -28,9 +29,11 @@ const application = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  rating: 4,
   roleType: "Full-time",
   roleTypeId: "66666666-6666-4666-8666-666666666666",
   roleTitle: "Product Designer",
+  salary: "£70,000–£80,000",
   source: "Referral",
   sourceId: "55555555-5555-4555-8555-555555555555",
   sourceUrl: "https://jobs.example.com/product-designer",
@@ -38,6 +41,7 @@ const application = {
   statusId: "44444444-4444-4444-8444-444444444444",
   statusIsTerminal: false,
   updatedAt: "2026-07-18T12:15:00.000Z",
+  workArrangement: "hybrid",
 } as const;
 
 const events = [
@@ -314,6 +318,70 @@ describe("browserApplicationsClient", () => {
       ),
     );
 
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+  });
+
+  it("rejects malformed salary and rating values returned by the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, rating: 6 }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, salary: "x".repeat(161) }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+  });
+
+  it("rejects malformed agency and work-arrangement values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, agency: "x".repeat(161) }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
+      new ApplicationsClientError("invalid_response"),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            applications: [{ ...application, workArrangement: "field" }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
     await expect(browserApplicationsClient.listApplications()).rejects.toEqual(
       new ApplicationsClientError("invalid_response"),
     );

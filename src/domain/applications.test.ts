@@ -14,6 +14,7 @@ describe("createApplicationSchema", () => {
   it("normalizes a complete application record", () => {
     expect(
       createApplicationSchema.parse({
+        agency: "  Example Recruitment  ",
         appliedOn: "2026-07-18",
         companyName: "  Example Studio  ",
         contacts: [
@@ -34,13 +35,17 @@ describe("createApplicationSchema", () => {
         nextAction: "  Send the portfolio follow-up.  ",
         nextActionDue: "2026-07-21",
         notes: "  Referred by a former colleague.  ",
+        rating: 4,
         roleTypeId,
         roleTitle: "  Product Designer  ",
+        salary: "  £70,000–£80,000  ",
         sourceId,
         sourceUrl: "  https://jobs.example.com/product-designer  ",
         statusId,
+        workArrangement: "hybrid",
       }),
     ).toEqual({
+      agency: "Example Recruitment",
       appliedOn: "2026-07-18",
       companyName: "Example Studio",
       contacts: [
@@ -61,11 +66,14 @@ describe("createApplicationSchema", () => {
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
       notes: "Referred by a former colleague.",
+      rating: 4,
       roleTypeId,
       roleTitle: "Product Designer",
+      salary: "£70,000–£80,000",
       sourceId,
       sourceUrl: "https://jobs.example.com/product-designer",
       statusId,
+      workArrangement: "hybrid",
     });
   });
 
@@ -77,6 +85,7 @@ describe("createApplicationSchema", () => {
         nextAction: "",
         nextActionDue: "",
         notes: "",
+        salary: "   ",
         roleTitle: "Product Designer",
         sourceUrl: "",
         statusId,
@@ -141,6 +150,7 @@ describe("updateApplicationSchema", () => {
   it("normalizes changed fields and clears optional values", () => {
     expect(
       updateApplicationSchema.parse({
+        agency: "   ",
         appliedOn: null,
         companyName: "  Example Labs  ",
         contacts: [],
@@ -149,12 +159,16 @@ describe("updateApplicationSchema", () => {
         location: "   ",
         nextAction: "  ",
         nextActionDue: "",
+        rating: null,
         roleTypeId: null,
+        salary: "   ",
         sourceId: null,
         sourceUrl: null,
         statusId,
+        workArrangement: null,
       }),
     ).toEqual({
+      agency: null,
       appliedOn: null,
       companyName: "Example Labs",
       contacts: [],
@@ -163,10 +177,13 @@ describe("updateApplicationSchema", () => {
       location: null,
       nextAction: null,
       nextActionDue: null,
+      rating: null,
       roleTypeId: null,
+      salary: null,
       sourceId: null,
       sourceUrl: null,
       statusId,
+      workArrangement: null,
     });
   });
 
@@ -193,6 +210,30 @@ describe("updateApplicationSchema", () => {
       updateApplicationSchema.parse({
         expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
         nextAction: "x".repeat(501),
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        agency: "x".repeat(161),
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        rating: 6,
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        salary: "x".repeat(161),
+      }),
+    ).toThrow();
+    expect(() =>
+      updateApplicationSchema.parse({
+        expectedUpdatedAt: "2026-07-18T12:00:00.000Z",
+        workArrangement: "field",
       }),
     ).toThrow();
     expect(() =>

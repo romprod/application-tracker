@@ -1,6 +1,7 @@
 export type WorkspacePage =
   | "applications"
   | "documents"
+  | "opportunities"
   | "overview"
   | "settings-lists"
   | "settings-mcp"
@@ -11,6 +12,7 @@ type WorkspaceRole = "admin" | "member";
 const pagePaths: Record<WorkspacePage, string> = {
   applications: "/applications",
   documents: "/documents",
+  opportunities: "/opportunities",
   overview: "/dashboard",
   "settings-lists": "/settings/lists",
   "settings-mcp": "/settings/mcp",
@@ -22,6 +24,7 @@ const pathPages = new Map<string, WorkspacePage>([
   ["/dashboard", "overview"],
   ["/applications", "applications"],
   ["/documents", "documents"],
+  ["/opportunities", "opportunities"],
   ["/settings", "settings-lists"],
   ["/settings/lists", "settings-lists"],
   ["/settings/mcp", "settings-mcp"],

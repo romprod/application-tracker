@@ -33,6 +33,7 @@ const relationHydrationBatchSize = 500;
 function publicApplicationSelect(): string {
   return `SELECT
             applications.id,
+            applications.agency,
             applications.company_name AS companyName,
             applications.role_title AS roleTitle,
             statuses.id AS statusId,
@@ -48,8 +49,11 @@ function publicApplicationSelect(): string {
             applications.next_action AS nextAction,
             applications.next_action_due AS nextActionDue,
             applications.notes,
+            applications.rating,
+            applications.salary,
             applications.created_at AS createdAt,
-            applications.updated_at AS updatedAt
+            applications.updated_at AS updatedAt,
+            applications.work_arrangement AS workArrangement
           FROM applications AS applications
           JOIN reference_values AS statuses
             ON statuses.id = applications.status_reference_id
@@ -187,15 +191,17 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       this.database
         .prepare(
           `INSERT INTO applications
-           (id, workspace_id, company_name, role_title, legacy_status,
+           (id, workspace_id, agency, company_name, role_title, legacy_status,
             status_reference_id, source_reference_id, role_type_reference_id,
             location, source_url, applied_on, next_action, next_action_due,
-            notes, created_by_user_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            notes, rating, salary, work_arrangement, created_by_user_id,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
           input.workspaceId,
+          input.agency,
           input.companyName,
           input.roleTitle,
           status.isTerminal ? "closed" : "prospect",
@@ -208,6 +214,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.nextAction,
           input.nextActionDue,
           input.notes,
+          input.rating,
+          input.salary,
+          input.workArrangement,
           input.createdByUserId,
           input.createdAt,
           input.createdAt,
@@ -419,15 +428,17 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       const updateResult = this.database
         .prepare(
           `UPDATE applications
-           SET company_name = ?, role_title = ?, legacy_status = ?,
+           SET agency = ?, company_name = ?, role_title = ?, legacy_status = ?,
                status_reference_id = ?, source_reference_id = ?,
                role_type_reference_id = ?, location = ?, source_url = ?,
                applied_on = ?, next_action = ?, next_action_due = ?,
-               notes = ?, updated_at = ?
+               notes = ?, rating = ?, salary = ?, work_arrangement = ?,
+               updated_at = ?
            WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
              AND updated_at = ?`,
         )
         .run(
+          input.agency === undefined ? current.agency : input.agency,
           input.companyName ?? current.companyName,
           input.roleTitle ?? current.roleTitle,
           status.isTerminal ? "closed" : "prospect",
@@ -444,6 +455,11 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             ? current.nextActionDue
             : input.nextActionDue,
           input.notes === undefined ? current.notes : input.notes,
+          input.rating === undefined ? current.rating : input.rating,
+          input.salary === undefined ? current.salary : input.salary,
+          input.workArrangement === undefined
+            ? current.workArrangement
+            : input.workArrangement,
           input.updatedAt,
           input.workspaceId,
           input.applicationId,

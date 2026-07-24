@@ -46,6 +46,7 @@ describe("SqliteApplicationsRepository", () => {
 
     try {
       const created = repository.createApplication({
+        agency: "Example Recruitment",
         appliedOn: "2026-07-18",
         companyName: "Example Studio",
         contacts: [
@@ -62,6 +63,7 @@ describe("SqliteApplicationsRepository", () => {
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
         notes: "Referred by a former colleague.",
+        rating: 4,
         links: [
           {
             label: "Hiring portal",
@@ -75,6 +77,7 @@ describe("SqliteApplicationsRepository", () => {
           "Full-time",
         ),
         roleTitle: "Product Designer",
+        salary: "£70,000–£80,000",
         sourceId: referenceId(
           database,
           setup.workspace.id,
@@ -89,9 +92,11 @@ describe("SqliteApplicationsRepository", () => {
           "Applied",
         ),
         workspaceId: setup.workspace.id,
+        workArrangement: "hybrid",
       });
 
       expect(created).toMatchObject({
+        agency: "Example Recruitment",
         appliedOn: "2026-07-18",
         companyName: "Example Studio",
         contacts: [
@@ -111,9 +116,12 @@ describe("SqliteApplicationsRepository", () => {
         location: "Remote",
         nextAction: "Send the portfolio follow-up.",
         nextActionDue: "2026-07-21",
+        rating: 4,
         roleType: "Full-time",
+        salary: "£70,000–£80,000",
         source: "Referral",
         status: "Applied",
+        workArrangement: "hybrid",
       });
       expect(created).not.toHaveProperty("workspaceId");
       expect(created).not.toHaveProperty("createdByUserId");
@@ -325,6 +333,7 @@ describe("SqliteApplicationsRepository", () => {
       });
       const transitioned = repository.updateApplication({
         actorUserId: setup.administrator.id,
+        agency: "Direct",
         applicationId: created.id,
         companyName: "Example Labs",
         contacts: [
@@ -345,6 +354,8 @@ describe("SqliteApplicationsRepository", () => {
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
+        rating: 5,
+        salary: "£82,000",
         statusId: referenceId(
           database,
           setup.workspace.id,
@@ -353,9 +364,11 @@ describe("SqliteApplicationsRepository", () => {
         ),
         updatedAt: "2026-07-18T13:00:00.000Z",
         workspaceId: setup.workspace.id,
+        workArrangement: "remote",
       });
 
       expect(transitioned).toMatchObject({
+        agency: "Direct",
         companyName: "Example Labs",
         contacts: [
           {
@@ -374,9 +387,34 @@ describe("SqliteApplicationsRepository", () => {
         location: null,
         nextAction: "Send a thank-you note.",
         nextActionDue: "2026-07-19",
+        rating: 5,
+        salary: "£82,000",
         status: "Interview",
         updatedAt: "2026-07-18T13:00:00.000Z",
+        workArrangement: "remote",
       });
+      expect(() =>
+        database
+          .prepare("UPDATE applications SET agency = '' WHERE id = ?")
+          .run(created.id),
+      ).toThrow();
+      expect(() =>
+        database
+          .prepare("UPDATE applications SET rating = 6 WHERE id = ?")
+          .run(created.id),
+      ).toThrow();
+      expect(() =>
+        database
+          .prepare("UPDATE applications SET salary = '' WHERE id = ?")
+          .run(created.id),
+      ).toThrow();
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE applications SET work_arrangement = 'field' WHERE id = ?",
+          )
+          .run(created.id),
+      ).toThrow();
       expect(
         repository.listApplicationEvents(setup.workspace.id, created.id),
       ).toEqual([

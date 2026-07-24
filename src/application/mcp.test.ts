@@ -27,6 +27,7 @@ function application(
     Pick<ApplicationRecord, "id" | "statusId">,
 ): ApplicationRecord {
   return {
+    agency: null,
     appliedOn: null,
     companyName: "Example Company",
     contacts: [],
@@ -36,7 +37,9 @@ function application(
     nextAction: null,
     nextActionDue: null,
     notes: null,
+    rating: null,
     roleTitle: "Engineer",
+    salary: null,
     roleType: null,
     roleTypeId: null,
     source: null,
@@ -45,6 +48,7 @@ function application(
     status: "Applied",
     statusIsTerminal: false,
     updatedAt: "2026-01-01T00:00:00.000Z",
+    workArrangement: null,
     ...input,
   };
 }
@@ -90,10 +94,14 @@ describe("ApplicationMcpService", () => {
     };
     const applications = [
       application({
+        agency: "Example Recruitment",
         id: "application-1",
         nextAction: "Prepare examples",
         nextActionDue: "2026-01-09",
+        rating: 5,
+        salary: "£90,000",
         statusId: "status-open",
+        workArrangement: "hybrid",
       }),
       application({
         id: "application-2",
@@ -186,7 +194,20 @@ describe("ApplicationMcpService", () => {
         offset: 0,
         statusId: "status-open",
       }),
-    ).toMatchObject({ nextOffset: 1, offset: 0, returned: 1, total: 2 });
+    ).toMatchObject({
+      applications: [
+        expect.objectContaining({
+          agency: "Example Recruitment",
+          rating: 5,
+          salary: "£90,000",
+          workArrangement: "hybrid",
+        }),
+      ],
+      nextOffset: 1,
+      offset: 0,
+      returned: 1,
+      total: 2,
+    });
     expect(service.getApplication("application-1")).toEqual({
       application: applications[0],
       emailEvidence: [],

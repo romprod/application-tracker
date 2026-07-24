@@ -369,11 +369,67 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     dashboardHero.getByRole("button", { name: "Log application" }),
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Opportunities" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Opportunities", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/opportunities$/);
+
+  await page.getByRole("button", { name: "Log application" }).first().click();
+  const applicationDialog = page.getByRole("dialog", {
+    name: "Log an application",
+  });
+  await applicationDialog.getByLabel("End company").fill("Example Studio");
+  await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
+  await applicationDialog.getByLabel("Role title").fill("Product Designer");
+  await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
+  await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+  await applicationDialog.getByLabel("Rating").selectOption("4");
+  await applicationDialog.getByLabel("Location").fill("London");
+  await applicationDialog.getByLabel("Work arrangement").selectOption("hybrid");
+  await applicationDialog
+    .getByRole("button", { name: "Save application" })
+    .click();
+
+  const opportunitiesTable = page.getByRole("table", {
+    name: "Opportunities",
+  });
+  await expect(
+    opportunitiesTable.getByRole("columnheader", {
+      name: /End company \/ role/,
+    }),
+  ).toBeVisible();
+  await expect(
+    opportunitiesTable.getByRole("columnheader", { name: /Agency/ }),
+  ).toBeVisible();
+  await expect(
+    opportunitiesTable.getByRole("columnheader", {
+      name: /Work arrangement/,
+    }),
+  ).toBeVisible();
+  const appliedOpportunity = opportunitiesTable
+    .getByRole("row")
+    .filter({ hasText: "Example Studio" });
+  await expect(appliedOpportunity).toContainText("Example Recruitment");
+  await expect(appliedOpportunity).toContainText("£70,000–£80,000");
+  await expect(appliedOpportunity).toContainText("Hybrid");
+
+  await page.getByRole("button", { name: "Log application" }).click();
+  await applicationDialog.getByLabel("End company").fill("Prospect Company");
+  await applicationDialog.getByLabel("Role title").fill("Software Engineer");
+  await applicationDialog
+    .getByRole("button", { name: "Save application" })
+    .click();
+  await expect(opportunitiesTable).toContainText("Prospect Company");
+
   await page.getByRole("button", { name: "Applications" }).click();
   await expect(
     page.getByRole("heading", { name: "Applications", exact: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/applications$/);
+  const applicationsTable = page.getByRole("table", { name: "Applications" });
+  await expect(applicationsTable).toContainText("Example Studio");
+  await expect(applicationsTable).not.toContainText("Prospect Company");
 
   await page.getByRole("button", { name: "Documents" }).click();
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();

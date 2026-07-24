@@ -91,10 +91,22 @@ record rolls back the entire batch. A concurrent change returns the stable
 expected failures use stable codes such as `actor_unavailable` and
 `application_not_found`; unexpected
 failures return `internal_error` without exception details. Read tools are
-annotated as read-only, non-destructive, idempotent, and closed-world. Mutation
-application mutations are non-read-only and non-idempotent; deletion is also
+annotated as read-only, non-destructive, idempotent, and closed-world.
+Application mutations are non-read-only and non-idempotent; deletion is also
 destructive and requires `confirm=true`. Job-email upsert and document-transfer
 mutations are non-read-only and idempotent.
+
+Application create, update, list, and detail contracts expose nullable `agency`,
+`salary`, `rating`, and `workArrangement` fields. `agency` is kept separate from
+the end company, `salary` preserves the advert's own bounded text, `rating` is a
+whole number from one to five, and `workArrangement` accepts `hybrid`, `remote`,
+or `office`.
+
+To link an Outlook message to an application, pass its stable RFC Message-ID,
+received time, and Outlook `webUrl` to `upsert_application_from_email`. The
+stored link is returned by `get_application` in `emailEvidence[].webUrl`. This
+dedicated evidence link is separate from the application's user-managed related
+`links`.
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.
