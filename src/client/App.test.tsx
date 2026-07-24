@@ -770,7 +770,21 @@ describe("application shell", () => {
   });
 
   it("opens the opportunity register for an authenticated user", async () => {
-    const applicationsClient = createApplicationsClient();
+    const prospect = {
+      ...applicationRecord,
+      agency: null,
+      appliedOn: null,
+      companyName: "Prospect Company",
+      id: "55555555-5555-4555-8555-555555555555",
+      location: "London",
+      roleTitle: "Software Engineer",
+      status: "Prospect",
+      statusId: "77777777-7777-4777-8777-777777777777",
+    };
+    const applicationsClient = createApplicationsClient([
+      applicationRecord,
+      prospect,
+    ]);
     render(
       <App
         applicationsClient={applicationsClient}
@@ -791,12 +805,49 @@ describe("application shell", () => {
       await screen.findByRole("heading", { name: "Opportunities" }),
     ).toBeInTheDocument();
     expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
-    expect(
-      screen.getByRole("table", { name: "Opportunities" }),
-    ).toBeInTheDocument();
+    const opportunitiesTable = screen.getByRole("table", {
+      name: "Opportunities",
+    });
+    expect(opportunitiesTable).toBeInTheDocument();
     expect(screen.getByText("Example Studio")).toBeInTheDocument();
     expect(screen.getByText("Product Designer")).toBeInTheDocument();
     expect(screen.getByText("Example Recruitment")).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getAllByRole("button", {
+        name: /^Filter /,
+      }),
+    ).toHaveLength(11);
+    expect(
+      screen.queryByRole("combobox", { name: "Filter by stage" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Filter by location" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(opportunitiesTable).getByRole("button", {
+        name: "Filter Stage",
+      }),
+    );
+    const stageFilter = screen.getByRole("dialog", { name: "Filter Stage" });
+    fireEvent.click(
+      within(stageFilter).getByRole("checkbox", { name: /Prospect/ }),
+    );
+    expect(screen.getByText("Prospect Company")).toBeInTheDocument();
+    expect(screen.queryByText("Example Studio")).not.toBeInTheDocument();
+    expect(screen.getByText("1 record")).toBeInTheDocument();
+    fireEvent.click(within(stageFilter).getByRole("button", { name: "Done" }));
+    fireEvent.click(
+      within(opportunitiesTable).getByRole("button", {
+        name: "Filter Stage, 1 selected",
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Filter Stage" })).getByRole(
+        "button",
+        { name: "Clear" },
+      ),
+    );
+    expect(screen.getByText("Example Studio")).toBeInTheDocument();
     const companySort = screen.getByRole("button", {
       name: /End company \/ role, not sorted/,
     });
@@ -847,6 +898,12 @@ describe("application shell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Example Studio")).toBeInTheDocument();
     expect(screen.queryByText("Prospect Company")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "Applications" })).getAllByRole(
+        "button",
+        { name: /^Filter / },
+      ),
+    ).toHaveLength(11);
     expect(window.location.pathname).toBe("/applications");
   });
 
@@ -1023,10 +1080,11 @@ describe("application shell", () => {
 
   it("adds an application and clears the intake form", async () => {
     const applicationsClient = createApplicationsClient([]);
+    const referenceValuesClient = createReferenceValuesClient();
     render(
       <App
         applicationsClient={applicationsClient}
-        referenceValuesClient={createReferenceValuesClient()}
+        referenceValuesClient={referenceValuesClient}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -1038,7 +1096,9 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    await screen.findByRole("option", { name: "Prospect" });
+    await waitFor(() =>
+      expect(referenceValuesClient.listValues).toHaveBeenCalledOnce(),
+    );
     fireEvent.click(
       screen.getAllByRole("button", { name: "Log application" })[0]!,
     );
@@ -1250,10 +1310,11 @@ describe("application shell", () => {
 
   it("adds contacts and related links to a new application", async () => {
     const applicationsClient = createApplicationsClient([]);
+    const referenceValuesClient = createReferenceValuesClient();
     render(
       <App
         applicationsClient={applicationsClient}
-        referenceValuesClient={createReferenceValuesClient()}
+        referenceValuesClient={referenceValuesClient}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
           required: false,
@@ -1265,7 +1326,9 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    await screen.findByRole("option", { name: "Prospect" });
+    await waitFor(() =>
+      expect(referenceValuesClient.listValues).toHaveBeenCalledOnce(),
+    );
     fireEvent.click(
       screen.getAllByRole("button", { name: "Log application" })[0]!,
     );
@@ -1316,12 +1379,13 @@ describe("application shell", () => {
 
   it("imports selected job links from bounded email content", async () => {
     const emailLinksClient = createEmailLinksClient();
+    const referenceValuesClient = createReferenceValuesClient();
     render(
       <App
         applicationsClient={createApplicationsClient([])}
         authClient={createAuthClient(authenticatedSession)}
         emailLinksClient={emailLinksClient}
-        referenceValuesClient={createReferenceValuesClient()}
+        referenceValuesClient={referenceValuesClient}
         setupClient={createSetupClient({
           required: false,
           tokenConfigured: false,
@@ -1332,7 +1396,9 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
-    await screen.findByRole("option", { name: "Prospect" });
+    await waitFor(() =>
+      expect(referenceValuesClient.listValues).toHaveBeenCalledOnce(),
+    );
     fireEvent.click(
       screen.getAllByRole("button", { name: "Log application" })[0]!,
     );

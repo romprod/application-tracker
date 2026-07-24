@@ -18,6 +18,8 @@ import {
   ApplicationEmptyState,
   ApplicationLoadError,
   ApplicationTable,
+  filterApplicationsByColumns,
+  type ApplicationColumnFilters,
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
 import { dueLabel, nextActionApplications } from "./application_next_action";
@@ -286,7 +288,6 @@ export function ApplicationWorkspace({
           onAdd={beginCreate}
           onOpen={openApplication}
           page={page}
-          referenceValues={referenceValues ?? []}
         />
       )}
       {selectedApplication && (
@@ -563,18 +564,17 @@ function ApplicationsPage({
   onAdd,
   onOpen,
   page,
-  referenceValues,
 }: {
   applications: ApplicationRecord[] | undefined;
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
   page: "applications" | "opportunities";
-  referenceValues: ReferenceValue[];
 }) {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [location, setLocation] = useState("");
+  const [columnFilters, setColumnFilters] = useState<ApplicationColumnFilters>(
+    {},
+  );
   const visibleApplications = useMemo(
     () =>
       page === "applications"
@@ -582,58 +582,42 @@ function ApplicationsPage({
         : (applications ?? []),
     [applications, page],
   );
-  const locations = useMemo(
-    () =>
-      [
-        ...new Set(
-          visibleApplications.flatMap((application) =>
-            application.location ? [application.location] : [],
-          ),
-        ),
-      ].sort((left, right) => left.localeCompare(right)),
-    [visibleApplications],
-  );
-  const referencedStatusIds = new Set(
-    visibleApplications.map(({ statusId }) => statusId),
-  );
-  const statuses = referenceValues.filter(
-    ({ category, id, isActive }) =>
-      category === "status" && (isActive || referencedStatusIds.has(id)),
-  );
-  const filtered = useMemo(() => {
+  const searchResults = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return visibleApplications.filter((application) => {
-      const matchesSearch =
-        !query ||
-        [
-          application.id,
-          application.agency,
-          application.companyName,
-          application.roleTitle,
-          application.location,
-          application.nextAction,
-          application.notes,
-          application.rating?.toString(),
-          application.roleType,
-          application.salary,
-          application.source,
-          application.sourceUrl,
-          application.workArrangement,
-          ...application.contacts.flatMap((contact) => [
-            contact.name,
-            contact.role,
-            contact.email,
-            contact.phone,
-          ]),
-          ...application.links.flatMap((link) => [link.label, link.url]),
-        ].some((value) => value?.toLocaleLowerCase().includes(query));
-      return (
-        matchesSearch &&
-        (!status || application.statusId === status) &&
-        (!location || application.location === location)
-      );
-    });
-  }, [location, search, status, visibleApplications]);
+    return query
+      ? visibleApplications.filter((application) =>
+          [
+            application.id,
+            application.agency,
+            application.companyName,
+            application.roleTitle,
+            application.location,
+            application.nextAction,
+            application.notes,
+            application.rating?.toString(),
+            application.roleType,
+            application.salary,
+            application.source,
+            application.sourceUrl,
+            application.workArrangement,
+            ...application.contacts.flatMap((contact) => [
+              contact.name,
+              contact.role,
+              contact.email,
+              contact.phone,
+            ]),
+            ...application.links.flatMap((link) => [link.label, link.url]),
+          ].some((value) => value?.toLocaleLowerCase().includes(query)),
+        )
+      : visibleApplications;
+  }, [search, visibleApplications]);
+  const filtered = useMemo(
+    () => filterApplicationsByColumns(searchResults, columnFilters),
+    [columnFilters, searchResults],
+  );
+  const hasColumnFilters = Object.values(columnFilters).some(
+    (selected) => selected !== undefined && selected.length > 0,
+  );
   const pageName = page === "applications" ? "Applications" : "Opportunities";
   const pageNameLower = pageName.toLocaleLowerCase();
 
@@ -677,32 +661,6 @@ function ApplicationsPage({
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <label className="tracker-filter-field">
-          <span className="sr-only">Filter by stage</span>
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">All stages</option>
-            {statuses.map((value) => (
-              <option key={value.id} value={value.id}>
-                {value.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="tracker-filter-field">
-          <span className="sr-only">Filter by location</span>
-          <select
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-          >
-            <option value="">All locations</option>
-            {locations.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
         <span className="tracker-result-count" aria-live="polite">
           {filtered.length} {filtered.length === 1 ? "record" : "records"}
         </span>
@@ -713,23 +671,17 @@ function ApplicationsPage({
         <p className="tracker-loading">Opening the {pageNameLower} register…</p>
       )}
       {applications &&
-        filtered.length === 0 &&
+        visibleApplications.length === 0 &&
         !search &&
-        !status &&
-        !location && <ApplicationEmptyState kind={page} onAdd={onAdd} />}
-      {applications &&
-        filtered.length === 0 &&
-        (Boolean(search) || Boolean(status) || Boolean(location)) && (
-          <div className="tracker-empty-state">
-            <span aria-hidden="true">⌕</span>
-            <h2>No matching {pageNameLower}</h2>
-            <p>Change the search or filters to see more records.</p>
-          </div>
+        !hasColumnFilters && (
+          <ApplicationEmptyState kind={page} onAdd={onAdd} />
         )}
-      {filtered.length > 0 && (
+      {applications && visibleApplications.length > 0 && (
         <ApplicationTable
-          applications={filtered}
+          applications={searchResults}
+          columnFilters={columnFilters}
           label={pageName}
+          onColumnFiltersChange={setColumnFilters}
           onOpen={onOpen}
         />
       )}
