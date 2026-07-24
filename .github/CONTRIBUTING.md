@@ -16,6 +16,24 @@ Keep each pull request small enough to review as one coherent change. Do not
 combine feature work, broad formatting, generated output, and unrelated
 refactoring.
 
+## Job-email agent skill impact
+
+Pull requests that change application, email, evidence, event, document-import,
+or MCP behavior must review the bundled job-email agent skill. Update both
+`.agents/skills/application-tracker-job-email/SKILL.md` and
+`.agents/skills/application-tracker-job-email/references/current-mcp-contract.md`
+in the same pull request when the workflow, decisions, required tools, schemas,
+errors, verification, or reporting change.
+
+When monitored files change but the skill remains accurate, select the pull
+request template's not-applicable option and give a concrete reason. The quality
+workflow rejects a missing review, an unexplained exception, or an update to
+only one of the two required documents.
+
+This review supplements the MCP schema guard. Tool metadata changes still
+require a schema-version increment, regenerated manifest, connector
+publication, and fresh-task verification.
+
 ## Public-content rules
 
 Use synthetic data in source, tests, screenshots, and documentation. Never
