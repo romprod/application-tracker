@@ -44,7 +44,7 @@ import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 2;
+export const applicationMcpSchemaVersion = 3;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -213,17 +213,21 @@ export interface McpJobSearchSummary {
 }
 
 export interface McpApplicationSummary {
+  agency: string | null;
   appliedOn: string | null;
   companyName: string;
   id: string;
   location: string | null;
   nextAction: string | null;
   nextActionDue: string | null;
+  rating: number | null;
   roleTitle: string;
+  salary: string | null;
   status: string;
   statusId: string;
   statusIsTerminal: boolean;
   updatedAt: string;
+  workArrangement: ApplicationRecord["workArrangement"];
 }
 
 export interface McpApplicationList {
@@ -370,17 +374,21 @@ function applicationSummary(
   application: ApplicationRecord,
 ): McpApplicationSummary {
   return {
+    agency: application.agency,
     appliedOn: application.appliedOn,
     companyName: application.companyName,
     id: application.id,
     location: application.location,
     nextAction: application.nextAction,
     nextActionDue: application.nextActionDue,
+    rating: application.rating,
     roleTitle: application.roleTitle,
+    salary: application.salary,
     status: application.status,
     statusId: application.statusId,
     statusIsTerminal: application.statusIsTerminal,
     updatedAt: application.updatedAt,
+    workArrangement: application.workArrangement,
   };
 }
 

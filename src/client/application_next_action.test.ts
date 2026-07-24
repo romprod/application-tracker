@@ -10,6 +10,7 @@ function application(
   statusIsTerminal = false,
 ): ApplicationRecord {
   return {
+    agency: null,
     appliedOn: null,
     companyName: `Company ${id}`,
     contacts: [],
@@ -20,9 +21,11 @@ function application(
     nextAction,
     nextActionDue,
     notes: null,
+    rating: null,
     roleType: null,
     roleTypeId: null,
     roleTitle: "Product Designer",
+    salary: null,
     source: null,
     sourceId: null,
     sourceUrl: null,
@@ -30,6 +33,7 @@ function application(
     statusId: statusIsTerminal ? "status-closed" : "status-applied",
     statusIsTerminal,
     updatedAt: "2026-07-18T09:00:00.000Z",
+    workArrangement: null,
   };
 }
 

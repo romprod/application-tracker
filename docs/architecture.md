@@ -21,10 +21,11 @@ Repositories implement interfaces owned by the application layer.
 ## Browser navigation
 
 Authenticated workspace views have stable paths: `/dashboard`,
-`/applications`, `/documents`, `/settings/lists`, `/settings/users`, and
-`/settings/mcp`. The React client synchronizes those views with the browser
-History API, so refresh and Back/Forward navigation preserve the active view.
-The HTTP server returns the application shell for direct workspace links, but
+`/opportunities`, `/applications`, `/documents`, `/settings/lists`,
+`/settings/users`, and `/settings/mcp`. The React client synchronizes those
+views with the browser History API, so refresh and Back/Forward navigation
+preserve the active view. The HTTP server returns the application shell for
+direct workspace links, but
 the client resolves the session before rendering protected content. A member
 who opens an administrator-only settings path is redirected to
 `/settings/lists`.

@@ -132,6 +132,7 @@ function applicationInput(references: {
   roleType: string;
 }) {
   return {
+    agency: "Example Recruitment",
     appliedOn: "2026-07-18",
     companyName: "Example Studio",
     contacts: [
@@ -152,11 +153,14 @@ function applicationInput(references: {
     nextAction: "Send the portfolio follow-up.",
     nextActionDue: "2026-07-21",
     notes: "Referred by a former colleague.",
+    rating: 4,
     roleTypeId: references.roleType,
     roleTitle: "Product Designer",
+    salary: "£70,000–£80,000",
     sourceId: references.referral,
     sourceUrl: "https://jobs.example.com/product-designer",
     statusId: references.applied,
+    workArrangement: "hybrid",
   };
 }
 
@@ -224,15 +228,19 @@ describe("application ledger routes", () => {
       .expect(201);
     const application = createdApplication(created);
     expect(application).toMatchObject({
+      agency: "Example Recruitment",
       companyName: "Example Studio",
       contacts: input.contacts,
       links: input.links,
       roleTitle: "Product Designer",
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
+      rating: 4,
       roleType: "Full-time",
+      salary: "£70,000–£80,000",
       source: "Referral",
       status: "Applied",
+      workArrangement: "hybrid",
     });
     expect(JSON.stringify(application)).not.toMatch(
       /createdBy|workspaceId|password|token/i,
@@ -325,6 +333,7 @@ describe("application ledger routes", () => {
     )
       .set("Cookie", cookie)
       .send({
+        agency: "Direct",
         contacts: [],
         expectedUpdatedAt,
         links: [],
@@ -332,18 +341,25 @@ describe("application ledger routes", () => {
         nextAction: "Prepare interview questions.",
         nextActionDue: "2026-07-20",
         notes: "Interview arranged.",
+        rating: 5,
+        salary: "£82,000",
         statusId: references.interview,
+        workArrangement: "remote",
       })
       .expect(200);
     expect(createdApplication(updated)).toMatchObject({
+      agency: "Direct",
       companyName: "Example Studio",
       contacts: [],
+      rating: 5,
+      salary: "£82,000",
       links: [],
       location: null,
       nextAction: "Prepare interview questions.",
       nextActionDue: "2026-07-20",
       notes: "Interview arranged.",
       status: "Interview",
+      workArrangement: "remote",
     });
 
     const history = await request(app)

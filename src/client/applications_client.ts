@@ -1,6 +1,7 @@
 import { browserApiFetch } from "./browser_api_fetch";
 
 export type ApplicationStatus = string;
+export type WorkArrangement = "hybrid" | "remote" | "office";
 
 export interface ApplicationContact {
   email: string | null;
@@ -22,6 +23,7 @@ export interface ApplicationLink {
 }
 
 export interface ApplicationRecord {
+  agency: string | null;
   appliedOn: string | null;
   companyName: string;
   contacts: ApplicationContact[];
@@ -32,9 +34,11 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  rating: number | null;
   roleType: string | null;
   roleTypeId: string | null;
   roleTitle: string;
+  salary: string | null;
   source: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -42,9 +46,11 @@ export interface ApplicationRecord {
   statusId: string;
   statusIsTerminal: boolean;
   updatedAt: string;
+  workArrangement: WorkArrangement | null;
 }
 
 export interface CreateApplicationInput {
+  agency?: string;
   appliedOn?: string;
   companyName: string;
   contacts?: ApplicationContactInput[];
@@ -53,14 +59,18 @@ export interface CreateApplicationInput {
   nextAction?: string;
   nextActionDue?: string;
   notes?: string;
+  rating?: number;
   roleTypeId?: string;
   roleTitle: string;
+  salary?: string;
   sourceId?: string;
   sourceUrl?: string;
   statusId: string;
+  workArrangement?: WorkArrangement;
 }
 
 export interface UpdateApplicationInput {
+  agency?: string | null;
   appliedOn?: string | null;
   companyName?: string;
   contacts?: ApplicationContactInput[];
@@ -70,11 +80,14 @@ export interface UpdateApplicationInput {
   nextAction?: string | null;
   nextActionDue?: string | null;
   notes?: string | null;
+  rating?: number | null;
   roleTypeId?: string | null;
   roleTitle?: string;
+  salary?: string | null;
   sourceId?: string | null;
   sourceUrl?: string | null;
   statusId?: string;
+  workArrangement?: WorkArrangement | null;
 }
 
 export interface ApplicationEvent {
@@ -116,6 +129,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
+}
+
+function isNullableBoundedText(
+  value: unknown,
+  maximumLength: number,
+): value is string | null {
+  return (
+    value === null ||
+    (typeof value === "string" &&
+      value.trim().length > 0 &&
+      value.length <= maximumLength)
+  );
+}
+
+function isNullableWorkArrangement(
+  value: unknown,
+): value is WorkArrangement | null {
+  return (
+    value === null ||
+    value === "hybrid" ||
+    value === "remote" ||
+    value === "office"
+  );
 }
 
 function isReferenceValueId(value: unknown): value is string {
@@ -207,6 +243,7 @@ function parseLink(value: unknown): ApplicationLink {
 function parseApplication(value: unknown): ApplicationRecord {
   if (
     !isRecord(value) ||
+    !isNullableBoundedText(value.agency, 160) ||
     !isNullableString(value.appliedOn) ||
     typeof value.companyName !== "string" ||
     !Array.isArray(value.contacts) ||
@@ -219,10 +256,16 @@ function parseApplication(value: unknown): ApplicationRecord {
     !isNullableString(value.nextAction) ||
     !isNullableIsoDate(value.nextActionDue) ||
     !isNullableString(value.notes) ||
+    (value.rating !== null &&
+      (typeof value.rating !== "number" ||
+        !Number.isInteger(value.rating) ||
+        value.rating < 1 ||
+        value.rating > 5)) ||
     !isNullableReferenceLabel(value.roleType) ||
     !isNullableReferenceValueId(value.roleTypeId) ||
     (value.roleType === null) !== (value.roleTypeId === null) ||
     typeof value.roleTitle !== "string" ||
+    !isNullableBoundedText(value.salary, 160) ||
     !isNullableReferenceLabel(value.source) ||
     !isNullableReferenceValueId(value.sourceId) ||
     (value.source === null) !== (value.sourceId === null) ||
@@ -230,11 +273,13 @@ function parseApplication(value: unknown): ApplicationRecord {
     !isReferenceLabel(value.status) ||
     !isReferenceValueId(value.statusId) ||
     typeof value.statusIsTerminal !== "boolean" ||
-    typeof value.updatedAt !== "string"
+    typeof value.updatedAt !== "string" ||
+    !isNullableWorkArrangement(value.workArrangement)
   ) {
     throw new ApplicationsClientError("invalid_response");
   }
   return {
+    agency: value.agency,
     appliedOn: value.appliedOn,
     companyName: value.companyName,
     contacts: value.contacts.map(parseContact),
@@ -245,9 +290,11 @@ function parseApplication(value: unknown): ApplicationRecord {
     nextAction: value.nextAction,
     nextActionDue: value.nextActionDue,
     notes: value.notes,
+    rating: value.rating,
     roleType: value.roleType,
     roleTypeId: value.roleTypeId,
     roleTitle: value.roleTitle,
+    salary: value.salary,
     source: value.source,
     sourceId: value.sourceId,
     sourceUrl: value.sourceUrl,
@@ -255,6 +302,7 @@ function parseApplication(value: unknown): ApplicationRecord {
     statusId: value.statusId,
     statusIsTerminal: value.statusIsTerminal,
     updatedAt: value.updatedAt,
+    workArrangement: value.workArrangement,
   };
 }
 

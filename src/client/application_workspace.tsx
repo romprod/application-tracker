@@ -40,9 +40,9 @@ export function ApplicationWorkspace({
   applicationsClient: ApplicationsClient;
   emailLinksClient: EmailLinksClient;
   error?: string;
-  navigate: (page: "applications" | "overview") => void;
+  navigate: (page: "applications" | "opportunities" | "overview") => void;
   notice?: string;
-  page: "applications" | "overview";
+  page: "applications" | "opportunities" | "overview";
   referenceValuesClient: ReferenceValuesClient;
   session: AuthenticatedSession;
 }) {
@@ -275,7 +275,7 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
-          onViewAll={() => navigate("applications")}
+          onViewAll={() => navigate("opportunities")}
           referenceValues={referenceValues ?? []}
           session={session}
         />
@@ -285,6 +285,7 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
+          page={page}
           referenceValues={referenceValues ?? []}
         />
       )}
@@ -521,7 +522,7 @@ function DashboardView({
               </button>
             </div>
             {applications.length === 0 ? (
-              <ApplicationEmptyState onAdd={onAdd} />
+              <ApplicationEmptyState kind="opportunities" onAdd={onAdd} />
             ) : (
               <ApplicationTable
                 applications={applications.slice(0, 5)}
@@ -561,30 +562,39 @@ function ApplicationsPage({
   loadError,
   onAdd,
   onOpen,
+  page,
   referenceValues,
 }: {
   applications: ApplicationRecord[] | undefined;
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
+  page: "applications" | "opportunities";
   referenceValues: ReferenceValue[];
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [location, setLocation] = useState("");
+  const visibleApplications = useMemo(
+    () =>
+      page === "applications"
+        ? (applications ?? []).filter(({ appliedOn }) => appliedOn !== null)
+        : (applications ?? []),
+    [applications, page],
+  );
   const locations = useMemo(
     () =>
       [
         ...new Set(
-          (applications ?? []).flatMap((application) =>
+          visibleApplications.flatMap((application) =>
             application.location ? [application.location] : [],
           ),
         ),
       ].sort((left, right) => left.localeCompare(right)),
-    [applications],
+    [visibleApplications],
   );
   const referencedStatusIds = new Set(
-    (applications ?? []).map(({ statusId }) => statusId),
+    visibleApplications.map(({ statusId }) => statusId),
   );
   const statuses = referenceValues.filter(
     ({ category, id, isActive }) =>
@@ -592,19 +602,23 @@ function ApplicationsPage({
   );
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return (applications ?? []).filter((application) => {
+    return visibleApplications.filter((application) => {
       const matchesSearch =
         !query ||
         [
           application.id,
+          application.agency,
           application.companyName,
           application.roleTitle,
           application.location,
           application.nextAction,
           application.notes,
+          application.rating?.toString(),
           application.roleType,
+          application.salary,
           application.source,
           application.sourceUrl,
+          application.workArrangement,
           ...application.contacts.flatMap((contact) => [
             contact.name,
             contact.role,
@@ -619,15 +633,25 @@ function ApplicationsPage({
         (!location || application.location === location)
       );
     });
-  }, [applications, location, search, status]);
+  }, [location, search, status, visibleApplications]);
+  const pageName = page === "applications" ? "Applications" : "Opportunities";
+  const pageNameLower = pageName.toLocaleLowerCase();
 
   return (
     <div className="workspace-page applications-page">
       <header className="tracker-page-header">
         <div>
-          <span className="eyebrow">Opportunity register</span>
-          <h1>Applications</h1>
-          <p>Search, sort, and review every role in your private workspace.</p>
+          <span className="eyebrow">
+            {page === "applications"
+              ? "Application register"
+              : "Opportunity register"}
+          </span>
+          <h1>{pageName}</h1>
+          <p>
+            {page === "applications"
+              ? "Search, sort, and review the opportunities you have applied for."
+              : "Search, sort, and review every role in your private workspace."}
+          </p>
         </div>
         <button
           className="tracker-button tracker-button-primary"
@@ -643,11 +667,11 @@ function ApplicationsPage({
         <div className="tracker-search">
           <span aria-hidden="true">⌕</span>
           <label className="sr-only" htmlFor="application-search">
-            Search applications
+            Search {pageNameLower}
           </label>
           <input
             id="application-search"
-            placeholder="Search company, role, contact, or notes…"
+            placeholder={`Search ${pageNameLower} by end company, agency, role, salary, work arrangement, contact, or notes…`}
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -686,24 +710,28 @@ function ApplicationsPage({
 
       {loadError && <ApplicationLoadError />}
       {!applications && !loadError && (
-        <p className="tracker-loading">Opening the application register…</p>
+        <p className="tracker-loading">Opening the {pageNameLower} register…</p>
       )}
       {applications &&
         filtered.length === 0 &&
         !search &&
         !status &&
-        !location && <ApplicationEmptyState onAdd={onAdd} />}
+        !location && <ApplicationEmptyState kind={page} onAdd={onAdd} />}
       {applications &&
         filtered.length === 0 &&
         (Boolean(search) || Boolean(status) || Boolean(location)) && (
           <div className="tracker-empty-state">
             <span aria-hidden="true">⌕</span>
-            <h2>No matching applications</h2>
+            <h2>No matching {pageNameLower}</h2>
             <p>Change the search or filters to see more records.</p>
           </div>
         )}
       {filtered.length > 0 && (
-        <ApplicationTable applications={filtered} onOpen={onOpen} />
+        <ApplicationTable
+          applications={filtered}
+          label={pageName}
+          onOpen={onOpen}
+        />
       )}
     </div>
   );

@@ -17,6 +17,7 @@ import {
   applicationReference,
   formatDate,
   formatDateTime,
+  formatWorkArrangement,
 } from "./application_table";
 import { dueLabel } from "./application_next_action";
 import type { ReferenceValue } from "./reference_values_client";
@@ -28,6 +29,7 @@ import {
 } from "./email_links_client";
 
 export interface ApplicationFormState {
+  agency: string;
   appliedOn: string;
   companyName: string;
   contacts: ApplicationContactForm[];
@@ -36,11 +38,14 @@ export interface ApplicationFormState {
   nextAction: string;
   nextActionDue: string;
   notes: string;
+  rating: string;
   roleTypeId: string;
   roleTitle: string;
+  salary: string;
   sourceId: string;
   sourceUrl: string;
   statusId: string;
+  workArrangement: "" | NonNullable<ApplicationRecord["workArrangement"]>;
 }
 
 interface ApplicationContactForm {
@@ -59,6 +64,7 @@ function emptyApplicationForm(
   referenceValues: ReferenceValue[],
 ): ApplicationFormState {
   return {
+    agency: "",
     appliedOn: "",
     companyName: "",
     contacts: [],
@@ -67,20 +73,28 @@ function emptyApplicationForm(
     nextAction: "",
     nextActionDue: "",
     notes: "",
+    rating: "",
     roleTypeId: "",
     roleTitle: "",
+    salary: "",
     sourceId: "",
     sourceUrl: "",
     statusId:
       referenceValues.find(
         ({ category, isActive }) => category === "status" && isActive,
       )?.id ?? "",
+    workArrangement: "",
   };
 }
 
 type ApplicationTextField = Exclude<
   keyof ApplicationFormState,
-  "contacts" | "links" | "roleTypeId" | "sourceId" | "statusId"
+  | "contacts"
+  | "links"
+  | "roleTypeId"
+  | "sourceId"
+  | "statusId"
+  | "workArrangement"
 >;
 
 function contactInput(contact: ApplicationContactForm) {
@@ -102,11 +116,14 @@ function linkInput(link: ApplicationLinkForm) {
 export function applicationInput(
   form: ApplicationFormState,
 ): CreateApplicationInput {
+  const agency = form.agency.trim();
   const appliedOn = form.appliedOn.trim();
   const location = form.location.trim();
   const nextAction = form.nextAction.trim();
   const nextActionDue = form.nextActionDue.trim();
   const notes = form.notes.trim();
+  const rating = form.rating ? Number(form.rating) : undefined;
+  const salary = form.salary.trim();
   const sourceUrl = form.sourceUrl.trim();
   return {
     companyName: form.companyName.trim(),
@@ -114,14 +131,18 @@ export function applicationInput(
     links: form.links.map(linkInput),
     roleTitle: form.roleTitle.trim(),
     statusId: form.statusId,
+    ...(agency ? { agency } : {}),
     ...(appliedOn ? { appliedOn } : {}),
     ...(location ? { location } : {}),
     ...(nextAction ? { nextAction } : {}),
     ...(nextActionDue ? { nextActionDue } : {}),
     ...(notes ? { notes } : {}),
+    ...(rating ? { rating } : {}),
     ...(form.roleTypeId ? { roleTypeId: form.roleTypeId } : {}),
+    ...(salary ? { salary } : {}),
     ...(form.sourceId ? { sourceId: form.sourceId } : {}),
     ...(sourceUrl ? { sourceUrl } : {}),
+    ...(form.workArrangement ? { workArrangement: form.workArrangement } : {}),
   };
 }
 
@@ -130,6 +151,7 @@ export function applicationUpdateInput(
   expectedUpdatedAt: string,
 ): UpdateApplicationInput {
   return {
+    agency: form.agency.trim() || null,
     appliedOn: form.appliedOn.trim() || null,
     companyName: form.companyName.trim(),
     contacts: form.contacts.map(contactInput),
@@ -139,16 +161,20 @@ export function applicationUpdateInput(
     nextAction: form.nextAction.trim() || null,
     nextActionDue: form.nextActionDue.trim() || null,
     notes: form.notes.trim() || null,
+    rating: form.rating ? Number(form.rating) : null,
     roleTypeId: form.roleTypeId || null,
     roleTitle: form.roleTitle.trim(),
+    salary: form.salary.trim() || null,
     sourceId: form.sourceId || null,
     sourceUrl: form.sourceUrl.trim() || null,
     statusId: form.statusId,
+    workArrangement: form.workArrangement || null,
   };
 }
 
 function applicationForm(application: ApplicationRecord): ApplicationFormState {
   return {
+    agency: application.agency ?? "",
     appliedOn: application.appliedOn ?? "",
     companyName: application.companyName,
     contacts: application.contacts.map((contact) => ({
@@ -162,11 +188,14 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
     nextAction: application.nextAction ?? "",
     nextActionDue: application.nextActionDue ?? "",
     notes: application.notes ?? "",
+    rating: application.rating?.toString() ?? "",
     roleTypeId: application.roleTypeId ?? "",
     roleTitle: application.roleTitle,
+    salary: application.salary ?? "",
     sourceId: application.sourceId ?? "",
     sourceUrl: application.sourceUrl ?? "",
     statusId: application.statusId,
+    workArrangement: application.workArrangement ?? "",
   };
 }
 
@@ -303,7 +332,10 @@ export function ApplicationDrawer({
         <div className="tracker-drawer-content">
           <StatusChip status={application.status} />
           <h2 id="application-detail-title">{application.roleTitle}</h2>
-          <p className="tracker-drawer-company">{application.companyName}</p>
+          <p className="tracker-drawer-company">
+            <span>End company</span>
+            <strong>{application.companyName}</strong>
+          </p>
           <dl className="tracker-drawer-facts">
             <div>
               <dt>Applied</dt>
@@ -312,6 +344,10 @@ export function ApplicationDrawer({
             <div>
               <dt>Location</dt>
               <dd>{application.location ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Work arrangement</dt>
+              <dd>{formatWorkArrangement(application.workArrangement)}</dd>
             </div>
             <div>
               <dt>Updated</dt>
@@ -324,6 +360,22 @@ export function ApplicationDrawer({
             <div>
               <dt>Role type</dt>
               <dd>{application.roleType ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Agency</dt>
+              <dd>{application.agency ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Salary</dt>
+              <dd>{application.salary ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Rating</dt>
+              <dd>
+                {application.rating
+                  ? `${application.rating} out of 5`
+                  : "Not rated"}
+              </dd>
             </div>
           </dl>
           {application.sourceUrl && (
@@ -734,7 +786,7 @@ export function ApplicationDialog({
             </legend>
             <div className="tracker-form-grid">
               <div className="field">
-                <label htmlFor="application-company">Company</label>
+                <label htmlFor="application-company">End company</label>
                 <input
                   autoComplete="organization"
                   id="application-company"
@@ -744,6 +796,17 @@ export function ApplicationDialog({
                   onChange={(event) =>
                     updateText("companyName", event.target.value)
                   }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-agency">Agency</label>
+                <input
+                  autoComplete="organization"
+                  id="application-agency"
+                  maxLength={160}
+                  placeholder="Leave blank for a direct opportunity"
+                  value={form.agency}
+                  onChange={(event) => updateText("agency", event.target.value)}
                 />
               </div>
               <div className="field">
@@ -790,6 +853,32 @@ export function ApplicationDialog({
                     updateText("appliedOn", event.target.value)
                   }
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary">Salary</label>
+                <input
+                  autoComplete="off"
+                  id="application-salary"
+                  maxLength={160}
+                  placeholder="e.g. £70,000–£80,000"
+                  value={form.salary}
+                  onChange={(event) => updateText("salary", event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-rating">Rating</label>
+                <select
+                  id="application-rating"
+                  value={form.rating}
+                  onChange={(event) => updateText("rating", event.target.value)}
+                >
+                  <option value="">Not rated</option>
+                  <option value="1">1 — low priority</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5 — top opportunity</option>
+                </select>
               </div>
             </div>
           </fieldset>
@@ -851,6 +940,27 @@ export function ApplicationDialog({
                     updateText("location", event.target.value)
                   }
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="application-work-arrangement">
+                  Work arrangement
+                </label>
+                <select
+                  id="application-work-arrangement"
+                  value={form.workArrangement}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      workArrangement: event.target
+                        .value as ApplicationFormState["workArrangement"],
+                    }))
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="remote">Remote</option>
+                  <option value="office">Office</option>
+                </select>
               </div>
               <div className="field">
                 <label htmlFor="application-source">Source link</label>

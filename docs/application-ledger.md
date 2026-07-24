@@ -9,21 +9,26 @@ outcomes, documents, and MCP tools.
 
 An application contains:
 
-- company and role title;
+- end company and role title;
+- an optional agency, kept separate from the end company;
 - one workspace-defined status;
 - optional workspace-defined source and role type;
 - optional location, HTTP(S) source link, applied date, notes, current next
-  action, and next-action due date;
+  action, next-action due date, salary text, one-to-five rating, and work
+  arrangement (`hybrid`, `remote`, or `office`);
 - up to ten ordered contacts, each with a name and optional role, email, and
   phone number;
 - up to ten ordered, labeled HTTP(S) links; and
 - created and updated timestamps.
 
-Company and role are required. The server trims text, rejects unknown fields,
-limits notes to 5,000 characters and next actions to 500 characters, validates
-ISO dates and contact email addresses, caps each relation list at ten entries,
-and accepts only HTTP(S) web links. The browser validates returned dates,
-contacts, and links again before rendering them.
+End company and role are required. The server trims text, rejects unknown
+fields, limits agency and salary text to 160 characters, limits notes to 5,000
+characters and next actions to 500 characters, validates ISO dates and contact
+email addresses, caps each relation list at ten entries, and accepts only
+HTTP(S) web links. Ratings are whole numbers from one to five, and work
+arrangement accepts only `hybrid`, `remote`, or `office`. The browser validates
+returned dates, contacts, links, agency, salary, rating, and work arrangement
+again before rendering them.
 
 Administrators manage statuses, sources, and role types in Settings → Lists.
 Members choose active values when creating or editing an application. An
@@ -36,9 +41,12 @@ label, determines whether the application counts as open.
 The dashboard derives total, open, dynamic status, and closed counts from the
 active workspace's application records. It orders open next actions by due date,
 leaving undated actions last. Overdue, today, tomorrow, and upcoming labels make
-the immediate work visible. The Applications page provides text search, stage
-and location filters, and accessible sorting for every displayed data column.
-Its compact table pattern is reused for recent dashboard records.
+the immediate work visible. The Opportunities page lists every tracked role.
+The Applications page uses the same layout but includes only records with an
+applied date. Both pages provide text search, stage and location filters, and
+accessible sorting for every displayed data column, including agency, salary,
+rating, and work arrangement. Their compact table pattern is reused for recent
+dashboard records.
 
 Selecting a row opens a detail drawer. The drawer presents the current record,
 next action, source link, notes, and stage history without navigating away from
@@ -68,8 +76,9 @@ Each application has an immutable timeline with two event types:
 - `application_created`, with the stage selected at creation; and
 - `status_changed`, with the previous and new stages.
 
-Changing a company, role, date, location, source link, note, or next action does
-not create a timeline event. Saving the same stage again also creates no event.
+Changing an end company, agency, role, date, location, work arrangement, salary,
+rating, source link, note, or next action does not create a timeline event.
+Saving the same stage again also creates no event.
 The timeline identifies the member who made each recorded change and displays
 the newest event first. Events retain the status labels used at the time of the
 change, so later list renames do not rewrite history.
@@ -141,6 +150,10 @@ Migration 22 adds processing time, source email identity, and optional override
 reason fields to immutable application events. It backfills existing processing
 times from their effective timestamps and adds a workspace-unique partial index
 for email-sourced status events.
+
+Migration 25 adds nullable agency and salary text, a nullable one-to-five
+integer rating, and a nullable work arrangement constrained to `hybrid`,
+`remote`, or `office`. Existing records retain all four fields as unset.
 
 Foreign keys bind records, contacts, links, events, and deletion audits to a
 workspace and its members. Creation, editing, and removal transactions update

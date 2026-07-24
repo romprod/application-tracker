@@ -167,6 +167,13 @@ multiple status events. Optional override reasons are stored with the immutable
 event so an explicitly accepted stale or regressive transition remains
 explainable during read-back.
 
+The twenty-fifth migration adds nullable agency and salary text, a nullable
+one-to-five integer rating, and a nullable work arrangement to `applications`.
+Agency and salary are bounded to 160 non-blank characters when present, and
+work arrangement is constrained to `hybrid`, `remote`, or `office`. Existing
+rows remain valid with all four values unset, and the domain and SQL constraints
+apply the same bounds.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

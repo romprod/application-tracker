@@ -108,17 +108,21 @@ const jobSearchSummarySchema = z.strictObject({
   totalApplications: z.number().int().nonnegative(),
 });
 const applicationSummarySchema = z.strictObject({
+  agency: z.string().max(160).nullable(),
   appliedOn: z.iso.date().nullable(),
   companyName: z.string(),
   id: applicationIdSchema,
   location: z.string().nullable(),
   nextAction: z.string().nullable(),
   nextActionDue: z.iso.date().nullable(),
+  rating: z.number().int().min(1).max(5).nullable(),
   roleTitle: z.string(),
+  salary: z.string().max(160).nullable(),
   status: z.string(),
   statusId: referenceValueIdSchema,
   statusIsTerminal: z.boolean(),
   updatedAt: z.iso.datetime(),
+  workArrangement: z.enum(["hybrid", "remote", "office"]).nullable(),
 });
 const applicationListSchema = z.strictObject({
   applications: z.array(applicationSummarySchema),
@@ -138,6 +142,7 @@ const applicationLinkSchema = z.strictObject({
   url: z.url(),
 });
 const applicationRecordSchema = z.strictObject({
+  agency: z.string().max(160).nullable(),
   appliedOn: z.iso.date().nullable(),
   companyName: z.string(),
   contacts: z.array(applicationContactSchema),
@@ -148,9 +153,11 @@ const applicationRecordSchema = z.strictObject({
   nextAction: z.string().nullable(),
   nextActionDue: z.iso.date().nullable(),
   notes: z.string().nullable(),
+  rating: z.number().int().min(1).max(5).nullable(),
   roleTitle: z.string(),
   roleType: z.string().nullable(),
   roleTypeId: referenceValueIdSchema.nullable(),
+  salary: z.string().max(160).nullable(),
   source: z.string().nullable(),
   sourceId: referenceValueIdSchema.nullable(),
   sourceUrl: z.url().nullable(),
@@ -158,6 +165,7 @@ const applicationRecordSchema = z.strictObject({
   statusId: referenceValueIdSchema,
   statusIsTerminal: z.boolean(),
   updatedAt: z.iso.datetime(),
+  workArrangement: z.enum(["hybrid", "remote", "office"]).nullable(),
 });
 const maximumBulkApplicationUpdates = 25;
 const bulkApplicationUpdatesSchema = z
@@ -667,7 +675,7 @@ export function createApplicationMcpServer(
     {
       annotations: readOnlyAnnotations,
       description:
-        "List up to 100 application summaries, optionally filtered by status ID.",
+        "List up to 100 application summaries with end company, agency, salary, rating, and work arrangement, optionally filtered by status ID.",
       inputSchema: z.strictObject({
         limit: z.number().int().min(1).max(100).default(50),
         offset: z.number().int().nonnegative().default(0),
@@ -696,7 +704,7 @@ export function createApplicationMcpServer(
     {
       annotations: readOnlyAnnotations,
       description:
-        "Return one application with contacts, links, notes, and immutable stage events.",
+        "Return one application with end company, agency, salary, rating, work arrangement, contacts, links, notes, immutable stage events, and linked email evidence including any stored Outlook web URL.",
       inputSchema: z.strictObject({ applicationId: applicationIdSchema }),
       outputSchema: applicationDetailSchema,
       title: "Get application",
@@ -920,7 +928,7 @@ export function createApplicationMcpServer(
     {
       annotations: idempotentWriteAnnotations,
       description:
-        "Idempotently match or create an application, apply an optional selected-field update, and persist workspace-unique posting and email evidence. email.receivedAt is the effective time for a requested status change; stale or regressive changes are rejected unless statusOverride explicitly supplies a reason. Reusing the same email Message-ID cannot create a duplicate application or status event.",
+        "Idempotently match or create an application, apply an optional selected-field update, and persist workspace-unique posting and email evidence. Pass the Outlook message web link as email.webUrl so get_application can return it. email.receivedAt is the effective time for a requested status change; stale or regressive changes are rejected unless statusOverride explicitly supplies a reason. Reusing the same email Message-ID cannot create a duplicate application or status event.",
       inputSchema: upsertApplicationFromEmailSchema,
       outputSchema: upsertApplicationFromEmailResultSchema,
       title: "Upsert application from email",

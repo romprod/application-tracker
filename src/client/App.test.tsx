@@ -62,6 +62,7 @@ function authenticationRequiredResponse(): Response {
 }
 
 const applicationRecord: ApplicationRecord = {
+  agency: "Example Recruitment",
   appliedOn: "2026-07-18",
   companyName: "Example Studio",
   contacts: [
@@ -84,9 +85,11 @@ const applicationRecord: ApplicationRecord = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  rating: 4,
   roleType: "Full-time",
   roleTypeId: "99999999-9999-4999-8999-999999999999",
   roleTitle: "Product Designer",
+  salary: "£70,000–£80,000",
   source: "Referral",
   sourceId: "88888888-8888-4888-8888-888888888888",
   sourceUrl: "https://jobs.example.com/product-designer",
@@ -94,6 +97,7 @@ const applicationRecord: ApplicationRecord = {
   statusId: "12121212-1212-4121-8121-121212121212",
   statusIsTerminal: false,
   updatedAt: "2026-07-18T12:15:00.000Z",
+  workArrangement: "hybrid",
 };
 
 const applicationEvents: ApplicationEvent[] = [
@@ -659,10 +663,10 @@ describe("application shell", () => {
     );
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Applications" }),
+      await screen.findByRole("button", { name: "Opportunities" }),
     );
-    expect(pushState).toHaveBeenCalledWith(null, "", "/applications");
-    expect(window.location.pathname).toBe("/applications");
+    expect(pushState).toHaveBeenCalledWith(null, "", "/opportunities");
+    expect(window.location.pathname).toBe("/opportunities");
 
     window.history.replaceState(null, "", "/dashboard");
     fireEvent.popState(window);
@@ -765,7 +769,7 @@ describe("application shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("opens the application ledger for an authenticated user", async () => {
+  it("opens the opportunity register for an authenticated user", async () => {
     const applicationsClient = createApplicationsClient();
     render(
       <App
@@ -780,34 +784,70 @@ describe("application shell", () => {
     );
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Applications" }),
+      await screen.findByRole("button", { name: "Opportunities" }),
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Applications" }),
+      await screen.findByRole("heading", { name: "Opportunities" }),
     ).toBeInTheDocument();
     expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
     expect(
-      screen.getByRole("table", { name: "Applications" }),
+      screen.getByRole("table", { name: "Opportunities" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Example Studio")).toBeInTheDocument();
     expect(screen.getByText("Product Designer")).toBeInTheDocument();
+    expect(screen.getByText("Example Recruitment")).toBeInTheDocument();
     const companySort = screen.getByRole("button", {
-      name: /Company \/ role, not sorted/,
+      name: /End company \/ role, not sorted/,
     });
     fireEvent.click(companySort);
     expect(companySort.closest("th")).toHaveAttribute("aria-sort", "ascending");
     const search = screen.getByRole("searchbox", {
-      name: "Search applications",
+      name: "Search opportunities",
     });
     fireEvent.change(search, { target: { value: "Morgan Recruiter" } });
     expect(
-      screen.getByRole("table", { name: "Applications" }),
+      screen.getByRole("table", { name: "Opportunities" }),
     ).toBeInTheDocument();
     fireEvent.change(search, { target: { value: "Hiring portal" } });
     expect(
-      screen.getByRole("table", { name: "Applications" }),
+      screen.getByRole("table", { name: "Opportunities" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows only applied opportunities in Applications", async () => {
+    const prospect = {
+      ...applicationRecord,
+      appliedOn: null,
+      companyName: "Prospect Company",
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "Prospect",
+      statusId: "77777777-7777-4777-8777-777777777777",
+    };
+    render(
+      <App
+        applicationsClient={createApplicationsClient([
+          prospect,
+          applicationRecord,
+        ])}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Applications" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Example Studio")).toBeInTheDocument();
+    expect(screen.queryByText("Prospect Company")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/applications");
   });
 
   it("opens the document library and uploads an associated original", async () => {
@@ -1003,21 +1043,29 @@ describe("application shell", () => {
       screen.getAllByRole("button", { name: "Log application" })[0]!,
     );
     await screen.findByRole("heading", { name: "Log an application" });
-    fireEvent.change(screen.getByLabelText("Company"), {
+    fireEvent.change(screen.getByLabelText("End company"), {
       target: { value: "Example Studio" },
+    });
+    fireEvent.change(screen.getByLabelText("Agency"), {
+      target: { value: "Example Recruitment" },
     });
     fireEvent.change(screen.getByLabelText("Role title"), {
       target: { value: "Product Designer" },
+    });
+    fireEvent.change(screen.getByLabelText("Work arrangement"), {
+      target: { value: "hybrid" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save application" }));
 
     await waitFor(() =>
       expect(applicationsClient.createApplication).toHaveBeenCalledWith({
+        agency: "Example Recruitment",
         companyName: "Example Studio",
         contacts: [],
         links: [],
         roleTitle: "Product Designer",
         statusId: "77777777-7777-4777-8777-777777777777",
+        workArrangement: "hybrid",
       }),
     );
     expect(await screen.findByText("Example Studio")).toBeInTheDocument();
@@ -1051,7 +1099,9 @@ describe("application shell", () => {
     expect(
       screen.getByRole("heading", { name: "Edit application" }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Company")).toHaveValue("Example Studio");
+    expect(screen.getByLabelText("End company")).toHaveValue("Example Studio");
+    expect(screen.getByLabelText("Agency")).toHaveValue("Example Recruitment");
+    expect(screen.getByLabelText("Work arrangement")).toHaveValue("hybrid");
     expect(screen.getByLabelText("Next action")).toHaveValue(
       "Send the portfolio follow-up.",
     );
@@ -1070,6 +1120,7 @@ describe("application shell", () => {
       expect(applicationsClient.updateApplication).toHaveBeenCalledWith(
         applicationRecord.id,
         {
+          agency: "Example Recruitment",
           appliedOn: "2026-07-18",
           companyName: "Example Studio",
           contacts: applicationRecord.contacts,
@@ -1079,11 +1130,14 @@ describe("application shell", () => {
           nextAction: "Send the portfolio follow-up.",
           nextActionDue: "2026-07-21",
           notes: "Referred by a former colleague.",
+          rating: 4,
           roleTypeId: "99999999-9999-4999-8999-999999999999",
           roleTitle: "Product Designer",
+          salary: "£70,000–£80,000",
           sourceId: "88888888-8888-4888-8888-888888888888",
           sourceUrl: "https://jobs.example.com/product-designer",
           statusId: "13131313-1313-4131-8131-131313131313",
+          workArrangement: "hybrid",
         },
       ),
     );
@@ -1125,7 +1179,7 @@ describe("application shell", () => {
       await screen.findByRole("button", { name: "Open Example Studio" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit application" }));
-    fireEvent.change(screen.getByLabelText("Company"), {
+    fireEvent.change(screen.getByLabelText("End company"), {
       target: { value: "My stale edit" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -1136,7 +1190,9 @@ describe("application shell", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Reload latest version" }),
     );
-    expect(screen.getByLabelText("Company")).toHaveValue("Updated elsewhere");
+    expect(screen.getByLabelText("End company")).toHaveValue(
+      "Updated elsewhere",
+    );
     expect(screen.getByLabelText("Notes")).toHaveValue(
       "Saved by another editor.",
     );
@@ -1213,7 +1269,7 @@ describe("application shell", () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: "Log application" })[0]!,
     );
-    fireEvent.change(screen.getByLabelText("Company"), {
+    fireEvent.change(screen.getByLabelText("End company"), {
       target: { value: "Example Studio" },
     });
     fireEvent.change(screen.getByLabelText("Role title"), {

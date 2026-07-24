@@ -6,6 +6,7 @@ describe("workspace routes", () => {
   it.each([
     ["/", "overview", "/dashboard"],
     ["/dashboard/", "overview", "/dashboard"],
+    ["/opportunities", "opportunities", "/opportunities"],
     ["/applications", "applications", "/applications"],
     ["/documents", "documents", "/documents"],
     ["/settings", "settings-lists", "/settings/lists"],
@@ -30,6 +31,7 @@ describe("workspace routes", () => {
 
   it("provides a canonical path for every page", () => {
     expect(workspacePagePath("overview")).toBe("/dashboard");
+    expect(workspacePagePath("opportunities")).toBe("/opportunities");
     expect(workspacePagePath("applications")).toBe("/applications");
     expect(workspacePagePath("documents")).toBe("/documents");
     expect(workspacePagePath("settings-lists")).toBe("/settings/lists");

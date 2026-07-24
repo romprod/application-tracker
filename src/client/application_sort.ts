@@ -1,13 +1,17 @@
 import type { ApplicationRecord } from "./applications_client";
 
 export type ApplicationSortKey =
+  | "agency"
   | "appliedOn"
   | "company"
   | "location"
   | "nextAction"
+  | "rating"
   | "reference"
+  | "salary"
   | "status"
-  | "updatedAt";
+  | "updatedAt"
+  | "workArrangement";
 
 export interface ApplicationSort {
   direction: "ascending" | "descending";
@@ -19,6 +23,8 @@ function sortValue(
   key: ApplicationSortKey,
 ): string | null {
   switch (key) {
+    case "agency":
+      return application.agency;
     case "appliedOn":
       return application.appliedOn;
     case "company":
@@ -27,12 +33,18 @@ function sortValue(
       return application.location;
     case "nextAction":
       return application.nextAction;
+    case "rating":
+      return application.rating?.toString() ?? null;
     case "reference":
       return application.id;
+    case "salary":
+      return application.salary;
     case "status":
       return application.status;
     case "updatedAt":
       return application.updatedAt;
+    case "workArrangement":
+      return application.workArrangement;
   }
 }
 

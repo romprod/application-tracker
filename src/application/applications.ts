@@ -4,6 +4,7 @@ import type {
   ApplicationLinkInput,
   CreateApplicationInput,
   UpdateApplicationInput,
+  WorkArrangement,
 } from "../domain/applications.js";
 
 export interface ApplicationContact {
@@ -19,6 +20,7 @@ export interface ApplicationLink {
 }
 
 export interface ApplicationRecord {
+  agency: string | null;
   appliedOn: string | null;
   companyName: string;
   contacts: ApplicationContact[];
@@ -29,9 +31,11 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  rating: number | null;
   roleType: string | null;
   roleTypeId: string | null;
   roleTitle: string;
+  salary: string | null;
   source: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -39,9 +43,11 @@ export interface ApplicationRecord {
   statusId: string;
   statusIsTerminal: boolean;
   updatedAt: string;
+  workArrangement: WorkArrangement | null;
 }
 
 export interface CreateApplicationRecord {
+  agency: string | null;
   appliedOn: string | null;
   companyName: string;
   contacts?: ApplicationContact[];
@@ -52,12 +58,15 @@ export interface CreateApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  rating: number | null;
   roleTypeId: string | null;
   roleTitle: string;
+  salary: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
   statusId: string;
   workspaceId: string;
+  workArrangement: WorkArrangement | null;
 }
 
 export interface DeleteApplicationRecord {
@@ -188,6 +197,7 @@ export class ApplicationLedgerService {
     input: CreateApplicationInput,
   ): ApplicationRecord {
     return this.repository.createApplication({
+      agency: input.agency ?? null,
       appliedOn: input.appliedOn ?? null,
       companyName: input.companyName,
       contacts: (input.contacts ?? []).map(contactRecord),
@@ -198,12 +208,15 @@ export class ApplicationLedgerService {
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: input.notes ?? null,
+      rating: input.rating ?? null,
       roleTypeId: input.roleTypeId ?? null,
       roleTitle: input.roleTitle,
+      salary: input.salary ?? null,
       sourceId: input.sourceId ?? null,
       sourceUrl: input.sourceUrl ?? null,
       statusId: input.statusId,
       workspaceId: actor.workspaceId,
+      workArrangement: input.workArrangement ?? null,
     });
   }
 

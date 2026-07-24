@@ -14,10 +14,12 @@ import { dueLabel } from "./application_next_action";
 export function ApplicationTable({
   applications,
   compact = false,
+  label = "Applications",
   onOpen,
 }: {
   applications: ApplicationRecord[];
   compact?: boolean;
+  label?: string;
   onOpen: (application: ApplicationRecord) => void;
 }) {
   const [sort, setSort] = useState<ApplicationSort | null>(null);
@@ -61,14 +63,18 @@ export function ApplicationTable({
 
   return (
     <div className={`tracker-table-shell${compact ? " compact" : ""}`}>
-      <table className="tracker-applications-table" aria-label="Applications">
+      <table className="tracker-applications-table" aria-label={label}>
         <thead>
           <tr>
             {sortableHeader("Ref", "reference")}
-            {sortableHeader("Company / role", "company")}
+            {sortableHeader("End company / role", "company")}
+            {!compact && sortableHeader("Agency", "agency")}
             {sortableHeader("Stage", "status")}
+            {!compact && sortableHeader("Salary", "salary")}
+            {!compact && sortableHeader("Rating", "rating")}
             {!compact && sortableHeader("Applied", "appliedOn")}
             {!compact && sortableHeader("Location", "location")}
+            {!compact && sortableHeader("Work arrangement", "workArrangement")}
             {sortableHeader("Next action", "nextAction")}
             {sortableHeader("Updated", "updatedAt")}
             <th scope="col">
@@ -98,11 +104,21 @@ export function ApplicationTable({
                 <strong>{application.companyName}</strong>
                 <span>{application.roleTitle}</span>
               </td>
+              {!compact && <td>{application.agency ?? "—"}</td>}
               <td>
                 <StatusChip status={application.status} />
               </td>
+              {!compact && <td>{application.salary ?? "—"}</td>}
+              {!compact && (
+                <td>
+                  <RatingStars rating={application.rating} />
+                </td>
+              )}
               {!compact && <td>{formatDate(application.appliedOn)}</td>}
               {!compact && <td>{application.location ?? "—"}</td>}
+              {!compact && (
+                <td>{formatWorkArrangement(application.workArrangement)}</td>
+              )}
               <NextActionCell application={application} />
               <td>{formatDate(application.updatedAt)}</td>
               <td>
@@ -123,6 +139,22 @@ export function ApplicationTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RatingStars({ rating }: { rating: number | null }) {
+  if (rating === null) return <>—</>;
+  return (
+    <span
+      className="tracker-rating"
+      aria-label={`${rating} out of 5 stars`}
+      title={`${rating} out of 5 stars`}
+    >
+      <span aria-hidden="true">
+        {"★".repeat(rating)}
+        <span>{"☆".repeat(5 - rating)}</span>
+      </span>
+    </span>
   );
 }
 
@@ -148,12 +180,23 @@ export function StatusChip({ status }: { status: ApplicationStatus }) {
   );
 }
 
-export function ApplicationEmptyState({ onAdd }: { onAdd: () => void }) {
+export function ApplicationEmptyState({
+  kind = "applications",
+  onAdd,
+}: {
+  kind?: "applications" | "opportunities";
+  onAdd: () => void;
+}) {
+  const opportunities = kind === "opportunities";
   return (
     <div className="tracker-empty-state">
       <span aria-hidden="true">◎</span>
-      <h2>No applications yet</h2>
-      <p>Log the first opportunity to start your search history.</p>
+      <h2>{opportunities ? "No opportunities yet" : "No applications yet"}</h2>
+      <p>
+        {opportunities
+          ? "Log the first opportunity to start your search history."
+          : "Set an applied date on an opportunity and it will appear here."}
+      </p>
       <button
         className="tracker-button tracker-button-primary"
         type="button"
@@ -184,6 +227,14 @@ export function formatDate(value: string | null): string {
     month: "short",
     year: "numeric",
   }).format(new Date(value.includes("T") ? value : `${value}T00:00:00`));
+}
+
+export function formatWorkArrangement(
+  value: ApplicationRecord["workArrangement"],
+): string {
+  return value
+    ? `${value.charAt(0).toLocaleUpperCase()}${value.slice(1)}`
+    : "Not recorded";
 }
 
 export function formatDateTime(value: string): string {
