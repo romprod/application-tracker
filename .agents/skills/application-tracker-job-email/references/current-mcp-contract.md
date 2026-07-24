@@ -32,6 +32,12 @@ When duplicate consolidation is explicitly in scope, call
 before any approved apply. Rerun `match_job_application_email` after a
 successful merge and before the email upsert.
 
+Application Tracker is consumed directly as an MCP server. Its schema version
+and generated manifest describe that live contract. Optional publication
+through an external managed distribution channel is separate from this
+contract and requires an explicit user request; schema drift alone is not
+authorization to register or submit a plugin.
+
 ## Microsoft 365 connector discovery
 
 Discover an already-connected `@softeria/ms-365-mcp-server` instance from the

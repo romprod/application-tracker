@@ -1,9 +1,15 @@
-# MCP schema publication
+# MCP schema versioning and optional publication
 
 Application Tracker treats its MCP tool metadata as a versioned public
-contract. OpenAI plugins use a reviewed snapshot of that metadata, so deploying
-the server does not by itself update the tools and schemas available through a
-published plugin.
+contract. Direct MCP clients discover that contract from the running server.
+Schema changes do not require Application Tracker to be registered or
+published as a plugin.
+
+OpenAI-managed publication is an optional, separate distribution channel. Use
+the publication workflow in this document only when the user or project owner
+explicitly requests that outcome. A schema version change, manifest drift,
+skill update, or ordinary production deployment is not authorization to submit
+or publish anything externally.
 
 ## Schema status tool
 
@@ -12,8 +18,9 @@ published plugin.
 - the live schema version, SHA-256 digest, tool count, and per-tool digests;
 - the last schema version, digest, and tool count explicitly marked as
   published;
-- `current` or `refresh_required`;
-- the required `scan_submit_publish` workflow; and
+- `current` or `update_available`;
+- `publicationRequired: false`;
+- the available `scan_submit_publish` workflow; and
 - `selfRefreshSupported: false`, because the server cannot replace OpenAI's
   reviewed plugin snapshot.
 
@@ -44,18 +51,33 @@ When a tool contract changes:
 manifest is stale. Generation also fails when a contract changes without a
 version increment, or when the version changes without a contract change.
 
-## Release guard
+## Direct MCP releases
 
-Before a production release, run:
+Direct MCP releases require the normal quality gates, including the generated
+manifest check:
 
 ```sh
-npm run mcp:schema:release-check
+npm run check
 ```
 
-The command exits successfully when the generated live contract matches
-[`mcp_published_schema.ts`](../src/application/mcp_published_schema.ts). It
-exits non-zero with both versions and hashes when OpenAI publication is still
-required.
+Existing clients may need to reconnect or start a fresh task to rediscover new
+tools. They do not need a plugin registration or an external publication step.
+
+`npm run mcp:schema:release-check` reports whether the live contract differs
+from [`mcp_published_schema.ts`](../src/application/mcp_published_schema.ts),
+but that drift is informational and does not block a direct MCP release.
+
+## Optional OpenAI-managed distribution
+
+If this distribution channel was explicitly requested, run the strict check:
+
+```sh
+npm run mcp:schema:publication-check
+```
+
+The strict command exits non-zero while the last marked publication differs
+from the live schema. This failure applies only to the explicitly requested
+managed-distribution release.
 
 For a planned backward-compatible metadata change:
 
@@ -74,7 +96,8 @@ For a planned backward-compatible metadata change:
 
 6. Review and commit the updated published-schema marker, then deploy that
    server-only status change.
-7. Run `npm run mcp:schema:release-check` again and require a successful exit.
+7. Run `npm run mcp:schema:publication-check` again and require a successful
+   exit for that optional distribution release.
 
 Never mark a digest as published before the portal shows that exact metadata
 version as live. The marker is evidence for the release guard; it does not call
