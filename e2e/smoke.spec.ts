@@ -446,6 +446,56 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     applicationsTable.getByRole("button", { name: "Filter Stage" }),
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Log application" }).click();
+  await applicationDialog.getByLabel("End company").fill("Example Studio");
+  await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
+  await applicationDialog.getByLabel("Role title").fill("Product Designer");
+  await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
+  await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+  await applicationDialog.getByLabel("Rating").selectOption("4");
+  await applicationDialog.getByLabel("Location").fill("London");
+  await applicationDialog.getByLabel("Work arrangement").selectOption("hybrid");
+  await applicationDialog
+    .getByRole("button", { name: "Save application" })
+    .click();
+  await expect(
+    applicationsTable.getByRole("row").filter({ hasText: "Example Studio" }),
+  ).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Review duplicates" }).click();
+  const duplicateDialog = page.getByRole("dialog", {
+    name: "Review duplicate applications",
+  });
+  await expect(duplicateDialog).toHaveAttribute("aria-modal", "true");
+  await expect(
+    duplicateDialog.getByRole("button", {
+      name: "Close duplicate application review",
+    }),
+  ).toBeFocused();
+  await expect(duplicateDialog.getByText("probable match")).toBeVisible();
+  await duplicateDialog
+    .getByRole("button", { name: "Keep this record" })
+    .nth(1)
+    .click();
+  await expect(
+    duplicateDialog.getByRole("heading", {
+      name: "Keep Example Studio · Product Designer",
+    }),
+  ).toBeVisible();
+  await expect(
+    duplicateDialog.getByText("Source events retained"),
+  ).toBeVisible();
+  await duplicateDialog.getByRole("button", { name: "Confirm merge" }).click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Example Studio duplicates were merged safely.",
+    }),
+  ).toBeVisible();
+  await expect(duplicateDialog).toHaveCount(0);
+  await expect(
+    applicationsTable.getByRole("row").filter({ hasText: "Example Studio" }),
+  ).toHaveCount(1);
+
   await page.getByRole("button", { name: "Documents" }).click();
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
   await expect(page).toHaveURL(/\/documents$/);

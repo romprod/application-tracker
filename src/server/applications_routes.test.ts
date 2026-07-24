@@ -83,12 +83,14 @@ async function createApplicationsApp() {
   }
   return {
     app,
+    database,
     references: {
       applied: referenceId("status", "Applied"),
       interview: referenceId("status", "Interview"),
       referral: referenceId("source", "Referral"),
       roleType: referenceId("role_type", "Full-time"),
     },
+    setup,
   };
 }
 
@@ -110,20 +112,53 @@ function sameOrigin(test: request.Test): request.Test {
     .set("Origin", "https://tracker.example.test");
 }
 
+function responseBody(response: request.Response): Record<string, unknown> {
+  const body: unknown = response.body;
+  if (typeof body !== "object" || body === null) {
+    throw new Error("Expected a response object");
+  }
+  return body as Record<string, unknown>;
+}
+
+function objectProperty(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  const value = record[key];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Expected ${key} to be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function objectArrayProperty(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown>[] {
+  const value = record[key];
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (item) =>
+        typeof item === "object" && item !== null && !Array.isArray(item),
+    )
+  ) {
+    throw new Error(`Expected ${key} to be an object array`);
+  }
+  return value as Record<string, unknown>[];
+}
+
+function responseObject(
+  response: request.Response,
+  key: string,
+): Record<string, unknown> {
+  return objectProperty(responseBody(response), key);
+}
+
 function createdApplication(
   response: request.Response,
 ): Record<string, unknown> {
-  const body: unknown = response.body;
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("application" in body) ||
-    typeof body.application !== "object" ||
-    body.application === null
-  ) {
-    throw new Error("Expected an application response");
-  }
-  return body.application as Record<string, unknown>;
+  return responseObject(response, "application");
 }
 
 function applicationInput(references: {
@@ -192,6 +227,16 @@ describe("application ledger routes", () => {
       .set("Host", "tracker.example.test")
       .expect(403, { error: { code: "csrf_rejected" } });
     await request(app)
+      .post("/api/applications/merge")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .send({
+        mode: "preview",
+        sourceApplicationId: "123e4567-e89b-12d3-a456-426614174000",
+        targetApplicationId: "223e4567-e89b-42d3-a456-426614174000",
+      })
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await request(app)
       .get("/api/applications/123e4567-e89b-12d3-a456-426614174000/events")
       .expect(401, { error: { code: "authentication_required" } });
     await request(app)
@@ -201,6 +246,129 @@ describe("application ledger routes", () => {
       .set("Origin", "https://other.example.test")
       .send(input)
       .expect(403, { error: { code: "csrf_rejected" } });
+  });
+
+  it("audits, previews, and applies an explicit application merge", async () => {
+    const { app, references } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const input = applicationInput(references);
+    const sourceResponse = await sameOrigin(
+      request(app).post("/api/applications"),
+    )
+      .set("Cookie", cookie)
+      .send({
+        ...input,
+        contacts: [
+          {
+            email: "source@example.com",
+            name: "Source Contact",
+            role: "Recruiter",
+          },
+        ],
+      })
+      .expect(201);
+    const targetResponse = await sameOrigin(
+      request(app).post("/api/applications"),
+    )
+      .set("Cookie", cookie)
+      .send({
+        ...input,
+        contacts: [
+          {
+            email: "target@example.com",
+            name: "Target Contact",
+            role: "Hiring manager",
+          },
+        ],
+      })
+      .expect(201);
+    const source = createdApplication(sourceResponse);
+    const target = createdApplication(targetResponse);
+
+    const audit = await request(app)
+      .get("/api/applications/duplicates?limit=1&offset=0")
+      .set("Cookie", cookie)
+      .expect(200);
+    const auditResult = responseObject(audit, "audit");
+    expect(auditResult).toMatchObject({ returned: 1, total: 1 });
+    const [auditCandidate] = objectArrayProperty(auditResult, "candidates");
+    expect(auditCandidate).toMatchObject({ confidence: "definite" });
+    expect(
+      objectArrayProperty(auditCandidate ?? {}, "reasons").some(
+        ({ kind }) => kind === "canonical_url",
+      ),
+    ).toBe(true);
+
+    const preview = await sameOrigin(
+      request(app).post("/api/applications/merge"),
+    )
+      .set("Cookie", cookie)
+      .send({
+        mode: "preview",
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+      })
+      .expect(200);
+    const previewResult = responseObject(preview, "merge");
+    expect(previewResult).toMatchObject({ applied: false });
+    const previewDetails = objectProperty(previewResult, "preview");
+    expect(previewDetails).toMatchObject({ safeToApply: true });
+    const previewContacts = objectProperty(previewDetails, "contacts");
+    expect(objectArrayProperty(previewContacts, "additions")[0]).toMatchObject({
+      name: "Source Contact",
+    });
+    const beforeMerge = await request(app)
+      .get("/api/applications")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(
+      objectArrayProperty(responseBody(beforeMerge), "applications"),
+    ).toHaveLength(2);
+
+    const applied = await sameOrigin(
+      request(app).post("/api/applications/merge"),
+    )
+      .set("Cookie", cookie)
+      .send({
+        confirm: true,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mode: "apply",
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+      })
+      .expect(200);
+    const appliedResult = responseObject(applied, "merge");
+    expect(appliedResult).toMatchObject({
+      alreadyApplied: false,
+      applied: true,
+    });
+    expect(objectProperty(appliedResult, "lineage")).toMatchObject({
+      sourceApplicationId: source.id,
+      targetApplicationId: target.id,
+    });
+    const appliedPreview = objectProperty(appliedResult, "preview");
+    const survivor = objectProperty(appliedPreview, "survivor");
+    expect(
+      objectArrayProperty(survivor, "contacts")
+        .map(({ name }) => name)
+        .sort(),
+    ).toEqual(["Source Contact", "Target Contact"]);
+    const afterMerge = await request(app)
+      .get("/api/applications")
+      .set("Cookie", cookie)
+      .expect(200);
+    const remainingApplications = objectArrayProperty(
+      responseBody(afterMerge),
+      "applications",
+    );
+    expect(remainingApplications).toHaveLength(1);
+    expect(remainingApplications[0]?.id).toBe(target.id);
+    await request(app)
+      .get(`/api/applications/${String(source.id)}/events`)
+      .set("Cookie", cookie)
+      .expect(200);
   });
 
   it("lets a member create and list sanitized workspace applications", async () => {

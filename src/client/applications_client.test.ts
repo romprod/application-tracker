@@ -225,6 +225,151 @@ describe("browserApplicationsClient", () => {
     );
   });
 
+  it("audits duplicate candidates with bounded pagination", async () => {
+    const duplicate = {
+      ...application,
+      id: "99999999-9999-4999-8999-999999999999",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          audit: {
+            candidates: [
+              {
+                applications: [application, duplicate],
+                confidence: "definite",
+                reasons: [
+                  {
+                    detail: application.sourceUrl,
+                    kind: "canonical_url",
+                  },
+                ],
+              },
+            ],
+            nextOffset: null,
+            offset: 0,
+            returned: 1,
+            total: 1,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.auditDuplicateApplications({
+        limit: 25,
+        offset: 0,
+      }),
+    ).resolves.toMatchObject({
+      candidates: [
+        {
+          confidence: "definite",
+          reasons: [{ kind: "canonical_url" }],
+        },
+      ],
+      returned: 1,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/applications/duplicates?limit=25&offset=0",
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+  });
+
+  it("previews an application merge through the same-origin endpoint", async () => {
+    const source = {
+      ...application,
+      id: "99999999-9999-4999-8999-999999999999",
+    };
+    const merge = {
+      alreadyApplied: false,
+      applied: false,
+      lineage: null,
+      preview: {
+        contacts: {
+          additions: [],
+          conflicts: [],
+          requiresResolution: false,
+          result: application.contacts,
+          source: source.contacts,
+          target: application.contacts,
+        },
+        documents: {
+          additions: [],
+          conflicts: [],
+          requiresResolution: false,
+          result: [],
+          source: [],
+          target: [],
+        },
+        emailEvidence: {
+          additions: [],
+          conflicts: [],
+          requiresResolution: false,
+          result: [],
+          source: [],
+          target: [],
+        },
+        fieldConflicts: [],
+        history: { sourceEvents: events, targetEvents: events },
+        informationNotRetained: [],
+        jobPostings: {
+          additions: [],
+          conflicts: [],
+          requiresResolution: false,
+          result: [],
+          source: [],
+          target: [],
+        },
+        links: {
+          additions: [],
+          conflicts: [],
+          requiresResolution: false,
+          result: application.links,
+          source: source.links,
+          target: application.links,
+        },
+        safeToApply: true,
+        source,
+        survivor: application,
+        target: application,
+        unresolvedConflicts: [],
+      },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ merge }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      mode: "preview" as const,
+      sourceApplicationId: source.id,
+      targetApplicationId: application.id,
+    };
+
+    await expect(
+      browserApplicationsClient.mergeApplications(input),
+    ).resolves.toMatchObject({
+      applied: false,
+      preview: { safeToApply: true },
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/applications/merge", {
+      body: JSON.stringify(input),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
   it("rejects malformed application records", async () => {
     vi.stubGlobal(
       "fetch",

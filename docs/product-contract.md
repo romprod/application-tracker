@@ -71,6 +71,22 @@ deletion is a soft delete, is advertised as destructive, and requires explicit
 confirmation in the tool input. A successful mutation and its audit event
 commit atomically.
 
+## Duplicate application contract
+
+Duplicate audits are read-only, bounded, paginated, and explain every candidate
+with deterministic evidence and a confidence band. A merge always names one
+source and one surviving target. Preview changes nothing and exposes every
+field decision, relationship addition, retained event, and item that cannot be
+kept.
+
+Apply requires explicit confirmation, both previewed record versions, and a
+source-or-target choice for every unresolved field. The server does not infer a
+"most advanced" status from labels. It consolidates relationships in one
+transaction, records immutable lineage, preserves the source's immutable events
+under their original application ID, and marks the source merged only after all
+steps succeed. An exact retry returns the existing lineage without duplicating
+relationships.
+
 ## Document contract
 
 Original document bytes may be stored and downloaded. Preview support is a

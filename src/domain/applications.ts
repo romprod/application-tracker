@@ -4,7 +4,7 @@ import { referenceValueIdSchema } from "./reference_values.js";
 export const applicationIdSchema = z.uuid();
 export const workArrangementSchema = z.enum(["hybrid", "remote", "office"]);
 
-const maximumApplicationRelations = 10;
+export const maximumApplicationRelations = 10;
 
 function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -28,7 +28,7 @@ function nullableText(maximumLength: number) {
   );
 }
 
-const applicationContactSchema = z.strictObject({
+export const applicationContactSchema = z.strictObject({
   email: z.preprocess(
     blankToUndefined,
     z.string().trim().email().max(254).optional(),
@@ -38,7 +38,7 @@ const applicationContactSchema = z.strictObject({
   role: optionalText(160),
 });
 
-const applicationLinkSchema = z.strictObject({
+export const applicationLinkSchema = z.strictObject({
   label: z.string().trim().min(1).max(80),
   url: z
     .url({ protocol: /^https?$/ })
@@ -131,9 +131,84 @@ export const updateApplicationSchema = z
     { message: "At least one application field must be supplied" },
   );
 
+export const applicationMergeFieldSchema = z.enum([
+  "agency",
+  "appliedOn",
+  "companyName",
+  "location",
+  "nextAction",
+  "nextActionDue",
+  "notes",
+  "rating",
+  "roleTypeId",
+  "roleTitle",
+  "salary",
+  "sourceId",
+  "sourceUrl",
+  "statusId",
+  "workArrangement",
+]);
+
+export const applicationMergeResolutionsSchema = z.strictObject({
+  contacts: z
+    .array(applicationContactSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
+  fields: z
+    .partialRecord(applicationMergeFieldSchema, z.enum(["source", "target"]))
+    .optional(),
+  links: z
+    .array(applicationLinkSchema)
+    .max(maximumApplicationRelations)
+    .optional(),
+});
+
+const applicationMergeIdentitySchema = {
+  sourceApplicationId: applicationIdSchema,
+  targetApplicationId: applicationIdSchema,
+};
+
+export const mergeApplicationsSchema = z
+  .discriminatedUnion("mode", [
+    z.strictObject({
+      ...applicationMergeIdentitySchema,
+      mode: z.literal("preview"),
+      resolutions: applicationMergeResolutionsSchema.optional(),
+    }),
+    z.strictObject({
+      ...applicationMergeIdentitySchema,
+      confirm: z.literal(true),
+      expectedSourceUpdatedAt: z.iso.datetime(),
+      expectedTargetUpdatedAt: z.iso.datetime(),
+      mode: z.literal("apply"),
+      resolutions: applicationMergeResolutionsSchema,
+    }),
+  ])
+  .refine(
+    ({ sourceApplicationId, targetApplicationId }) =>
+      sourceApplicationId !== targetApplicationId,
+    {
+      message: "Source and target applications must be different",
+      path: ["sourceApplicationId"],
+    },
+  );
+
+export const auditDuplicateApplicationsSchema = z.strictObject({
+  limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().nonnegative().default(0),
+});
+
 export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
 export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
 export type ApplicationChangesInput = z.infer<typeof applicationChangesSchema>;
+export type ApplicationMergeField = z.infer<typeof applicationMergeFieldSchema>;
+export type ApplicationMergeResolutions = z.infer<
+  typeof applicationMergeResolutionsSchema
+>;
+export type AuditDuplicateApplicationsInput = z.infer<
+  typeof auditDuplicateApplicationsSchema
+>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
+export type MergeApplicationsInput = z.infer<typeof mergeApplicationsSchema>;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;
 export type WorkArrangement = z.infer<typeof workArrangementSchema>;

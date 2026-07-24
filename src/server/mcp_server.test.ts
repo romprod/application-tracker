@@ -25,6 +25,13 @@ afterEach(async () => {
 
 function fakeTools(): McpApplicationTools {
   return {
+    auditDuplicateApplications: vi.fn(() => ({
+      candidates: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
     appendDocumentChunk: vi.fn(),
     beginDocumentImport: vi.fn(),
     bulkUpdateApplications: vi.fn(),
@@ -89,6 +96,7 @@ function fakeTools(): McpApplicationTools {
       matches: [],
       outcome: "none" as const,
     })),
+    mergeApplications: vi.fn(),
     updateApplication: vi.fn(),
     upsertApplicationFromEmail: vi.fn(),
   };
@@ -122,32 +130,50 @@ describe("local MCP server", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual(
       applicationMcpToolNames,
     );
-    for (const tool of listed.tools.slice(0, 11)) {
-      expect(tool.annotations).toMatchObject({
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-        readOnlyHint: true,
-      });
-    }
-    for (const tool of listed.tools.slice(11, 15)) {
-      expect(tool.annotations).toMatchObject({
-        idempotentHint: false,
-        openWorldHint: false,
-        readOnlyHint: false,
-      });
-    }
-    for (const tool of listed.tools.slice(15)) {
-      expect(tool.annotations).toMatchObject({
-        idempotentHint: true,
-        openWorldHint: false,
-        readOnlyHint: false,
-      });
+    const readOnlyTools = new Set([
+      "get_tracker_context",
+      "get_connector_schema_status",
+      "get_job_search_summary",
+      "list_applications",
+      "get_application",
+      "audit_duplicate_applications",
+      "match_job_application_email",
+      "extract_job_links",
+      "get_reference_data",
+      "get_document_import_capabilities",
+      "list_documents",
+      "export_document_chunk",
+    ]);
+    const nonIdempotentWriteTools = new Set([
+      "create_application",
+      "update_application",
+      "bulk_update_applications",
+      "delete_application",
+    ]);
+    for (const tool of listed.tools) {
+      if (readOnlyTools.has(tool.name)) {
+        expect(tool.annotations).toMatchObject({
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+          readOnlyHint: true,
+        });
+      } else {
+        expect(tool.annotations).toMatchObject({
+          idempotentHint: !nonIdempotentWriteTools.has(tool.name),
+          openWorldHint: false,
+          readOnlyHint: false,
+        });
+      }
     }
     expect(
       listed.tools.find(({ name }) => name === "delete_application")
         ?.annotations,
     ).toMatchObject({ destructiveHint: true });
+    expect(
+      listed.tools.find(({ name }) => name === "merge_applications")
+        ?.annotations,
+    ).toMatchObject({ destructiveHint: true, idempotentHint: true });
     for (const tool of listed.tools) {
       expect(tool.inputSchema.properties).not.toHaveProperty("actor");
       expect(tool.inputSchema.properties).not.toHaveProperty("workspace");

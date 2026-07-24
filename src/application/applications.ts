@@ -2,10 +2,19 @@ import type { AuthenticatedActor } from "./auth.js";
 import type {
   ApplicationContactInput,
   ApplicationLinkInput,
+  ApplicationMergeField,
+  ApplicationMergeResolutions,
+  AuditDuplicateApplicationsInput,
   CreateApplicationInput,
+  MergeApplicationsInput,
   UpdateApplicationInput,
   WorkArrangement,
 } from "../domain/applications.js";
+import type { DocumentRecord } from "./documents.js";
+import type {
+  ApplicationEmailEvidence,
+  ApplicationJobPosting,
+} from "./job_email_reconciliation.js";
 
 export interface ApplicationContact {
   email: string | null;
@@ -96,6 +105,108 @@ export interface ApplicationStatusEventInput {
   sourceEmailMessageId: string;
 }
 
+export type ApplicationDuplicateConfidence =
+  "definite" | "possible" | "probable";
+
+export type ApplicationDuplicateReasonKind =
+  | "agency"
+  | "applied_date"
+  | "canonical_url"
+  | "company_title"
+  | "contact"
+  | "email_message_id"
+  | "location"
+  | "posting_id";
+
+export interface ApplicationDuplicateReason {
+  detail: string;
+  kind: ApplicationDuplicateReasonKind;
+}
+
+export interface ApplicationDuplicateCandidate {
+  applications: [ApplicationRecord, ApplicationRecord];
+  confidence: ApplicationDuplicateConfidence;
+  reasons: ApplicationDuplicateReason[];
+}
+
+export interface ApplicationDuplicateAudit {
+  candidates: ApplicationDuplicateCandidate[];
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export type ApplicationMergeFieldValue = number | string | null;
+
+export interface ApplicationMergeFieldConflict {
+  field: ApplicationMergeField;
+  resolution: "source" | "target" | null;
+  resolvedValue: ApplicationMergeFieldValue;
+  sourceValue: ApplicationMergeFieldValue;
+  targetValue: ApplicationMergeFieldValue;
+}
+
+export interface ApplicationMergeRelationshipPreview<Record> {
+  additions: Record[];
+  conflicts: {
+    key: string;
+    source: Record;
+    target: Record;
+  }[];
+  requiresResolution: boolean;
+  result: Record[];
+  source: Record[];
+  target: Record[];
+}
+
+export interface ApplicationMergeLineage {
+  actorDisplayName: string;
+  id: string;
+  mergedAt: string;
+  sourceApplicationId: string;
+  sourceUpdatedAt: string;
+  targetApplicationId: string;
+  targetUpdatedAt: string;
+}
+
+export interface ApplicationMergePreview {
+  contacts: ApplicationMergeRelationshipPreview<ApplicationContact>;
+  documents: ApplicationMergeRelationshipPreview<DocumentRecord>;
+  emailEvidence: ApplicationMergeRelationshipPreview<ApplicationEmailEvidence>;
+  fieldConflicts: ApplicationMergeFieldConflict[];
+  history: {
+    sourceEvents: ApplicationEvent[];
+    targetEvents: ApplicationEvent[];
+  };
+  informationNotRetained: string[];
+  jobPostings: ApplicationMergeRelationshipPreview<ApplicationJobPosting>;
+  links: ApplicationMergeRelationshipPreview<ApplicationLink>;
+  safeToApply: boolean;
+  source: ApplicationRecord;
+  survivor: ApplicationRecord;
+  target: ApplicationRecord;
+  unresolvedConflicts: string[];
+}
+
+export interface ApplicationMergeResult {
+  alreadyApplied: boolean;
+  applied: boolean;
+  lineage: ApplicationMergeLineage | null;
+  preview: ApplicationMergePreview;
+}
+
+export interface ApplyApplicationMergeRecord {
+  actorUserId: string;
+  expectedSourceUpdatedAt: string;
+  expectedTargetUpdatedAt: string;
+  mergedAt: string;
+  resolutions: ApplicationMergeResolutions;
+  sourceApplicationId: string;
+  targetApplicationId: string;
+  workspaceId: string;
+}
+
 export type UpdateApplicationRecord = Omit<
   UpdateApplicationInput,
   "contacts" | "links"
@@ -123,8 +234,19 @@ function linkRecord(link: ApplicationLinkInput): ApplicationLink {
 }
 
 export interface ApplicationsRepository {
+  auditDuplicateApplications(
+    workspaceId: string,
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit;
   createApplication(input: CreateApplicationRecord): ApplicationRecord;
   deleteApplication(input: DeleteApplicationRecord): boolean;
+  mergeApplications(input: ApplyApplicationMergeRecord): ApplicationMergeResult;
+  previewApplicationMerge(
+    workspaceId: string,
+    sourceApplicationId: string,
+    targetApplicationId: string,
+    resolutions?: ApplicationMergeResolutions,
+  ): ApplicationMergePreview;
   listApplicationEvents(
     workspaceId: string,
     applicationId: string,
@@ -179,11 +301,57 @@ export class ApplicationStatusStaleError extends Error {
   }
 }
 
+export class ApplicationMergeNotFoundError extends Error {
+  public constructor() {
+    super("One or both applications could not be found");
+    this.name = "ApplicationMergeNotFoundError";
+  }
+}
+
+export class ApplicationMergeStateError extends Error {
+  public constructor(
+    public readonly code:
+      | "application_already_merged"
+      | "application_merge_deleted"
+      | "application_merge_target_unavailable",
+  ) {
+    super(code);
+    this.name = "ApplicationMergeStateError";
+  }
+}
+
+export class ApplicationMergeVersionConflictError extends Error {
+  public constructor(
+    public readonly source: ApplicationRecord,
+    public readonly target: ApplicationRecord,
+  ) {
+    super("One or both applications changed since the merge was previewed");
+    this.name = "ApplicationMergeVersionConflictError";
+  }
+}
+
+export class ApplicationMergeUnsafeError extends Error {
+  public constructor(public readonly preview: ApplicationMergePreview) {
+    super("The merge has unresolved conflicts");
+    this.name = "ApplicationMergeUnsafeError";
+  }
+}
+
 function nextUpdatedAt(expectedUpdatedAt: string, now: Date): string {
   const expectedMilliseconds = new Date(expectedUpdatedAt).getTime();
   return new Date(
     Math.max(now.getTime(), expectedMilliseconds + 1),
   ).toISOString();
+}
+
+function nextMergeTimestamp(
+  sourceUpdatedAt: string,
+  targetUpdatedAt: string,
+  now: Date,
+): string {
+  const latest =
+    sourceUpdatedAt > targetUpdatedAt ? sourceUpdatedAt : targetUpdatedAt;
+  return nextUpdatedAt(latest, now);
 }
 
 export class ApplicationLedgerService {
@@ -220,8 +388,48 @@ export class ApplicationLedgerService {
     });
   }
 
+  public auditDuplicateApplications(
+    actor: AuthenticatedActor,
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit {
+    return this.repository.auditDuplicateApplications(actor.workspaceId, input);
+  }
+
   public listApplications(actor: AuthenticatedActor): ApplicationRecord[] {
     return this.repository.listApplications(actor.workspaceId);
+  }
+
+  public mergeApplications(
+    actor: AuthenticatedActor,
+    input: MergeApplicationsInput,
+  ): ApplicationMergeResult {
+    if (input.mode === "preview") {
+      return {
+        alreadyApplied: false,
+        applied: false,
+        lineage: null,
+        preview: this.repository.previewApplicationMerge(
+          actor.workspaceId,
+          input.sourceApplicationId,
+          input.targetApplicationId,
+          input.resolutions,
+        ),
+      };
+    }
+    return this.repository.mergeApplications({
+      actorUserId: actor.userId,
+      expectedSourceUpdatedAt: input.expectedSourceUpdatedAt,
+      expectedTargetUpdatedAt: input.expectedTargetUpdatedAt,
+      mergedAt: nextMergeTimestamp(
+        input.expectedSourceUpdatedAt,
+        input.expectedTargetUpdatedAt,
+        this.clock(),
+      ),
+      resolutions: input.resolutions,
+      sourceApplicationId: input.sourceApplicationId,
+      targetApplicationId: input.targetApplicationId,
+      workspaceId: actor.workspaceId,
+    });
   }
 
   public deleteApplication(
