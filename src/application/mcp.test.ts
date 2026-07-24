@@ -117,6 +117,13 @@ describe("ApplicationMcpService", () => {
       }),
     ];
     const applicationService = {
+      auditDuplicateApplications: vi.fn().mockReturnValue({
+        candidates: [],
+        nextOffset: null,
+        offset: 0,
+        returned: 0,
+        total: 0,
+      }),
       createApplication: vi.fn(),
       deleteApplication: vi.fn(),
       listApplicationEvents: vi.fn().mockReturnValue([
@@ -130,6 +137,7 @@ describe("ApplicationMcpService", () => {
         },
       ]),
       listApplications: vi.fn().mockReturnValue(applications),
+      mergeApplications: vi.fn(),
       updateApplication: vi.fn(),
     };
     const referenceReader = {
@@ -224,6 +232,22 @@ describe("ApplicationMcpService", () => {
       jobPostings: [],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
+    expect(
+      service.auditDuplicateApplications({ limit: 25, offset: 0 }),
+    ).toEqual({
+      candidates: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    });
+    expect(
+      service.mergeApplications({
+        mode: "preview",
+        sourceApplicationId: "11111111-1111-4111-8111-111111111111",
+        targetApplicationId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toBeUndefined();
     expect(service.getDocumentImportCapabilities()).toEqual({
       maxDocumentBytes: 1024 * 1024,
       maxDocumentChunkBytes: 12 * 1024,
@@ -285,10 +309,12 @@ describe("ApplicationMcpService", () => {
         { username: "alex", workspaceSlug: "default" },
       ),
       {
+        auditDuplicateApplications: vi.fn(),
         createApplication: vi.fn(),
         deleteApplication: vi.fn(),
         listApplicationEvents: vi.fn(),
         listApplications: vi.fn().mockReturnValue([]),
+        mergeApplications: vi.fn(),
         updateApplication: vi.fn(),
       },
       { listReferenceValues: vi.fn().mockReturnValue([]) },
@@ -336,10 +362,12 @@ describe("ApplicationMcpService", () => {
         workspaceSlug: "default",
       }),
       {
+        auditDuplicateApplications: vi.fn(),
         createApplication: vi.fn(),
         deleteApplication: vi.fn(),
         listApplicationEvents: vi.fn(),
         listApplications: vi.fn().mockReturnValue([]),
+        mergeApplications: vi.fn(),
         updateApplication: vi.fn(),
       },
       { listReferenceValues: vi.fn().mockReturnValue([]) },
@@ -366,10 +394,12 @@ describe("ApplicationMcpService", () => {
     });
     const updated = { ...created, companyName: "Updated Company" };
     const applications = {
+      auditDuplicateApplications: vi.fn(),
       createApplication: vi.fn(() => created),
       deleteApplication: vi.fn(),
       listApplicationEvents: vi.fn(),
       listApplications: vi.fn().mockReturnValue([]),
+      mergeApplications: vi.fn(),
       updateApplication: vi.fn(() => updated),
     };
     const { documents, imports } = documentDependencies();
@@ -402,6 +432,25 @@ describe("ApplicationMcpService", () => {
       McpWriteAccessDisabledError,
     );
     expect(applications.createApplication).not.toHaveBeenCalled();
+    expect(
+      service.mergeApplications({
+        mode: "preview",
+        sourceApplicationId: "11111111-1111-4111-8111-111111111111",
+        targetApplicationId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toBeUndefined();
+    expect(() =>
+      service.mergeApplications({
+        confirm: true,
+        expectedSourceUpdatedAt: created.updatedAt,
+        expectedTargetUpdatedAt: created.updatedAt,
+        mode: "apply",
+        resolutions: { fields: {} },
+        sourceApplicationId: "11111111-1111-4111-8111-111111111111",
+        targetApplicationId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toThrow(McpWriteAccessDisabledError);
+    expect(applications.mergeApplications).toHaveBeenCalledTimes(1);
 
     accessMode = "read_write";
     expect(service.getTrackerContext().access).toBe("read_write");
@@ -432,6 +481,17 @@ describe("ApplicationMcpService", () => {
       applicationId: "application-created",
       deleted: true,
     });
+    expect(
+      service.mergeApplications({
+        confirm: true,
+        expectedSourceUpdatedAt: created.updatedAt,
+        expectedTargetUpdatedAt: created.updatedAt,
+        mode: "apply",
+        resolutions: { fields: {} },
+        sourceApplicationId: "11111111-1111-4111-8111-111111111111",
+        targetApplicationId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toBeUndefined();
     expect(applications.createApplication).toHaveBeenCalledWith(
       actor,
       createInput,

@@ -174,6 +174,16 @@ work arrangement is constrained to `hybrid`, `remote`, or `office`. Existing
 rows remain valid with all four values unset, and the domain and SQL constraints
 apply the same bounds.
 
+The twenty-sixth migration adds immutable `application_merges` lineage. Each
+workspace-scoped row binds one source application to one surviving target,
+records the actor, previewed concurrency values, explicit resolutions, and
+merge time, and rejects updates or deletions. A merge transaction consolidates
+documents, postings, email evidence, contacts, and links before inserting
+lineage and marking the source as merged. Existing source application events
+remain unchanged and keep their original application ID. The migration also
+extends the immutable MCP audit allowlist for duplicate audit and merge tools
+while preserving existing audit rows.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

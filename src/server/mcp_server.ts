@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import {
   ApplicationConflictError,
+  ApplicationMergeNotFoundError,
+  ApplicationMergeStateError,
+  ApplicationMergeUnsafeError,
+  ApplicationMergeVersionConflictError,
   ApplicationNotFoundError,
   ApplicationStatusEventConflictError,
   ApplicationStatusRegressionError,
@@ -46,7 +50,10 @@ import type {
 } from "../application/mcp_audit.js";
 import {
   applicationIdSchema,
+  applicationMergeFieldSchema,
+  auditDuplicateApplicationsSchema,
   createApplicationSchema,
+  mergeApplicationsSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
@@ -78,6 +85,10 @@ const idempotentWriteAnnotations = {
 const deleteAnnotations = {
   ...writeAnnotations,
   destructiveHint: true,
+} as const;
+const mergeAnnotations = {
+  ...deleteAnnotations,
+  idempotentHint: true,
 } as const;
 
 const emptyInputSchema = z.strictObject({});
@@ -304,6 +315,94 @@ const documentRecordSchema = z.strictObject({
   originalFilename: z.string(),
   uploadedByDisplayName: z.string(),
 });
+function mergeRelationshipPreviewSchema<RecordSchema extends z.ZodType>(
+  recordSchema: RecordSchema,
+) {
+  return z.strictObject({
+    additions: z.array(recordSchema),
+    conflicts: z.array(
+      z.strictObject({
+        key: z.string(),
+        source: recordSchema,
+        target: recordSchema,
+      }),
+    ),
+    requiresResolution: z.boolean(),
+    result: z.array(recordSchema),
+    source: z.array(recordSchema),
+    target: z.array(recordSchema),
+  });
+}
+const applicationDuplicateReasonSchema = z.strictObject({
+  detail: z.string(),
+  kind: z.enum([
+    "agency",
+    "applied_date",
+    "canonical_url",
+    "company_title",
+    "contact",
+    "email_message_id",
+    "location",
+    "posting_id",
+  ]),
+});
+const applicationDuplicateAuditSchema = z.strictObject({
+  candidates: z.array(
+    z.strictObject({
+      applications: z.tuple([applicationRecordSchema, applicationRecordSchema]),
+      confidence: z.enum(["definite", "possible", "probable"]),
+      reasons: z.array(applicationDuplicateReasonSchema).min(1),
+    }),
+  ),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+const applicationMergeFieldValueSchema = z
+  .union([z.string(), z.number()])
+  .nullable();
+const applicationMergePreviewSchema = z.strictObject({
+  contacts: mergeRelationshipPreviewSchema(applicationContactSchema),
+  documents: mergeRelationshipPreviewSchema(documentRecordSchema),
+  emailEvidence: mergeRelationshipPreviewSchema(applicationEmailEvidenceSchema),
+  fieldConflicts: z.array(
+    z.strictObject({
+      field: applicationMergeFieldSchema,
+      resolution: z.enum(["source", "target"]).nullable(),
+      resolvedValue: applicationMergeFieldValueSchema,
+      sourceValue: applicationMergeFieldValueSchema,
+      targetValue: applicationMergeFieldValueSchema,
+    }),
+  ),
+  history: z.strictObject({
+    sourceEvents: z.array(applicationEventSchema),
+    targetEvents: z.array(applicationEventSchema),
+  }),
+  informationNotRetained: z.array(z.string()),
+  jobPostings: mergeRelationshipPreviewSchema(applicationJobPostingSchema),
+  links: mergeRelationshipPreviewSchema(applicationLinkSchema),
+  safeToApply: z.boolean(),
+  source: applicationRecordSchema,
+  survivor: applicationRecordSchema,
+  target: applicationRecordSchema,
+  unresolvedConflicts: z.array(z.string()),
+});
+const applicationMergeLineageSchema = z.strictObject({
+  actorDisplayName: z.string(),
+  id: z.uuid(),
+  mergedAt: z.iso.datetime(),
+  sourceApplicationId: applicationIdSchema,
+  sourceUpdatedAt: z.iso.datetime(),
+  targetApplicationId: applicationIdSchema,
+  targetUpdatedAt: z.iso.datetime(),
+});
+const applicationMergeResultSchema = z.strictObject({
+  alreadyApplied: z.boolean(),
+  applied: z.boolean(),
+  lineage: applicationMergeLineageSchema.nullable(),
+  preview: applicationMergePreviewSchema,
+});
 const documentImportCapabilitiesSchema = z.strictObject({
   maxDocumentBytes: z.number().int().positive(),
   maxDocumentChunkBytes: z
@@ -468,6 +567,16 @@ function executeTool(
         ? failedToolResult("application_not_found")
         : failedToolResult("internal_error");
     }
+    if (error instanceof ApplicationMergeNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_merge_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeStateError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
     if (error instanceof DocumentNotFoundError) {
       return recordAuditEvent(audit, logger, tool, targetType, "not_found")
         ? failedToolResult("document_not_found")
@@ -528,6 +637,26 @@ function executeWriteTool(
     if (error instanceof ApplicationNotFoundError) {
       return recordAuditEvent(audit, logger, tool, targetType, "not_found")
         ? failedToolResult("application_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_merge_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeStateError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeVersionConflictError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_merge_conflict")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeUnsafeError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_merge_unresolved_conflicts")
         : failedToolResult("internal_error");
     }
     if (error instanceof ApplicationConflictError) {
@@ -713,6 +842,54 @@ export function createApplicationMcpServer(
       executeTool("get_application", "application", logger, options.audit, () =>
         tools.getApplication(applicationId),
       ),
+  );
+
+  server.registerTool(
+    "audit_duplicate_applications",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Return a bounded, paginated workspace audit of deterministic duplicate candidates. Each candidate includes both records, a confidence band, and explicit matching reasons.",
+      inputSchema: auditDuplicateApplicationsSchema,
+      outputSchema: applicationDuplicateAuditSchema,
+      title: "Audit duplicate applications",
+    },
+    (input) =>
+      executeTool(
+        "audit_duplicate_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.auditDuplicateApplications(input),
+      ),
+  );
+
+  server.registerTool(
+    "merge_applications",
+    {
+      annotations: mergeAnnotations,
+      description:
+        "Preview or atomically apply one explicit source-to-target application merge. Preview is read-only and returns every scalar and relationship conflict. Apply requires confirm=true, current updatedAt values for both records, and explicit resolutions for every conflict; it preserves source events through immutable merge lineage and marks the source merged only after all relationships succeed.",
+      inputSchema: mergeApplicationsSchema,
+      outputSchema: applicationMergeResultSchema,
+      title: "Merge applications",
+    },
+    (input) =>
+      input.mode === "preview"
+        ? executeTool(
+            "merge_applications",
+            "application",
+            logger,
+            options.audit,
+            () => tools.mergeApplications(input),
+          )
+        : executeWriteTool(
+            "merge_applications",
+            "application",
+            logger,
+            options.audit,
+            () => tools.mergeApplications(input),
+          ),
   );
 
   server.registerTool(

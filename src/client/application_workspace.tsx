@@ -23,6 +23,7 @@ import {
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
 import { dueLabel, nextActionApplications } from "./application_next_action";
+import { DuplicateApplicationsDialog } from "./duplicate_applications_dialog";
 import type {
   ReferenceValue,
   ReferenceValuesClient,
@@ -68,6 +69,7 @@ export function ApplicationWorkspace({
   const [events, setEvents] = useState<ApplicationEvent[]>();
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState(false);
+  const [reviewingDuplicates, setReviewingDuplicates] = useState(false);
   const historyRequest = useRef(0);
 
   useEffect(() => {
@@ -287,6 +289,10 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
+          onReviewDuplicates={() => {
+            setNotice(undefined);
+            setReviewingDuplicates(true);
+          }}
           page={page}
         />
       )}
@@ -335,6 +341,22 @@ export function ApplicationWorkspace({
           error={deleteError}
           onClose={closeDelete}
           onConfirm={removeApplication}
+        />
+      )}
+      {reviewingDuplicates && (
+        <DuplicateApplicationsDialog
+          applicationsClient={applicationsClient}
+          onClose={() => setReviewingDuplicates(false)}
+          onMerged={(survivor, sourceApplicationId) => {
+            setApplications((current) => [
+              survivor,
+              ...(current ?? []).filter(
+                ({ id }) => id !== survivor.id && id !== sourceApplicationId,
+              ),
+            ]);
+            setReviewingDuplicates(false);
+            setNotice(`${survivor.companyName} duplicates were merged safely.`);
+          }}
         />
       )}
     </main>
@@ -563,12 +585,14 @@ function ApplicationsPage({
   loadError,
   onAdd,
   onOpen,
+  onReviewDuplicates,
   page,
 }: {
   applications: ApplicationRecord[] | undefined;
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
+  onReviewDuplicates: () => void;
   page: "applications" | "opportunities";
 }) {
   const [search, setSearch] = useState("");
@@ -637,14 +661,23 @@ function ApplicationsPage({
               : "Search, sort, and review every role in your private workspace."}
           </p>
         </div>
-        <button
-          className="tracker-button tracker-button-primary"
-          type="button"
-          onClick={onAdd}
-        >
-          <span aria-hidden="true">＋</span>
-          Log application
-        </button>
+        <div className="tracker-page-actions">
+          <button
+            className="tracker-button tracker-button-quiet"
+            type="button"
+            onClick={onReviewDuplicates}
+          >
+            Review duplicates
+          </button>
+          <button
+            className="tracker-button tracker-button-primary"
+            type="button"
+            onClick={onAdd}
+          >
+            <span aria-hidden="true">＋</span>
+            Log application
+          </button>
+        </div>
       </header>
 
       <div className="tracker-filter-bar">

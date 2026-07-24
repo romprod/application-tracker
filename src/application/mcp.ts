@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 
 import {
   ApplicationNotFoundError,
+  type ApplicationDuplicateAudit,
   type ApplicationEvent,
+  type ApplicationMergeResult,
   type ApplicationRecord,
 } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
@@ -21,7 +23,9 @@ import {
   type McpDocumentImportProgress,
 } from "./mcp_document_imports.js";
 import type {
+  AuditDuplicateApplicationsInput,
   CreateApplicationInput,
+  MergeApplicationsInput,
   UpdateApplicationInput,
 } from "../domain/applications.js";
 import type { McpAccessMode } from "./mcp_access.js";
@@ -44,7 +48,7 @@ import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 3;
+export const applicationMcpSchemaVersion = 5;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -54,6 +58,8 @@ export const applicationMcpToolNames = [
   "get_job_search_summary",
   "list_applications",
   "get_application",
+  "audit_duplicate_applications",
+  "merge_applications",
   "match_job_application_email",
   "extract_job_links",
   "get_reference_data",
@@ -150,11 +156,19 @@ export interface McpApplicationsReader {
 }
 
 export interface McpApplicationsService extends McpApplicationsReader {
+  auditDuplicateApplications(
+    actor: AuthenticatedActor,
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit;
   createApplication(
     actor: AuthenticatedActor,
     input: CreateApplicationInput,
   ): ApplicationRecord;
   deleteApplication(actor: AuthenticatedActor, applicationId: string): void;
+  mergeApplications(
+    actor: AuthenticatedActor,
+    input: MergeApplicationsInput,
+  ): ApplicationMergeResult;
   updateApplication(
     actor: AuthenticatedActor,
     applicationId: string,
@@ -293,6 +307,9 @@ export interface McpDocumentChunk {
 }
 
 export interface McpApplicationTools {
+  auditDuplicateApplications(
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit;
   appendDocumentChunk(input: {
     chunkSha256: string;
     contentBase64: string;
@@ -330,6 +347,7 @@ export interface McpApplicationTools {
   matchJobApplicationEmail(
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult;
+  mergeApplications(input: MergeApplicationsInput): ApplicationMergeResult;
   updateApplication(
     applicationId: string,
     input: UpdateApplicationInput,
@@ -504,6 +522,23 @@ export class ApplicationMcpService implements McpApplicationTools {
       events: this.applications.listApplicationEvents(actor, applicationId),
       jobPostings: evidence.jobPostings,
     };
+  }
+
+  public auditDuplicateApplications(
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit {
+    const actor = this.actorProvider.getActor();
+    return this.applications.auditDuplicateApplications(actor, input);
+  }
+
+  public mergeApplications(
+    input: MergeApplicationsInput,
+  ): ApplicationMergeResult {
+    const actor = this.actorProvider.getActor();
+    if (input.mode === "apply") {
+      this.accessPolicy.requireWriteAccess(actor);
+    }
+    return this.applications.mergeApplications(actor, input);
   }
 
   public matchJobApplicationEmail(

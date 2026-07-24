@@ -2,6 +2,10 @@ import { Router, type Request } from "express";
 
 import {
   ApplicationConflictError,
+  ApplicationMergeNotFoundError,
+  ApplicationMergeStateError,
+  ApplicationMergeUnsafeError,
+  ApplicationMergeVersionConflictError,
   ApplicationNotFoundError,
   InvalidApplicationReferenceError,
   type ApplicationLedgerService,
@@ -9,7 +13,9 @@ import {
 import type { AuthService } from "../application/auth.js";
 import {
   applicationIdSchema,
+  auditDuplicateApplicationsSchema,
   createApplicationSchema,
+  mergeApplicationsSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
 import { requestSessionToken } from "./auth_routes.js";
@@ -78,6 +84,87 @@ export function createApplicationsRouter(
         application: applicationsService.createApplication(actor, parsed.data),
       });
     } catch (error) {
+      if (error instanceof InvalidApplicationReferenceError) {
+        response
+          .status(400)
+          .json({ error: { code: "invalid_application_reference" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.get("/duplicates", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = auditDuplicateApplicationsSchema.safeParse({
+      ...(request.query.limit === undefined
+        ? {}
+        : { limit: Number(request.query.limit) }),
+      ...(request.query.offset === undefined
+        ? {}
+        : { offset: Number(request.query.offset) }),
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        audit: applicationsService.auditDuplicateApplications(
+          actor,
+          parsed.data,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/merge", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = mergeApplicationsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        merge: applicationsService.mergeApplications(actor, parsed.data),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationMergeNotFoundError) {
+        response
+          .status(404)
+          .json({ error: { code: "application_merge_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationMergeStateError) {
+        response.status(409).json({ error: { code: error.code } });
+        return;
+      }
+      if (error instanceof ApplicationMergeVersionConflictError) {
+        response.status(409).json({
+          error: { code: "application_merge_conflict" },
+          source: error.source,
+          target: error.target,
+        });
+        return;
+      }
+      if (error instanceof ApplicationMergeUnsafeError) {
+        response.status(409).json({
+          error: { code: "application_merge_unresolved_conflicts" },
+          preview: error.preview,
+        });
+        return;
+      }
       if (error instanceof InvalidApplicationReferenceError) {
         response
           .status(400)

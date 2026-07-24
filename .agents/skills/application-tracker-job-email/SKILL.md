@@ -24,6 +24,12 @@ Require these Application Tracker MCP tools:
 - `get_application`; and
 - `upsert_application_from_email` for mutations.
 
+When the user explicitly includes duplicate detection or consolidation, also
+require:
+
+- `audit_duplicate_applications`; and
+- `merge_applications`.
+
 Require an already-connected `@softeria/ms-365-mcp-server` instance. Discover
 it from the current task's MCP tool inventory instead of assuming a server
 name, URL, or transport:
@@ -68,7 +74,9 @@ tracker tools:
 Treat inspect, investigate, compare, and preview requests as read-only. Treat
 reconcile, import, create, link, and update requests as authorization for the
 corresponding non-destructive tracker writes. Never delete an application in
-this workflow.
+this workflow. Do not treat a reconciliation request as authorization to merge
+records. Apply a duplicate merge only after the user explicitly approves the
+source, target, and every conflict resolution.
 
 Read
 [references/current-mcp-contract.md](references/current-mcp-contract.md)
@@ -155,7 +163,48 @@ Handle the result exactly:
 Never choose between candidates using fuzzy title, recruiter, location, or
 date similarity.
 
-### 5. Build the idempotent upsert
+### 5. Handle duplicate consolidation as a separate action
+
+Keep duplicate handling separate from ordinary email reconciliation. For an
+`ambiguous` or `conflict` match, make no upsert. If the user asks to investigate
+duplicates, call `audit_duplicate_applications` with a bounded page and report
+each deterministic reason and confidence band.
+
+Call `merge_applications` with `mode: "preview"` only after the user identifies
+an explicit source record and surviving target. Preview is read-only and must
+show:
+
+- all scalar conflicts and requested source-or-target choices;
+- contacts, links, documents, postings, and email evidence to consolidate;
+- source and target event history;
+- information that cannot be retained; and
+- whether the merge is safe to apply.
+
+Never infer the surviving status from label wording or apparent advancement.
+If source and target statuses differ, require an explicit `statusId` resolution
+through the preview. Do not choose a target from fuzzy evidence.
+
+Apply only when the user explicitly approves the preview. Require
+`mode: "apply"`, `confirm: true`, the previewed `updatedAt` value for both
+records, and explicit choices for every unresolved field or bounded
+contact/link conflict. Treat `application_merge_conflict`,
+`application_merge_unresolved_conflicts`, `application_merge_deleted`,
+`application_merge_target_unavailable`, and `application_already_merged` as
+no-retry outcomes until the user reviews fresh state.
+
+The server consolidates evidence, postings, documents, contacts, and links in
+one transaction, records immutable merge lineage, preserves the source events
+without rewriting or re-parenting them, and marks the source merged only after
+success. An exact retry returns the existing lineage without duplicating
+relationships.
+
+After an approved merge, verify the returned survivor, lineage, consolidated
+relationships, and retained source event count. Then rerun
+`match_job_application_email` with the original evidence before continuing the
+email upsert. Apply the upsert only if the original reconciliation request
+authorized it.
+
+### 6. Build the idempotent upsert
 
 Call `upsert_application_from_email` only after the intended create-or-update
 decision is clear. Supply:
@@ -197,7 +246,7 @@ tables. Workspace uniqueness on posting identity, canonical URL, and Message-ID
 prevents duplicate attribution. An exact retry is safe; do not fall back to
 generic create/update after an uncertain upsert result.
 
-### 6. Import a supported attachment
+### 7. Import a supported attachment
 
 Only import an attachment after the email has been matched to one intended
 application. List metadata first and retain the attachment ID, name, media
@@ -239,7 +288,7 @@ started, call `cancel_document_import` for its upload ID. Do not modify mailbox
 read state, move the message, or delete the source attachment. Remove the
 private temporary copy after successful verification.
 
-### 7. Verify and report
+### 8. Verify and report
 
 After a successful upsert, call `get_application` and verify:
 
@@ -251,6 +300,11 @@ After a successful upsert, call `get_application` and verify:
 Report matched, created, updated, skipped, ambiguous, conflicting, and failed
 counts. For each mutation, report the email subject or date, application ID,
 match level, and whether new posting or email evidence was linked.
+
+For a duplicate merge, also report the source and target IDs, merge lineage ID,
+whether the call applied or returned an existing merge, every chosen field
+resolution, relationship additions, information not retained, and the number
+of immutable source events preserved.
 
 For an attachment import, also report the attachment ID and metadata, actual
 byte size and SHA-256, document ID and application association, retry result,

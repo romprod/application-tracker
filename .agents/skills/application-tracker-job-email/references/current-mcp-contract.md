@@ -9,6 +9,7 @@ this reference.
 - [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
 - [Match input and result](#match-input-and-result)
+- [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
 - [Application detail evidence](#application-detail-evidence)
 - [Attachment document imports](#attachment-document-imports)
@@ -25,6 +26,11 @@ this reference.
 4. Call `match_job_application_email` before a write.
 5. Call `upsert_application_from_email` for an authorized reconciliation.
 6. Call `get_application` for read-back verification.
+
+When duplicate consolidation is explicitly in scope, call
+`audit_duplicate_applications`, then call `merge_applications` in preview mode
+before any approved apply. Rerun `match_job_application_email` after a
+successful merge and before the email upsert.
 
 ## Microsoft 365 connector discovery
 
@@ -98,6 +104,70 @@ The result contains `outcome`, `level`, and bounded candidate summaries:
 - `conflict`: supplied levels point to different applications.
 
 Lower-confidence evidence never overrides a stronger identity.
+
+## Duplicate audit and application merge
+
+`audit_duplicate_applications` is read-only. It accepts `limit` from 1 to 100
+and a non-negative `offset`. It returns a bounded page with `returned`, `total`,
+and nullable `nextOffset`. Each candidate contains both full application
+records, a `definite`, `probable`, or `possible` confidence band, and one or
+more deterministic reasons:
+
+- `posting_id`;
+- `canonical_url`;
+- `email_message_id`;
+- `company_title`;
+- `agency`;
+- `location`;
+- `applied_date`; and
+- `contact`.
+
+Treat reasons as evidence, not an instruction to merge. The audit performs no
+mutation.
+
+`merge_applications` uses one discriminated input:
+
+- `mode: "preview"` requires distinct `sourceApplicationId` and
+  `targetApplicationId`, and optionally accepts resolutions;
+- `mode: "apply"` additionally requires `confirm: true`,
+  `expectedSourceUpdatedAt`, `expectedTargetUpdatedAt`, and `resolutions`.
+
+`resolutions.fields` maps each conflicting scalar field to `source` or
+`target`. Conflicting status IDs require an explicit choice; the server does
+not derive a "most advanced" status from labels. If contacts share an identity
+but differ, links share a canonical URL but differ, or a combined set exceeds
+ten entries, supply an explicit selected `contacts` or `links` array from the
+previewed union.
+
+Both modes return `preview` with:
+
+- source, target, and provisional or applied survivor records;
+- scalar `fieldConflicts`, their requested resolutions, and resolved values;
+- source, target, additions, result, and resolution state for contacts, links,
+  documents, postings, and email evidence;
+- source and target immutable event arrays;
+- `unresolvedConflicts`, `informationNotRetained`, and `safeToApply`.
+
+Apply returns `applied`, `alreadyApplied`, and immutable `lineage` containing
+the source ID, target ID, both previewed concurrency values, actor, and merge
+time. It atomically associates source documents with the survivor, moves
+posting and email evidence identities, replaces the survivor's bounded
+contacts and links with the resolved result, records a target status event when
+needed, inserts lineage, and finally marks the source merged. Existing source
+events are never updated, deleted, or re-parented. Repeating the same completed
+source-to-target merge returns the existing lineage.
+
+Stable merge errors are:
+
+- `application_merge_not_found`;
+- `application_merge_deleted`;
+- `application_merge_target_unavailable`;
+- `application_already_merged`;
+- `application_merge_conflict`; and
+- `application_merge_unresolved_conflicts`.
+
+Do not retry with guessed IDs, timestamps, or resolutions. Refresh the audit or
+preview and obtain user approval for any changed decision.
 
 ## Upsert input and idempotency
 

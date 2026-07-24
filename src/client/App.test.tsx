@@ -427,6 +427,15 @@ function createApplicationsClient(
   applications: ApplicationRecord[] = [applicationRecord],
 ) {
   return {
+    auditDuplicateApplications: vi
+      .fn<ApplicationsClient["auditDuplicateApplications"]>()
+      .mockResolvedValue({
+        candidates: [],
+        nextOffset: null,
+        offset: 0,
+        returned: 0,
+        total: 0,
+      }),
     createApplication: vi
       .fn<ApplicationsClient["createApplication"]>()
       .mockResolvedValue(applicationRecord),
@@ -439,6 +448,9 @@ function createApplicationsClient(
     listApplicationEvents: vi
       .fn<ApplicationsClient["listApplicationEvents"]>()
       .mockResolvedValue(applicationEvents),
+    mergeApplications: vi
+      .fn<ApplicationsClient["mergeApplications"]>()
+      .mockRejectedValue(new Error("Merge response not configured")),
     updateApplication: vi
       .fn<ApplicationsClient["updateApplication"]>()
       .mockImplementation((id, input) => {
@@ -905,6 +917,201 @@ describe("application shell", () => {
       ),
     ).toHaveLength(11);
     expect(window.location.pathname).toBe("/applications");
+  });
+
+  it("previews and applies a duplicate merge in an accessible dialog", async () => {
+    const source = {
+      ...applicationRecord,
+      contacts: [
+        {
+          email: "source@example.com",
+          name: "Source Contact",
+          phone: null,
+          role: "Recruiter",
+        },
+      ],
+      id: "99999999-9999-4999-8999-999999999999",
+    };
+    const target = {
+      ...applicationRecord,
+      contacts: [
+        {
+          email: "target@example.com",
+          name: "Target Contact",
+          phone: null,
+          role: "Hiring manager",
+        },
+      ],
+    };
+    const applicationsClient = createApplicationsClient([source, target]);
+    const preview = {
+      contacts: {
+        additions: source.contacts,
+        conflicts: [],
+        requiresResolution: false,
+        result: [...target.contacts, ...source.contacts],
+        source: source.contacts,
+        target: target.contacts,
+      },
+      documents: {
+        additions: [],
+        conflicts: [],
+        requiresResolution: false,
+        result: [],
+        source: [],
+        target: [],
+      },
+      emailEvidence: {
+        additions: [],
+        conflicts: [],
+        requiresResolution: false,
+        result: [],
+        source: [],
+        target: [],
+      },
+      fieldConflicts: [],
+      history: {
+        sourceEvents: applicationEvents,
+        targetEvents: applicationEvents,
+      },
+      informationNotRetained: [],
+      jobPostings: {
+        additions: [],
+        conflicts: [],
+        requiresResolution: false,
+        result: [],
+        source: [],
+        target: [],
+      },
+      links: {
+        additions: [],
+        conflicts: [],
+        requiresResolution: false,
+        result: target.links,
+        source: source.links,
+        target: target.links,
+      },
+      safeToApply: true,
+      source,
+      survivor: {
+        ...target,
+        contacts: [...target.contacts, ...source.contacts],
+      },
+      target,
+      unresolvedConflicts: [],
+    };
+    applicationsClient.auditDuplicateApplications.mockResolvedValue({
+      candidates: [
+        {
+          applications: [source, target],
+          confidence: "definite",
+          reasons: [
+            {
+              detail: target.sourceUrl ?? "",
+              kind: "canonical_url",
+            },
+          ],
+        },
+      ],
+      nextOffset: null,
+      offset: 0,
+      returned: 1,
+      total: 1,
+    });
+    applicationsClient.mergeApplications.mockImplementation((input) =>
+      Promise.resolve(
+        input.mode === "preview"
+          ? {
+              alreadyApplied: false,
+              applied: false,
+              lineage: null,
+              preview,
+            }
+          : {
+              alreadyApplied: false,
+              applied: true,
+              lineage: {
+                actorDisplayName: "Alex Example",
+                id: "88888888-8888-4888-8888-888888888888",
+                mergedAt: "2026-07-18T13:00:00.000Z",
+                sourceApplicationId: source.id,
+                sourceUpdatedAt: source.updatedAt,
+                targetApplicationId: target.id,
+                targetUpdatedAt: target.updatedAt,
+              },
+              preview,
+            },
+      ),
+    );
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    const reviewButton = await screen.findByRole("button", {
+      name: "Review duplicates",
+    });
+    fireEvent.click(reviewButton);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Review duplicate applications",
+    });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const closeButton = within(dialog).getByRole("button", {
+      name: "Close duplicate application review",
+    });
+    await waitFor(() => expect(closeButton).toHaveFocus());
+    fireEvent.keyDown(closeButton, { key: "Tab", shiftKey: true });
+    expect(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+
+    const recordCards = within(dialog).getAllByRole("article");
+    fireEvent.click(
+      within(recordCards[1]!).getByRole("button", {
+        name: "Keep this record",
+      }),
+    );
+    expect(
+      await within(dialog).findByRole("heading", {
+        name: "Keep Example Studio · Product Designer",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Source events retained"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Confirm merge" }),
+    );
+
+    await waitFor(() =>
+      expect(applicationsClient.mergeApplications).toHaveBeenLastCalledWith({
+        confirm: true,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mode: "apply",
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+      }),
+    );
+    expect(
+      await screen.findByText("Example Studio duplicates were merged safely."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Review duplicate applications",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the document library and uploads an associated original", async () => {
