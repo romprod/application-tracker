@@ -695,6 +695,58 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(
     Math.abs((storedHeaderBox?.width ?? 0) - (storedCellBox?.width ?? 0)),
   ).toBeLessThan(1);
+
+  await page.setViewportSize({ width: 320, height: 458 });
+  await expect(
+    page.locator(".documents-page .tracker-page-header p"),
+  ).toBeHidden();
+  const documentMetrics = page.locator(".document-metrics article");
+  const documentMetricRows = await documentMetrics.evaluateAll((metrics) =>
+    metrics.map((metric) => Math.round(metric.getBoundingClientRect().top)),
+  );
+  expect(new Set(documentMetricRows).size).toBe(1);
+  const documentMetricsBox = await page
+    .locator(".document-metrics")
+    .boundingBox();
+  expect(documentMetricsBox).not.toBeNull();
+  expect(documentMetricsBox!.height).toBeLessThanOrEqual(100);
+  await expect(page.locator(".document-table-scroll")).toBeHidden();
+  const mobileDocuments = page.getByRole("list", {
+    name: "Documents mobile records",
+  });
+  await expect(mobileDocuments).toBeVisible();
+  await expect(
+    mobileDocuments.getByText("browser-preview.pdf", { exact: true }),
+  ).toBeVisible();
+  const mobileDocumentActionHeights = await mobileDocuments
+    .locator("button, a")
+    .evaluateAll((actions) =>
+      actions.map((action) => action.getBoundingClientRect().height),
+    );
+  expect(Math.min(...mobileDocumentActionHeights)).toBeGreaterThanOrEqual(44);
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(320);
+
+  await page.setViewportSize({ width: 758, height: 256 });
+  const shortLandscapeMetrics = page.locator(".document-metrics");
+  const shortLandscapeNavigation = page.locator(".workspace-sidebar nav");
+  const shortLandscapeMetricsBox = await shortLandscapeMetrics.boundingBox();
+  const shortLandscapeNavigationBox =
+    await shortLandscapeNavigation.boundingBox();
+  expect(shortLandscapeMetricsBox).not.toBeNull();
+  expect(shortLandscapeNavigationBox).not.toBeNull();
+  expect(
+    shortLandscapeMetricsBox!.y + shortLandscapeMetricsBox!.height,
+  ).toBeLessThanOrEqual(shortLandscapeNavigationBox!.y);
+  await expect(
+    page.getByRole("list", { name: "Documents mobile records" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(758);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   const pdfView = page.waitForResponse((response) =>
     response.url().endsWith("/view"),
   );

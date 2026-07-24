@@ -1145,7 +1145,12 @@ describe("application shell", () => {
     expect(
       await screen.findByRole("heading", { name: "Documents" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Original CV.pdf")).toBeInTheDocument();
+    const documentsTable = await screen.findByRole("table", {
+      name: "Documents",
+    });
+    expect(
+      within(documentsTable).getByText("Original CV.pdf"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
     const dialog = await screen.findByRole("dialog", {
@@ -1177,7 +1182,9 @@ describe("application shell", () => {
       }),
     );
     expect(await screen.findByText("Product CV.pdf was stored.")).toBeVisible();
-    expect(screen.getByText("Product CV.pdf")).toBeInTheDocument();
+    expect(
+      within(documentsTable).getByText("Product CV.pdf"),
+    ).toBeInTheDocument();
   });
 
   it("opens an authorized inline PDF preview", async () => {
@@ -1196,8 +1203,13 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    const documentsTable = await screen.findByRole("table", {
+      name: "Documents",
+    });
     fireEvent.click(
-      await screen.findByRole("button", { name: "Preview Original CV.pdf" }),
+      within(documentsTable).getByRole("button", {
+        name: "Preview Original CV.pdf",
+      }),
     );
 
     const dialog = await screen.findByRole("dialog", {
@@ -1280,8 +1292,13 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+    const documentsTable = await screen.findByRole("table", {
+      name: "Documents",
+    });
     fireEvent.click(
-      await screen.findByRole("button", { name: "Preview Interview.eml" }),
+      within(documentsTable).getByRole("button", {
+        name: "Preview Interview.eml",
+      }),
     );
 
     const dialog = await screen.findByRole("dialog", {
