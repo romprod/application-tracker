@@ -435,8 +435,9 @@ const mcpSchemaStatusSchema = z.strictObject({
     ),
   }),
   publication: mcpSchemaSummarySchema.extend({
-    status: z.enum(["current", "refresh_required"]),
+    status: z.enum(["current", "update_available"]),
   }),
+  publicationRequired: z.literal(false),
   refreshMethod: z.literal("scan_submit_publish"),
   selfRefreshSupported: z.literal(false),
 });
@@ -764,10 +765,10 @@ export function createApplicationMcpServer(
     {
       annotations: readOnlyAnnotations,
       description:
-        "Report the live MCP tool-contract version and SHA-256 hash, the last plugin metadata version marked as published, and whether OpenAI schema publication is required. This diagnostic cannot refresh reviewed plugin metadata itself.",
+        "Report the live MCP tool-contract version and SHA-256 hash plus the last optional OpenAI-managed metadata version marked as published. Direct MCP deployments do not require that separate publication.",
       inputSchema: emptyInputSchema,
       outputSchema: mcpSchemaStatusSchema,
-      title: "Get connector schema status",
+      title: "Get optional distribution status",
     },
     () =>
       executeTool(

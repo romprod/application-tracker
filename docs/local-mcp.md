@@ -62,7 +62,7 @@ The local server registers 20 tools:
 | Tool                               | Result                                                     |
 | ---------------------------------- | ---------------------------------------------------------- |
 | `get_tracker_context`              | Bound actor, workspace, role, and access mode              |
-| `get_connector_schema_status`      | Live and last-published MCP schema versions and hashes     |
+| `get_connector_schema_status`      | Live schema and optional distribution metadata status      |
 | `get_job_search_summary`           | Status totals and due-action counts                        |
 | `list_applications`                | A bounded, optionally filtered summary page                |
 | `get_application`                  | One full record, events, and job-email evidence            |
@@ -110,9 +110,9 @@ dedicated evidence link is separate from the application's user-managed related
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.
-See
-[`mcp-schema-publication.md`](mcp-schema-publication.md) for the generated
-contract manifest, publication drift check, and OpenAI plugin release workflow.
+See [`mcp-schema-publication.md`](mcp-schema-publication.md) for the generated
+contract manifest and the separate, optional OpenAI-managed distribution
+workflow.
 
 Each accepted tool invocation appends an immutable audit event with its actor,
 workspace, action, target type, result, transport, and timestamp. The event

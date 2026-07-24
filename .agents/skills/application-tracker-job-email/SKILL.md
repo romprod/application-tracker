@@ -58,6 +58,11 @@ and its live list and fetch results expose the same non-empty RFC
 fails, stop before tracker mutation and ask the user to attach or reconnect
 their Softeria server.
 
+Treat Application Tracker as a direct MCP server. Schema version or manifest
+changes do not turn it into a plugin and do not authorize registration,
+submission, or publication through any external distribution channel. Perform
+such work only when the user explicitly requests that separate outcome.
+
 When attachments are in scope, require `list-mail-attachments` and
 `download-bytes` from that same selected M365 namespace so metadata can be
 inspected before materializing one selected attachment. Also require these

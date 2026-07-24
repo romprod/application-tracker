@@ -26,7 +26,8 @@ Useful commands:
 | `npm run test:watch`                   | Run tests while editing                                |
 | `npm run build`                        | Compile the client and server                          |
 | `npm run mcp:schema:generate`          | Regenerate the reviewed MCP contract manifest          |
-| `npm run mcp:schema:release-check`     | Detect unpublished OpenAI plugin metadata              |
+| `npm run mcp:schema:release-check`     | Report optional OpenAI-managed metadata drift          |
+| `npm run mcp:schema:publication-check` | Enforce an explicitly requested managed publication    |
 | `npm run db:backup`                    | Create and verify an online SQLite backup              |
 | `npm run db:verify`                    | Verify a standalone SQLite backup                      |
 | `npm run db:restore`                   | Restore a backup into a new database path              |
@@ -39,7 +40,7 @@ API error responses and the fields permitted in runtime logs are documented in
 [`error-handling.md`](error-handling.md).
 Build and client configuration for the local MCP process are documented in
 [`local-mcp.md`](local-mcp.md).
-MCP schema generation and plugin publication are documented in
+MCP schema generation and optional managed publication are documented in
 [`mcp-schema-publication.md`](mcp-schema-publication.md).
 
 Install the Chromium browser once before running browser acceptance locally:

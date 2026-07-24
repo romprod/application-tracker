@@ -249,8 +249,9 @@ describe("local MCP server", () => {
       live: applicationMcpSchemaManifest,
       publication: {
         ...applicationMcpPublishedSchema,
-        status: "refresh_required",
+        status: "update_available",
       },
+      publicationRequired: false,
       refreshMethod: "scan_submit_publish",
       selfRefreshSupported: false,
     });

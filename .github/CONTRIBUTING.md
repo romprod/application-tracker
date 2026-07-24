@@ -30,9 +30,15 @@ request template's not-applicable option and give a concrete reason. The quality
 workflow rejects a missing review, an unexplained exception, or an update to
 only one of the two required documents.
 
-This review supplements the MCP schema guard. Tool metadata changes still
-require a schema-version increment, regenerated manifest, connector
-publication, and fresh-task verification.
+This review supplements MCP contract versioning. Tool metadata changes still
+require a schema-version increment, regenerated manifest, and fresh-task
+verification against the direct MCP server.
+
+OpenAI-managed publication is a separate, optional distribution step. An MCP
+schema change, skill update, or ordinary Application Tracker release does not
+authorize plugin registration or publication. Include that work only when the
+pull request explicitly names the distribution channel and records why it is
+in scope.
 
 ## Public-content rules
 

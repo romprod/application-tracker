@@ -32,6 +32,7 @@
     "mcp:schema:check": "node scripts/generate-mcp-schema.mjs --check",
     "mcp:schema:generate": "npm run build:server && node scripts/generate-mcp-schema.mjs",
     "mcp:schema:mark-published": "npm run build:server && node scripts/mark-mcp-schema-published.mjs",
+    "mcp:schema:publication-check": "npm run build:server && node scripts/check-mcp-schema-release.mjs --require-publication",
     "mcp:schema:release-check": "npm run build:server && node scripts/check-mcp-schema-release.mjs",
     "start": "node dist/server/server/http.js",
     "start:e2e": "node scripts/start-e2e-server.mjs",

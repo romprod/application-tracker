@@ -48,7 +48,7 @@ import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 5;
+export const applicationMcpSchemaVersion = 6;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -91,9 +91,10 @@ export interface McpConnectorSchemaStatus {
   publication: {
     schemaSha256: string;
     schemaVersion: number;
-    status: "current" | "refresh_required";
+    status: "current" | "update_available";
     toolCount: number;
   };
+  publicationRequired: false;
   refreshMethod: "scan_submit_publish";
   selfRefreshSupported: false;
 }
@@ -123,9 +124,10 @@ export function getApplicationMcpSchemaStatus(): McpConnectorSchemaStatus {
     publication: {
       schemaSha256: applicationMcpPublishedSchema.schemaSha256,
       schemaVersion: applicationMcpPublishedSchema.schemaVersion,
-      status: publicationIsCurrent ? "current" : "refresh_required",
+      status: publicationIsCurrent ? "current" : "update_available",
       toolCount: applicationMcpPublishedSchema.toolCount,
     },
+    publicationRequired: false,
     refreshMethod: "scan_submit_publish",
     selfRefreshSupported: false,
   };

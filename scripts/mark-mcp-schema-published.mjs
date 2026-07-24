@@ -23,7 +23,7 @@ if (
 } else {
   const outputPath = resolve("src/application/mcp_published_schema.ts");
   const source = await format(
-    `// Update only after OpenAI has published the matching plugin metadata version.\nexport const applicationMcpPublishedSchema = ${JSON.stringify(
+    `// Update only after an explicitly requested OpenAI-managed publication is live.\nexport const applicationMcpPublishedSchema = ${JSON.stringify(
       {
         schemaSha256: live.schemaSha256,
         schemaVersion: live.schemaVersion,
@@ -36,6 +36,6 @@ if (
   );
   await writeFile(outputPath, source);
   console.log(
-    `Marked MCP schema v${String(live.schemaVersion)} (${live.schemaSha256}) as published. Commit and deploy this server-only status update.`,
+    `Marked optional OpenAI-managed metadata for MCP schema v${String(live.schemaVersion)} (${live.schemaSha256}) as published. Commit and deploy this server-only status update.`,
   );
 }
