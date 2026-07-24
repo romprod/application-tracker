@@ -304,13 +304,13 @@ const runtimeEnvironmentSchema = z.object({
     .int()
     .min(2)
     .max(1000)
-    .default(8),
+    .default(64),
   MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR: z.coerce
     .number()
     .int()
     .min(1)
     .max(999)
-    .default(4),
+    .default(32),
   MCP_REMOTE_MAX_REQUEST_BYTES: z.coerce
     .number()
     .int()

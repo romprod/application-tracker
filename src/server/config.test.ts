@@ -44,8 +44,8 @@ describe("parseRuntimeConfig", () => {
       },
       mcp: {
         request: {
-          maxConcurrentRequests: 8,
-          maxConcurrentRequestsPerActor: 4,
+          maxConcurrentRequests: 64,
+          maxConcurrentRequestsPerActor: 32,
           maxRequestBytes: 65_536,
           rateLimitRequests: 600,
           rateLimitWindowMs: 60_000,

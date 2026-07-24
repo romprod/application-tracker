@@ -187,8 +187,8 @@ limit and JSON size cap before protocol handling:
 | Variable                                       | Default | Range           | Meaning                            |
 | ---------------------------------------------- | ------: | --------------- | ---------------------------------- |
 | `MCP_REMOTE_MAX_REQUEST_BYTES`                 |   65536 | 1,024–1,048,576 | Maximum JSON request body          |
-| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS`           |       8 | 2–1,000         | Installation-wide in-flight limit  |
-| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR` |       4 | 1–999           | In-flight limit for one actor      |
+| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS`           |      64 | 2–1,000         | Installation-wide in-flight limit  |
+| `MCP_REMOTE_MAX_CONCURRENT_REQUESTS_PER_ACTOR` |      32 | 1–999           | In-flight limit for one actor      |
 | `MCP_REMOTE_RATE_LIMIT_REQUESTS`               |     600 | 1–10,000        | Requests per connection window     |
 | `MCP_REMOTE_RATE_LIMIT_WINDOW_SECONDS`         |      60 | 1–3,600         | Fixed rate-limit window in seconds |
 
