@@ -421,6 +421,18 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     .getByRole("button", { name: "Save application" })
     .click();
   await expect(opportunitiesTable).toContainText("Prospect Company");
+  await opportunitiesTable
+    .getByRole("button", { name: "Filter Location" })
+    .click();
+  const locationFilter = page.getByRole("dialog", {
+    name: "Filter Location",
+  });
+  await locationFilter.getByRole("checkbox", { name: /^London/ }).check();
+  await expect(opportunitiesTable).toContainText("Example Studio");
+  await expect(opportunitiesTable).not.toContainText("Prospect Company");
+  await locationFilter.getByRole("button", { name: "Clear" }).click();
+  await locationFilter.getByRole("button", { name: "Done" }).click();
+  await expect(opportunitiesTable).toContainText("Prospect Company");
 
   await page.getByRole("button", { name: "Applications" }).click();
   await expect(
@@ -430,6 +442,9 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   const applicationsTable = page.getByRole("table", { name: "Applications" });
   await expect(applicationsTable).toContainText("Example Studio");
   await expect(applicationsTable).not.toContainText("Prospect Company");
+  await expect(
+    applicationsTable.getByRole("button", { name: "Filter Stage" }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Documents" }).click();
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
