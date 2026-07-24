@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23,
+        21, 22, 23, 24,
       ]);
       expect(
         database
@@ -798,6 +798,20 @@ describe("migrateDatabase", () => {
              )`,
           )
           .run("2026-07-19T12:03:00.000Z"),
+      ).not.toThrow();
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO mcp_audit_events
+               (id, workspace_id, actor_user_id, transport, action,
+                target_type, result, occurred_at)
+             VALUES (
+               'audit-event-6', 'workspace-audit', 'user-audit',
+               'remote_http', 'get_connector_schema_status',
+               'workspace', 'success', ?
+             )`,
+          )
+          .run("2026-07-19T12:04:00.000Z"),
       ).not.toThrow();
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {

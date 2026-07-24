@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationNotFoundError } from "../application/applications.js";
 import {
+  applicationMcpPublishedSchema,
+  applicationMcpSchemaManifest,
   applicationMcpToolNames,
   LocalMcpActorUnavailableError,
   type McpApplicationTools,
@@ -120,7 +122,7 @@ describe("local MCP server", () => {
     expect(listed.tools.map(({ name }) => name)).toEqual(
       applicationMcpToolNames,
     );
-    for (const tool of listed.tools.slice(0, 10)) {
+    for (const tool of listed.tools.slice(0, 11)) {
       expect(tool.annotations).toMatchObject({
         destructiveHint: false,
         idempotentHint: true,
@@ -128,14 +130,14 @@ describe("local MCP server", () => {
         readOnlyHint: true,
       });
     }
-    for (const tool of listed.tools.slice(10, 14)) {
+    for (const tool of listed.tools.slice(11, 15)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: false,
         openWorldHint: false,
         readOnlyHint: false,
       });
     }
-    for (const tool of listed.tools.slice(14)) {
+    for (const tool of listed.tools.slice(15)) {
       expect(tool.annotations).toMatchObject({
         idempotentHint: true,
         openWorldHint: false,
@@ -182,6 +184,23 @@ describe("local MCP server", () => {
     });
     expect(context.isError).not.toBe(true);
     expect(context.structuredContent).toMatchObject({ access: "read_only" });
+
+    const schemaStatus = await client.callTool({
+      arguments: {},
+      name: "get_connector_schema_status",
+    });
+    expect(schemaStatus.isError).not.toBe(true);
+    expect(schemaStatus.structuredContent).toEqual({
+      documentationUrl:
+        "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work",
+      live: applicationMcpSchemaManifest,
+      publication: {
+        ...applicationMcpPublishedSchema,
+        status: "refresh_required",
+      },
+      refreshMethod: "scan_submit_publish",
+      selfRefreshSupported: false,
+    });
 
     const summary = await client.callTool({
       arguments: {},
@@ -236,7 +255,7 @@ describe("local MCP server", () => {
         type: "text",
       },
     ]);
-    expect(record).toHaveBeenCalledTimes(6);
+    expect(record).toHaveBeenCalledTimes(7);
     expect(record).toHaveBeenNthCalledWith(1, {
       action: "get_tracker_context",
       actorUserId: "actor-user-1",
@@ -245,7 +264,15 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(5, {
+    expect(record).toHaveBeenNthCalledWith(2, {
+      action: "get_connector_schema_status",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "workspace",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(6, {
       action: "extract_job_links",
       actorUserId: "actor-user-1",
       result: "success",
@@ -253,7 +280,7 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(6, {
+    expect(record).toHaveBeenNthCalledWith(7, {
       action: "get_application",
       actorUserId: "actor-user-1",
       result: "not_found",
