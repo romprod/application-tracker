@@ -821,9 +821,15 @@ describe("application shell", () => {
       name: "Opportunities",
     });
     expect(opportunitiesTable).toBeInTheDocument();
-    expect(screen.getByText("Example Studio")).toBeInTheDocument();
-    expect(screen.getByText("Product Designer")).toBeInTheDocument();
-    expect(screen.getByText("Example Recruitment")).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("Example Studio"),
+    ).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("Product Designer"),
+    ).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("Example Recruitment"),
+    ).toBeInTheDocument();
     expect(
       within(opportunitiesTable).getAllByRole("button", {
         name: /^Filter /,
@@ -844,7 +850,9 @@ describe("application shell", () => {
     fireEvent.click(
       within(stageFilter).getByRole("checkbox", { name: /Prospect/ }),
     );
-    expect(screen.getByText("Prospect Company")).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("Prospect Company"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Example Studio")).not.toBeInTheDocument();
     expect(screen.getByText("1 record")).toBeInTheDocument();
     fireEvent.click(within(stageFilter).getByRole("button", { name: "Done" }));
@@ -859,7 +867,9 @@ describe("application shell", () => {
         { name: "Clear" },
       ),
     );
-    expect(screen.getByText("Example Studio")).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("Example Studio"),
+    ).toBeInTheDocument();
     const companySort = screen.getByRole("button", {
       name: /End company \/ role, not sorted/,
     });
@@ -908,13 +918,15 @@ describe("application shell", () => {
     expect(
       await screen.findByRole("heading", { name: "Applications" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Example Studio")).toBeInTheDocument();
+    const applicationsTable = screen.getByRole("table", {
+      name: "Applications",
+    });
+    expect(
+      within(applicationsTable).getByText("Example Studio"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Prospect Company")).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole("table", { name: "Applications" })).getAllByRole(
-        "button",
-        { name: /^Filter / },
-      ),
+      within(applicationsTable).getAllByRole("button", { name: /^Filter / }),
     ).toHaveLength(11);
     expect(window.location.pathname).toBe("/applications");
   });
@@ -1335,7 +1347,11 @@ describe("application shell", () => {
         workArrangement: "hybrid",
       }),
     );
-    expect(await screen.findByText("Example Studio")).toBeInTheDocument();
+    expect(
+      within(
+        await screen.findByRole("table", { name: "Applications" }),
+      ).getByText("Example Studio"),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Log an application" }),
     ).not.toBeInTheDocument();
@@ -1761,7 +1777,11 @@ describe("application shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
 
     expect(applicationsClient.deleteApplication).not.toHaveBeenCalled();
-    expect(screen.getByText("Example Studio")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "Applications" })).getByText(
+        "Example Studio",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("loads and displays an application's stage history", async () => {

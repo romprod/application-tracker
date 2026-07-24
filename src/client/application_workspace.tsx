@@ -415,7 +415,7 @@ function DashboardView({
             type="button"
             onClick={onAdd}
           >
-            <span aria-hidden="true">＋</span>
+            <span aria-hidden="true">+</span>
             Log application
           </button>
         </div>
@@ -674,7 +674,7 @@ function ApplicationsPage({
             type="button"
             onClick={onAdd}
           >
-            <span aria-hidden="true">＋</span>
+            <span aria-hidden="true">+</span>
             Log application
           </button>
         </div>

@@ -334,11 +334,12 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await page.keyboard.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 320, height: 800 });
   await expect(page.getByRole("form", { name: "Local account" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeInViewport();
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
-  ).toBeLessThanOrEqual(390);
+  ).toBeLessThanOrEqual(320);
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.goto("/documents");
@@ -413,6 +414,93 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(appliedOpportunity).toContainText("Example Recruitment");
   await expect(appliedOpportunity).toContainText("£70,000–£80,000");
   await expect(appliedOpportunity).toContainText("Hybrid");
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(320);
+  const mobileNavigation = page.locator(".workspace-sidebar nav button");
+  await expect(mobileNavigation).toHaveCount(5);
+  const mobileNavigationRows = await mobileNavigation.evaluateAll((buttons) =>
+    buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+  );
+  expect(new Set(mobileNavigationRows).size).toBe(1);
+  for (const navigationButton of await mobileNavigation.all()) {
+    await expect(navigationButton).toBeInViewport();
+  }
+  await expect(
+    page.getByRole("list", { name: "Opportunities mobile records" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Sort Opportunities" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Open Example Studio · Product Designer",
+    }),
+  ).toBeInViewport();
+  await page
+    .locator(".tracker-mobile-filter-row")
+    .getByRole("button", { name: "Stage" })
+    .click();
+  const mobileStageFilter = page.getByRole("dialog", {
+    name: "Filter Stage",
+  });
+  await expect(mobileStageFilter).toBeInViewport();
+  await expect(
+    mobileStageFilter.getByRole("button", { name: "Done" }),
+  ).toBeInViewport();
+  await mobileStageFilter.getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your search, at a glance." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Applications mobile records" }),
+  ).toBeVisible();
+  expect(await page.evaluate<number>("window.scrollY")).toBe(0);
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(320);
+
+  await page.getByRole("button", { name: "Applications", exact: true }).click();
+  await expect(
+    page.getByRole("list", { name: "Applications mobile records" }),
+  ).toBeVisible();
+  expect(await page.evaluate<number>("window.scrollY")).toBe(0);
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(320);
+  await page
+    .getByRole("button", { name: "Opportunities", exact: true })
+    .click();
+
+  // A 2048px-wide browser at 140% zoom has an effective viewport of 1463px.
+  // Keep the full register, including its final columns, within that width.
+  await page.setViewportSize({ width: 1463, height: 731 });
+  const opportunitiesTableShell = opportunitiesTable.locator("..");
+  const tableWidths = await opportunitiesTableShell.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(tableWidths.scrollWidth).toBeLessThanOrEqual(tableWidths.clientWidth);
+  await expect(
+    opportunitiesTable.getByRole("columnheader", { name: /Updated/ }),
+  ).toBeInViewport();
+  await expect(
+    appliedOpportunity.getByRole("button", { name: "Open Example Studio" }),
+  ).toBeInViewport();
+  const companyFontSize = await appliedOpportunity
+    .getByText("Example Studio")
+    .evaluate((element) =>
+      Number.parseFloat(
+        element.ownerDocument.defaultView?.getComputedStyle(element).fontSize ??
+          "0",
+      ),
+    );
+  expect(companyFontSize).toBeGreaterThanOrEqual(14);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.getByRole("button", { name: "Log application" }).click();
   await applicationDialog.getByLabel("End company").fill("Prospect Company");

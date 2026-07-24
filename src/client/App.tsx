@@ -224,6 +224,8 @@ export function App({
       session: view.session,
       signingOut: view.signingOut,
     });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
   }
 
   const isSetup = view.kind === "setup";
@@ -483,17 +485,21 @@ function Sidebar({
           <li>
             <button
               type="button"
+              aria-label="Dashboard"
               aria-current={activePage === "overview" ? "page" : undefined}
               className={activePage === "overview" ? "active-navigation" : ""}
               onClick={() => onNavigate("overview")}
             >
               <span aria-hidden="true">01</span>
-              Dashboard
+              <span className="workspace-nav-label" data-mobile-label="Home">
+                Dashboard
+              </span>
             </button>
           </li>
           <li>
             <button
               type="button"
+              aria-label="Opportunities"
               aria-current={activePage === "opportunities" ? "page" : undefined}
               className={
                 activePage === "opportunities" ? "active-navigation" : ""
@@ -501,12 +507,15 @@ function Sidebar({
               onClick={() => onNavigate("opportunities")}
             >
               <span aria-hidden="true">02</span>
-              Opportunities
+              <span className="workspace-nav-label" data-mobile-label="Roles">
+                Opportunities
+              </span>
             </button>
           </li>
           <li>
             <button
               type="button"
+              aria-label="Applications"
               aria-current={activePage === "applications" ? "page" : undefined}
               className={
                 activePage === "applications" ? "active-navigation" : ""
@@ -514,23 +523,29 @@ function Sidebar({
               onClick={() => onNavigate("applications")}
             >
               <span aria-hidden="true">03</span>
-              Applications
+              <span className="workspace-nav-label" data-mobile-label="Applied">
+                Applications
+              </span>
             </button>
           </li>
           <li>
             <button
               type="button"
+              aria-label="Documents"
               aria-current={activePage === "documents" ? "page" : undefined}
               className={activePage === "documents" ? "active-navigation" : ""}
               onClick={() => onNavigate("documents")}
             >
               <span aria-hidden="true">04</span>
-              Documents
+              <span className="workspace-nav-label" data-mobile-label="Files">
+                Documents
+              </span>
             </button>
           </li>
           <li>
             <button
               type="button"
+              aria-label="Settings"
               aria-current={
                 activePage.startsWith("settings-") ? "page" : undefined
               }
@@ -540,7 +555,7 @@ function Sidebar({
               onClick={() => onNavigate("settings-lists")}
             >
               <span aria-hidden="true">05</span>
-              Settings
+              <span className="workspace-nav-label">Settings</span>
             </button>
           </li>
         </ul>
@@ -704,20 +719,6 @@ function LoginView({
             Continue to the private ledger with the local account created for
             this installation.
           </p>
-          <dl className="session-details">
-            <div>
-              <dt>Credential storage</dt>
-              <dd>One-way password hash</dd>
-            </div>
-            <div>
-              <dt>Browser session</dt>
-              <dd>HttpOnly cookie</dd>
-            </div>
-            <div>
-              <dt>Account recovery</dt>
-              <dd>Contact your operator</dd>
-            </div>
-          </dl>
         </section>
 
         <form
@@ -800,6 +801,21 @@ function LoginView({
             </button>
           </div>
         </form>
+
+        <dl className="session-details">
+          <div>
+            <dt>Credential storage</dt>
+            <dd>One-way password hash</dd>
+          </div>
+          <div>
+            <dt>Browser session</dt>
+            <dd>HttpOnly cookie</dd>
+          </div>
+          <div>
+            <dt>Account recovery</dt>
+            <dd>Contact your operator</dd>
+          </div>
+        </dl>
       </div>
     </main>
   );
