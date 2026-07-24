@@ -122,13 +122,21 @@ The complete procedure and restore constraints are in
 ## Upgrade
 
 Create and verify an online backup before an upgrade. Then update the checkout
-to the chosen release and rebuild:
+to the chosen release. Run the MCP publication guard before rebuilding:
 
 ```sh
+npm run mcp:schema:release-check
 docker compose -f deploy/compose.yml build --pull
 docker compose -f deploy/compose.yml up --detach
 docker compose -f deploy/compose.yml ps
 ```
+
+The publication guard exits non-zero when the live tool contract differs from
+the last OpenAI plugin metadata version marked as published. A planned,
+backward-compatible MCP addition must be deployed before OpenAI can scan it,
+but the release is not complete until the new plugin metadata is published.
+Follow [`mcp-schema-publication.md`](mcp-schema-publication.md) and keep the
+prior published contracts available throughout that sequence.
 
 Startup applies forward migrations before the HTTP listener opens. Check health,
 login, workspace data, and MCP status after the container becomes healthy.

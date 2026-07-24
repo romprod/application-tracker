@@ -156,6 +156,31 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
+  it("accepts connector schema status audit events", async () => {
+    const inspected = {
+      ...status,
+      recentAuditEvents: [
+        {
+          ...status.recentAuditEvents[0],
+          action: "get_connector_schema_status",
+          targetType: "workspace",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: inspected }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      inspected,
+    );
+  });
+
   it("accepts job-email audit actions and targets", async () => {
     const reconciled = {
       ...status,

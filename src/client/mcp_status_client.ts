@@ -87,6 +87,7 @@ export interface McpAuditEvent {
     | "extract_job_links"
     | "export_document_chunk"
     | "get_application"
+    | "get_connector_schema_status"
     | "get_document_import_capabilities"
     | "get_job_search_summary"
     | "get_reference_data"
@@ -178,6 +179,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "extract_job_links" &&
       value.action !== "export_document_chunk" &&
       value.action !== "get_application" &&
+      value.action !== "get_connector_schema_status" &&
       value.action !== "get_document_import_capabilities" &&
       value.action !== "get_job_search_summary" &&
       value.action !== "get_reference_data" &&

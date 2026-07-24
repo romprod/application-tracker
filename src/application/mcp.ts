@@ -39,9 +39,18 @@ import type {
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
 import type { EmailLinkExtractionInput } from "../domain/email_links.js";
+import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
+import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
+
+export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
+
+export const applicationMcpSchemaVersion = 2;
+export const mcpSchemaPublicationDocumentationUrl =
+  "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
 export const applicationMcpToolNames = [
   "get_tracker_context",
+  "get_connector_schema_status",
   "get_job_search_summary",
   "list_applications",
   "get_application",
@@ -61,6 +70,60 @@ export const applicationMcpToolNames = [
   "complete_document_import",
   "cancel_document_import",
 ] as const;
+
+export interface McpConnectorSchemaStatus {
+  documentationUrl: string;
+  live: {
+    schemaSha256: string;
+    schemaVersion: number;
+    toolCount: number;
+    tools: {
+      name: string;
+      schemaSha256: string;
+    }[];
+  };
+  publication: {
+    schemaSha256: string;
+    schemaVersion: number;
+    status: "current" | "refresh_required";
+    toolCount: number;
+  };
+  refreshMethod: "scan_submit_publish";
+  selfRefreshSupported: false;
+}
+
+export function getApplicationMcpSchemaStatus(): McpConnectorSchemaStatus {
+  const liveSchemaSha256: string = applicationMcpSchemaManifest.schemaSha256;
+  const liveSchemaVersion: number = applicationMcpSchemaManifest.schemaVersion;
+  const liveToolCount: number = applicationMcpSchemaManifest.toolCount;
+  const publishedSchemaSha256: string =
+    applicationMcpPublishedSchema.schemaSha256;
+  const publishedSchemaVersion: number =
+    applicationMcpPublishedSchema.schemaVersion;
+  const publishedToolCount: number = applicationMcpPublishedSchema.toolCount;
+  const publicationIsCurrent =
+    liveSchemaSha256 === publishedSchemaSha256 &&
+    liveSchemaVersion === publishedSchemaVersion &&
+    liveToolCount === publishedToolCount;
+
+  return {
+    documentationUrl: mcpSchemaPublicationDocumentationUrl,
+    live: {
+      schemaSha256: applicationMcpSchemaManifest.schemaSha256,
+      schemaVersion: applicationMcpSchemaManifest.schemaVersion,
+      toolCount: applicationMcpSchemaManifest.toolCount,
+      tools: applicationMcpSchemaManifest.tools.map((tool) => ({ ...tool })),
+    },
+    publication: {
+      schemaSha256: applicationMcpPublishedSchema.schemaSha256,
+      schemaVersion: applicationMcpPublishedSchema.schemaVersion,
+      status: publicationIsCurrent ? "current" : "refresh_required",
+      toolCount: applicationMcpPublishedSchema.toolCount,
+    },
+    refreshMethod: "scan_submit_publish",
+    selfRefreshSupported: false,
+  };
+}
 
 export interface LocalMcpActorBinding {
   username: string;

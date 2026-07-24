@@ -16,6 +16,7 @@ import {
   JobEmailMatchAmbiguousError,
 } from "../application/job_email_reconciliation.js";
 import {
+  getApplicationMcpSchemaStatus,
   InvalidMcpDocumentExportError,
   LocalMcpActorUnavailableError,
   type McpApplicationTools,
@@ -311,6 +312,27 @@ const documentListSchema = z.strictObject({
   total: z.number().int().nonnegative(),
 });
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+const mcpSchemaSummarySchema = z.strictObject({
+  schemaSha256: sha256Schema,
+  schemaVersion: z.number().int().positive(),
+  toolCount: z.number().int().positive(),
+});
+const mcpSchemaStatusSchema = z.strictObject({
+  documentationUrl: z.url(),
+  live: mcpSchemaSummarySchema.extend({
+    tools: z.array(
+      z.strictObject({
+        name: z.string().min(1),
+        schemaSha256: sha256Schema,
+      }),
+    ),
+  }),
+  publication: mcpSchemaSummarySchema.extend({
+    status: z.enum(["current", "refresh_required"]),
+  }),
+  refreshMethod: z.literal("scan_submit_publish"),
+  selfRefreshSupported: z.literal(false),
+});
 const uploadIdSchema = z.uuid();
 const documentImportProgressSchema = z.strictObject({
   byteSize: z.number().int().positive(),
@@ -597,6 +619,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.getTrackerContext(),
+      ),
+  );
+
+  server.registerTool(
+    "get_connector_schema_status",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Report the live MCP tool-contract version and SHA-256 hash, the last plugin metadata version marked as published, and whether OpenAI schema publication is required. This diagnostic cannot refresh reviewed plugin metadata itself.",
+      inputSchema: emptyInputSchema,
+      outputSchema: mcpSchemaStatusSchema,
+      title: "Get connector schema status",
+    },
+    () =>
+      executeTool(
+        "get_connector_schema_status",
+        "workspace",
+        logger,
+        options.audit,
+        getApplicationMcpSchemaStatus,
       ),
   );
 

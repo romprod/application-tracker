@@ -18,18 +18,20 @@ limit access. The Vite development server is not a production reverse proxy.
 
 Useful commands:
 
-| Command                                | Purpose                                           |
-| -------------------------------------- | ------------------------------------------------- |
-| `npm run check`                        | Run formatting, lint, type, test, and build gates |
-| `npm test`                             | Run the test suite once                           |
-| `npm run test:e2e`                     | Run Chromium browser acceptance tests             |
-| `npm run test:watch`                   | Run tests while editing                           |
-| `npm run build`                        | Compile the client and server                     |
-| `npm run db:backup`                    | Create and verify an online SQLite backup         |
-| `npm run db:verify`                    | Verify a standalone SQLite backup                 |
-| `npm run db:restore`                   | Restore a backup into a new database path         |
-| `node dist/server/server/mcp_stdio.js` | Start configured local MCP over stdio             |
-| `NODE_ENV=production npm start`        | Serve a completed production build                |
+| Command                                | Purpose                                                |
+| -------------------------------------- | ------------------------------------------------------ |
+| `npm run check`                        | Run formatting, lint, type, test, build, and MCP gates |
+| `npm test`                             | Run the test suite once                                |
+| `npm run test:e2e`                     | Run Chromium browser acceptance tests                  |
+| `npm run test:watch`                   | Run tests while editing                                |
+| `npm run build`                        | Compile the client and server                          |
+| `npm run mcp:schema:generate`          | Regenerate the reviewed MCP contract manifest          |
+| `npm run mcp:schema:release-check`     | Detect unpublished OpenAI plugin metadata              |
+| `npm run db:backup`                    | Create and verify an online SQLite backup              |
+| `npm run db:verify`                    | Verify a standalone SQLite backup                      |
+| `npm run db:restore`                   | Restore a backup into a new database path              |
+| `node dist/server/server/mcp_stdio.js` | Start configured local MCP over stdio                  |
+| `NODE_ENV=production npm start`        | Serve a completed production build                     |
 
 The database commands and live replacement procedure are documented in
 [`backup-restore.md`](backup-restore.md).
@@ -37,6 +39,8 @@ API error responses and the fields permitted in runtime logs are documented in
 [`error-handling.md`](error-handling.md).
 Build and client configuration for the local MCP process are documented in
 [`local-mcp.md`](local-mcp.md).
+MCP schema generation and plugin publication are documented in
+[`mcp-schema-publication.md`](mcp-schema-publication.md).
 
 Install the Chromium browser once before running browser acceptance locally:
 
