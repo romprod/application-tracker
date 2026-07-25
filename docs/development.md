@@ -53,7 +53,9 @@ npm run test:e2e
 The browser suite builds and starts the compiled application with a temporary
 synthetic SQLite database. It does not read `.env`, local application data, or
 production data. GitHub Actions installs Chromium and runs the same acceptance
-suite for pull requests and pushes to `main`.
+suite for pull requests and pushes to `main`. The authenticated mobile matrix,
+Android Chrome evidence, and visual-baseline policy are recorded in the
+[`2026-07-25 mobile browser audit`](mobile-browser-audit-2026-07-25.md).
 
 ## Commit discipline
 
