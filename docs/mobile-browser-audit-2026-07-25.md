@@ -159,6 +159,7 @@ The permanent checks now fail if:
 - the root document becomes scrollable;
 - the fixed app shell or internal content scroller is removed;
 - window scroll changes while authenticated content scrolls;
+- a mobile tab click reloads the document or discards in-memory client state;
 - navigation loses fixed positioning or compositor promotion; or
 - any authenticated page differs from its baseline by more than 320 pixels.
 
