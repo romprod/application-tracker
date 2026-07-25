@@ -51,6 +51,7 @@ a:focus-visible,
   top: 12px;
   left: 12px;
   z-index: 200;
+  min-height: 44px;
   padding: 11px 15px;
   color: #fffdf7;
   background: var(--evergreen);
@@ -1704,7 +1705,8 @@ code {
 .reference-chip-grid > button,
 .reference-chip-grid > span {
   position: relative;
-  min-height: 35px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 13px;
   color: #39433f;
   background: #efede5;
@@ -1712,7 +1714,7 @@ code {
   border-radius: 0;
   font: inherit;
   font-size: 10px;
-  line-height: 33px;
+  line-height: 42px;
 }
 
 .reference-chip-grid > button {
@@ -3709,11 +3711,15 @@ code {
 
 .mcp-client-fields input,
 .mcp-client-fields select {
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .mcp-client-form > button {
-  min-height: 40px;
+  min-height: 44px;
+}
+
+.mcp-client-form .mcp-permission-control button {
+  min-height: 44px;
 }
 
 .mcp-client-form > small {

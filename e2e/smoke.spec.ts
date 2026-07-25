@@ -1256,3 +1256,691 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     deletionAccessToken,
   );
 });
+
+type MobileAuditRoute = {
+  heading: string;
+  path: string;
+  ready: string;
+  slug: string;
+};
+
+type MobileViewportProfile = {
+  chrome: "collapsed" | "expanded";
+  height: number;
+  orientation: "landscape" | "portrait";
+  screen: "compact" | "tall";
+  slug: string;
+  width: number;
+};
+
+const mobileAuditRoutes: ReadonlyArray<MobileAuditRoute> = [
+  {
+    heading: "Your search, at a glance.",
+    path: "/dashboard",
+    ready: ".tracker-dashboard-grid",
+    slug: "dashboard",
+  },
+  {
+    heading: "Applications",
+    path: "/applications",
+    ready: ".applications-page",
+    slug: "applications",
+  },
+  {
+    heading: "Opportunities",
+    path: "/opportunities",
+    ready: ".applications-page",
+    slug: "opportunities",
+  },
+  {
+    heading: "Documents",
+    path: "/documents",
+    ready: ".documents-page",
+    slug: "documents",
+  },
+  {
+    heading: "Make the tracker fit your search.",
+    path: "/settings/lists",
+    ready: ".lists-workspace",
+    slug: "settings-lists",
+  },
+  {
+    heading: "MCP connections.",
+    path: "/settings/mcp",
+    ready: ".mcp-workspace",
+    slug: "settings-mcp",
+  },
+  {
+    heading: "Users and access.",
+    path: "/settings/users",
+    ready: ".users-workspace",
+    slug: "settings-users",
+  },
+];
+
+const auditedMobileWidths = [320, 360, 390, 412, 430] as const;
+
+function mobileViewportProfiles(): MobileViewportProfile[] {
+  return auditedMobileWidths.flatMap((width) => [
+    {
+      chrome: "expanded",
+      height: 458,
+      orientation: "portrait",
+      screen: "compact",
+      slug: `${String(width)}-portrait-compact-toolbar-expanded`,
+      width,
+    },
+    {
+      chrome: "collapsed",
+      height: 568,
+      orientation: "portrait",
+      screen: "compact",
+      slug: `${String(width)}-portrait-compact-toolbar-collapsed`,
+      width,
+    },
+    {
+      chrome: "expanded",
+      height: 822,
+      orientation: "portrait",
+      screen: "tall",
+      slug: `${String(width)}-portrait-tall-toolbar-expanded`,
+      width,
+    },
+    {
+      chrome: "collapsed",
+      height: 932,
+      orientation: "portrait",
+      screen: "tall",
+      slug: `${String(width)}-portrait-tall-toolbar-collapsed`,
+      width,
+    },
+    {
+      chrome: "expanded",
+      height: Math.max(216, width - 104),
+      orientation: "landscape",
+      screen: "compact",
+      slug: `${String(width)}-landscape-compact-toolbar-expanded`,
+      width: 568,
+    },
+    {
+      chrome: "collapsed",
+      height: width,
+      orientation: "landscape",
+      screen: "compact",
+      slug: `${String(width)}-landscape-compact-toolbar-collapsed`,
+      width: 568,
+    },
+    {
+      chrome: "expanded",
+      height: Math.max(216, width - 104),
+      orientation: "landscape",
+      screen: "tall",
+      slug: `${String(width)}-landscape-tall-toolbar-expanded`,
+      width: 932,
+    },
+    {
+      chrome: "collapsed",
+      height: width,
+      orientation: "landscape",
+      screen: "tall",
+      slug: `${String(width)}-landscape-tall-toolbar-collapsed`,
+      width: 932,
+    },
+  ]);
+}
+
+async function authenticateMobileAudit(page: Page): Promise<void> {
+  const setupStatus = await page.request.get("/api/setup/status");
+  expect(setupStatus.status()).toBe(200);
+  const setup = (await setupStatus.json()) as { required?: boolean };
+  if (setup.required) {
+    const setupResponse = await page.request.post("/api/setup", {
+      data: {
+        displayName: e2eAdministrator.displayName,
+        password: e2eAdministrator.password,
+        setupToken: e2eSetupToken,
+        username: e2eAdministrator.username,
+        workspaceName: e2eAdministrator.workspaceName,
+      },
+    });
+    expect(setupResponse.status()).toBe(201);
+  }
+  const login = await page.request.post("/api/auth/login", {
+    data: {
+      password: e2eAdministrator.password,
+      username: e2eAdministrator.username,
+    },
+  });
+  expect(login.status()).toBe(200);
+}
+
+async function ensureMobileAuditData(page: Page): Promise<void> {
+  const applicationsResponse = await page.request.get("/api/applications");
+  expect(applicationsResponse.status()).toBe(200);
+  const applicationsBody = record(
+    await applicationsResponse.json(),
+    "mobile audit applications",
+  );
+  if (!Array.isArray(applicationsBody.applications)) {
+    throw new Error("mobile audit applications must contain an array");
+  }
+  const applications: unknown[] = applicationsBody.applications;
+  const companyNames = new Set(
+    applications.map((application) =>
+      requiredString(
+        record(application, "mobile audit application"),
+        "companyName",
+        "mobile audit application",
+      ),
+    ),
+  );
+
+  if (
+    !companyNames.has("Example Studio") ||
+    !companyNames.has("Prospect Company")
+  ) {
+    await page.goto("/opportunities");
+    await expect(
+      page.getByRole("heading", { name: "Opportunities", exact: true }),
+    ).toBeVisible();
+    const applicationDialog = page.getByRole("dialog", {
+      name: "Log an application",
+    });
+
+    if (!companyNames.has("Prospect Company")) {
+      await page
+        .getByRole("button", { name: "Log application" })
+        .first()
+        .click();
+      await applicationDialog
+        .getByLabel("End company")
+        .fill("Prospect Company");
+      await applicationDialog
+        .getByLabel("Role title")
+        .fill("Software Engineer");
+      await applicationDialog
+        .getByRole("button", { name: "Save application" })
+        .click();
+      await expect(applicationDialog).toBeHidden();
+    }
+
+    if (!companyNames.has("Example Studio")) {
+      await page.getByRole("button", { name: "Log application" }).click();
+      await applicationDialog.getByLabel("End company").fill("Example Studio");
+      await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
+      await applicationDialog.getByLabel("Role title").fill("Product Designer");
+      await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
+      await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+      await applicationDialog.getByLabel("Rating").selectOption("4");
+      await applicationDialog.getByLabel("Location").fill("London");
+      await applicationDialog
+        .getByLabel("Work arrangement")
+        .selectOption("hybrid");
+      await applicationDialog
+        .getByRole("button", { name: "Save application" })
+        .click();
+      await expect(applicationDialog).toBeHidden();
+    }
+  }
+
+  const documentsResponse = await page.request.get("/api/documents");
+  expect(documentsResponse.status()).toBe(200);
+  const documentsBody = record(
+    await documentsResponse.json(),
+    "mobile audit documents",
+  );
+  if (!Array.isArray(documentsBody.documents)) {
+    throw new Error("mobile audit documents must contain an array");
+  }
+  const documents: unknown[] = documentsBody.documents;
+  const documentNames = new Set(
+    documents.map((document) =>
+      requiredString(
+        record(document, "mobile audit document"),
+        "originalFilename",
+        "mobile audit document",
+      ),
+    ),
+  );
+  const mobileAuditDocuments = [
+    {
+      buffer: Buffer.from('{"applications":[]}'),
+      mimeType: "application/json",
+      name: "browser-preview.json",
+    },
+    {
+      buffer: pdfFixture(),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.pdf",
+    },
+    {
+      buffer: docxFixture(),
+      mimeType: "application/zip",
+      name: "browser-preview.docx",
+    },
+    {
+      buffer: emlFixture(),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.eml",
+    },
+    {
+      buffer: msgFixture(
+        Array.from(
+          { length: 32 },
+          (_, index) => `Preview paragraph ${String(index + 1)}.`,
+        ).join("\r\n\r\n\u00a0\r\n\r\n"),
+      ),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.msg",
+    },
+  ];
+  if (mobileAuditDocuments.some(({ name }) => !documentNames.has(name))) {
+    await page.goto("/documents");
+    await expect(
+      page.getByRole("heading", { name: "Documents" }),
+    ).toBeVisible();
+    for (const document of mobileAuditDocuments) {
+      if (!documentNames.has(document.name)) {
+        await uploadDocument(page, document);
+      }
+    }
+  }
+}
+
+async function openMobileAuditRoute(
+  page: Page,
+  route: MobileAuditRoute,
+): Promise<void> {
+  await page.goto(route.path);
+  await expect(
+    page.getByRole("heading", { name: route.heading, exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(route.ready)).toBeVisible();
+  await page.evaluate("document.fonts.ready");
+}
+
+type MobileGeometryAudit = {
+  clipped: string[];
+  rootOverflow: number;
+  touchTargets: string[];
+};
+
+const mobileGeometryAuditScript = String.raw`
+  (() => {
+    const root = document.documentElement;
+    const viewportWidth = window.innerWidth;
+    const interactiveSelector = [
+      "a[href]",
+      "button",
+      "input:not([type='hidden'])",
+      "select",
+      "summary",
+      "textarea",
+      "[role='button']",
+    ].join(",");
+    const clippingSelector = [
+      "button",
+      "h1",
+      "input",
+      "select",
+      "textarea",
+      "[role='dialog']",
+      ".document-mobile-list",
+      ".settings-navigation",
+      ".tracker-mobile-register",
+    ].join(",");
+
+    function visible(element) {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        box.width > 0 &&
+        box.height > 0
+      );
+    }
+
+    function labelFor(element) {
+      return (
+        element.getAttribute("aria-label") ||
+        element.getAttribute("placeholder") ||
+        (element.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 60) ||
+        element.tagName.toLocaleLowerCase()
+      );
+    }
+
+    function horizontallyScrollableAncestor(element) {
+      let ancestor = element.parentElement;
+      while (ancestor && ancestor !== document.body) {
+        const style = getComputedStyle(ancestor);
+        if (
+          (style.overflowX === "auto" || style.overflowX === "scroll") &&
+          ancestor.scrollWidth > ancestor.clientWidth
+        ) {
+          return true;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      return false;
+    }
+
+    const clipped = [...document.querySelectorAll(clippingSelector)]
+      .filter(visible)
+      .filter((element) => !horizontallyScrollableAncestor(element))
+      .filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.left < -1 || box.right > viewportWidth + 1;
+      })
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          element.tagName.toLocaleLowerCase() +
+          ' "' +
+          labelFor(element) +
+          '" (' +
+          box.left.toFixed(1) +
+          ".." +
+          box.right.toFixed(1) +
+          ")"
+        );
+      });
+
+    const touchTargets = [...document.querySelectorAll(interactiveSelector)]
+      .filter(visible)
+      .filter((element) => !element.closest(".sr-only"))
+      .flatMap((element) => {
+        const input =
+          element instanceof HTMLInputElement ? element : undefined;
+        const target =
+          input &&
+          (input.type === "checkbox" || input.type === "radio") &&
+          input.closest("label")
+            ? input.closest("label")
+            : element;
+        if (!(target instanceof HTMLElement) || !visible(target)) return [];
+        const box = target.getBoundingClientRect();
+        if (box.width >= 43.5 && box.height >= 43.5) return [];
+        return [
+          element.tagName.toLocaleLowerCase() +
+            ' "' +
+            labelFor(element) +
+            '" (' +
+            box.width.toFixed(1) +
+            "x" +
+            box.height.toFixed(1) +
+            ")",
+        ];
+      });
+
+    return {
+      clipped: [...new Set(clipped)],
+      rootOverflow: Math.max(0, root.scrollWidth - root.clientWidth),
+      touchTargets: [...new Set(touchTargets)],
+    };
+  })()
+`;
+
+async function auditMobileGeometry(page: Page): Promise<MobileGeometryAudit> {
+  return page.evaluate<MobileGeometryAudit>(mobileGeometryAuditScript);
+}
+
+test("audits every authenticated page across the mobile browser matrix", async ({
+  page,
+}) => {
+  test.setTimeout(10 * 60_000);
+  await authenticateMobileAudit(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  const failures: string[] = [];
+  const profiles = mobileViewportProfiles();
+  for (const route of mobileAuditRoutes) {
+    const initialProfile = profiles[0];
+    if (!initialProfile) throw new Error("The mobile audit matrix is empty");
+    await page.setViewportSize({
+      height: initialProfile.height,
+      width: initialProfile.width,
+    });
+    await openMobileAuditRoute(page, route);
+
+    for (const profile of profiles) {
+      await page.setViewportSize({
+        height: profile.height,
+        width: profile.width,
+      });
+      await page.evaluate(
+        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      );
+      const navigation = page.locator(".workspace-sidebar nav");
+      await expect(navigation).toBeInViewport();
+      await expect(navigation.getByRole("button")).toHaveCount(5);
+      const navigationBox = await navigation.boundingBox();
+      if (
+        !navigationBox ||
+        navigationBox.x < -1 ||
+        navigationBox.y < -1 ||
+        navigationBox.x + navigationBox.width > profile.width + 1 ||
+        navigationBox.y + navigationBox.height > profile.height + 1
+      ) {
+        failures.push(
+          `${route.slug}/${profile.slug}: bottom navigation clipped`,
+        );
+      }
+
+      const geometry = await auditMobileGeometry(page);
+      if (geometry.rootOverflow > 0) {
+        failures.push(
+          `${route.slug}/${profile.slug}: root overflow ${String(geometry.rootOverflow)}px`,
+        );
+      }
+      for (const clipped of geometry.clipped) {
+        failures.push(`${route.slug}/${profile.slug}: clipped ${clipped}`);
+      }
+      for (const target of geometry.touchTargets) {
+        failures.push(
+          `${route.slug}/${profile.slug}: touch target below 44px ${target}`,
+        );
+      }
+    }
+  }
+
+  expect(failures, failures.slice(0, 200).join("\n")).toEqual([]);
+});
+
+const mobileBaselineProfiles: ReadonlyArray<MobileViewportProfile> = [
+  {
+    chrome: "expanded",
+    height: 458,
+    orientation: "portrait",
+    screen: "compact",
+    slug: "320-portrait-compact-toolbar-expanded",
+    width: 320,
+  },
+  {
+    chrome: "collapsed",
+    height: 932,
+    orientation: "portrait",
+    screen: "tall",
+    slug: "430-portrait-tall-toolbar-collapsed",
+    width: 430,
+  },
+  {
+    chrome: "expanded",
+    height: 216,
+    orientation: "landscape",
+    screen: "compact",
+    slug: "320-landscape-compact-toolbar-expanded",
+    width: 568,
+  },
+  {
+    chrome: "collapsed",
+    height: 430,
+    orientation: "landscape",
+    screen: "tall",
+    slug: "430-landscape-tall-toolbar-collapsed",
+    width: 932,
+  },
+];
+
+test("keeps authenticated mobile screenshot baselines", async ({ page }) => {
+  test.setTimeout(2 * 60_000);
+  await authenticateMobileAudit(page);
+  await ensureMobileAuditData(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  for (const route of mobileAuditRoutes) {
+    const initialProfile = mobileBaselineProfiles[0];
+    if (!initialProfile) throw new Error("The mobile baseline matrix is empty");
+    await page.setViewportSize({
+      height: initialProfile.height,
+      width: initialProfile.width,
+    });
+    await openMobileAuditRoute(page, route);
+
+    for (const profile of mobileBaselineProfiles) {
+      await page.setViewportSize({
+        height: profile.height,
+        width: profile.width,
+      });
+      await page.evaluate("window.scrollTo(0, 0)");
+      await expect(page).toHaveScreenshot(`${route.slug}-${profile.slug}.png`, {
+        animations: "disabled",
+        caret: "hide",
+        mask: [
+          page.locator(
+            [
+              "time",
+              ".tracker-reference",
+              ".tracker-mobile-card-facts > span:nth-child(4)",
+              ".document-stored-cell",
+              ".document-mobile-facts > div:first-child dd",
+            ].join(","),
+          ),
+        ],
+        maxDiffPixelRatio: 0.0025,
+      });
+    }
+  }
+});
+
+test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
+  page,
+}) => {
+  test.setTimeout(2 * 60_000);
+  await authenticateMobileAudit(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  for (const width of auditedMobileWidths) {
+    await page.setViewportSize({ height: 458, width });
+    await page.goto("/applications");
+    await expect(
+      page.getByRole("heading", { name: "Applications", exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Log application" }).click();
+    const applicationDialog = page.getByRole("dialog", {
+      name: "Log an application",
+    });
+    await expect(applicationDialog).toBeInViewport();
+    const modalGeometry = await auditMobileGeometry(page);
+    expect(
+      modalGeometry.touchTargets,
+      modalGeometry.touchTargets.join("\n"),
+    ).toEqual([]);
+    const company = applicationDialog.getByLabel("End company");
+    await company.focus();
+    await page.setViewportSize({ height: 320, width });
+    await expect(company).toBeFocused();
+    await expect(company).toBeInViewport();
+    expect((await auditMobileGeometry(page)).rootOverflow).toBe(0);
+    await page.keyboard.press("Escape");
+    await expect(applicationDialog).toBeHidden();
+
+    await page.setViewportSize({ height: 458, width });
+    await page
+      .locator(".tracker-mobile-filter-row")
+      .getByRole("button", { name: "Stage" })
+      .click();
+    const stageFilter = page.getByRole("dialog", { name: "Filter Stage" });
+    await expect(stageFilter).toBeInViewport();
+    await expect(
+      stageFilter.getByRole("button", { name: "Done" }),
+    ).toBeInViewport();
+    const filterGeometry = await auditMobileGeometry(page);
+    expect(
+      filterGeometry.touchTargets,
+      filterGeometry.touchTargets.join("\n"),
+    ).toEqual([]);
+    await stageFilter.getByRole("button", { name: "Done" }).click();
+
+    const sort = page.getByRole("combobox", { name: "Sort Applications" });
+    await sort.selectOption("company-ascending");
+    await expect(sort).toHaveValue("company-ascending");
+
+    const bottomNavigation = page.locator(".workspace-sidebar nav");
+    for (const navigationButton of await bottomNavigation
+      .getByRole("button")
+      .all()) {
+      await expect(navigationButton).toBeInViewport();
+      const box = await navigationButton.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  }
+
+  for (const landscapeWidth of [568, 932]) {
+    for (const deviceWidth of auditedMobileWidths) {
+      await page.setViewportSize({
+        height: Math.max(216, deviceWidth - 104),
+        width: landscapeWidth,
+      });
+      await page.goto("/applications");
+      await expect(
+        page.getByRole("heading", { name: "Applications", exact: true }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "Log application" }).click();
+      const applicationDialog = page.getByRole("dialog", {
+        name: "Log an application",
+      });
+      await expect(applicationDialog).toBeInViewport();
+      const modalGeometry = await auditMobileGeometry(page);
+      expect(modalGeometry.rootOverflow).toBe(0);
+      expect(
+        modalGeometry.touchTargets,
+        modalGeometry.touchTargets.join("\n"),
+      ).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(applicationDialog).toBeHidden();
+
+      await page
+        .locator(".tracker-mobile-filter-row")
+        .getByRole("button", { name: "Stage" })
+        .click();
+      const stageFilter = page.getByRole("dialog", { name: "Filter Stage" });
+      await expect(stageFilter).toBeInViewport();
+      await expect(
+        stageFilter.getByRole("button", { name: "Done" }),
+      ).toBeInViewport();
+      const filterGeometry = await auditMobileGeometry(page);
+      expect(
+        filterGeometry.touchTargets,
+        filterGeometry.touchTargets.join("\n"),
+      ).toEqual([]);
+      await stageFilter.getByRole("button", { name: "Done" }).click();
+
+      const navigation = page.locator(".workspace-sidebar nav");
+      for (const navigationButton of await navigation
+        .getByRole("button")
+        .all()) {
+        const box = await navigationButton.boundingBox();
+        expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+  }
+});
