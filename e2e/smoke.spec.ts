@@ -1886,23 +1886,16 @@ test("keeps Ionic mobile navigation anchored through scroll and viewport changes
   await expect(tabBar).toBeVisible();
   await expect(navigation.getByRole("tab")).toHaveCount(5);
 
-  await page.evaluate(() => {
-    Object.assign(window, {
-      __mobileNavigationSentinel: "preserved",
-    });
-  });
+  await page.evaluate(
+    "Object.assign(window, { __mobileNavigationSentinel: 'preserved' })",
+  );
   await navigation
     .getByRole("tab", { name: "Applications", exact: true })
     .click();
   await expect(page).toHaveURL(/\/applications$/);
   expect(
-    await page.evaluate(
-      () =>
-        (
-          window as Window & {
-            __mobileNavigationSentinel?: string;
-          }
-        ).__mobileNavigationSentinel,
+    await page.evaluate<string | undefined>(
+      "window.__mobileNavigationSentinel",
     ),
   ).toBe("preserved");
 
