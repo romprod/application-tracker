@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { IonLabel, IonTabBar, IonTabButton } from "@ionic/react";
 
 import {
   browserAuthClient,
@@ -481,6 +482,111 @@ function Sidebar({
         </div>
       </div>
       <nav aria-label="Primary navigation">
+        <IonTabBar className="workspace-tab-bar">
+          <IonTabButton
+            tab="dashboard"
+            href="/dashboard"
+            aria-label="Dashboard"
+            aria-current={activePage === "overview" ? "page" : undefined}
+            className={
+              activePage === "overview"
+                ? "workspace-tab-button active-navigation"
+                : "workspace-tab-button"
+            }
+            onClick={() => onNavigate("overview")}
+          >
+            <span className="workspace-nav-number" aria-hidden="true">
+              01
+            </span>
+            <IonLabel className="workspace-nav-label" data-mobile-label="Home">
+              Dashboard
+            </IonLabel>
+          </IonTabButton>
+          <IonTabButton
+            tab="opportunities"
+            href="/opportunities"
+            aria-label="Opportunities"
+            aria-current={activePage === "opportunities" ? "page" : undefined}
+            className={
+              activePage === "opportunities"
+                ? "workspace-tab-button active-navigation"
+                : "workspace-tab-button"
+            }
+            onClick={() => onNavigate("opportunities")}
+          >
+            <span className="workspace-nav-number" aria-hidden="true">
+              02
+            </span>
+            <IonLabel className="workspace-nav-label" data-mobile-label="Roles">
+              Opportunities
+            </IonLabel>
+          </IonTabButton>
+          <IonTabButton
+            tab="applications"
+            href="/applications"
+            aria-label="Applications"
+            aria-current={activePage === "applications" ? "page" : undefined}
+            className={
+              activePage === "applications"
+                ? "workspace-tab-button active-navigation"
+                : "workspace-tab-button"
+            }
+            onClick={() => onNavigate("applications")}
+          >
+            <span className="workspace-nav-number" aria-hidden="true">
+              03
+            </span>
+            <IonLabel
+              className="workspace-nav-label"
+              data-mobile-label="Applied"
+            >
+              Applications
+            </IonLabel>
+          </IonTabButton>
+          <IonTabButton
+            tab="documents"
+            href="/documents"
+            aria-label="Documents"
+            aria-current={activePage === "documents" ? "page" : undefined}
+            className={
+              activePage === "documents"
+                ? "workspace-tab-button active-navigation"
+                : "workspace-tab-button"
+            }
+            onClick={() => onNavigate("documents")}
+          >
+            <span className="workspace-nav-number" aria-hidden="true">
+              04
+            </span>
+            <IonLabel className="workspace-nav-label" data-mobile-label="Files">
+              Documents
+            </IonLabel>
+          </IonTabButton>
+          <IonTabButton
+            tab="settings"
+            href="/settings"
+            aria-label="Settings"
+            aria-current={
+              activePage.startsWith("settings-") ? "page" : undefined
+            }
+            className={
+              activePage.startsWith("settings-")
+                ? "workspace-tab-button active-navigation"
+                : "workspace-tab-button"
+            }
+            onClick={() => onNavigate("settings-lists")}
+          >
+            <span className="workspace-nav-number" aria-hidden="true">
+              05
+            </span>
+            <IonLabel
+              className="workspace-nav-label"
+              data-mobile-label="Settings"
+            >
+              Settings
+            </IonLabel>
+          </IonTabButton>
+        </IonTabBar>
         <ul>
           <li>
             <button
@@ -555,7 +661,12 @@ function Sidebar({
               onClick={() => onNavigate("settings-lists")}
             >
               <span aria-hidden="true">05</span>
-              <span className="workspace-nav-label">Settings</span>
+              <span
+                className="workspace-nav-label"
+                data-mobile-label="Settings"
+              >
+                Settings
+              </span>
             </button>
           </li>
         </ul>

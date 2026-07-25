@@ -421,7 +421,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
-  const mobileNavigation = page.locator(".workspace-sidebar nav button");
+  const mobileNavigation = page.locator(".workspace-tab-button");
   await expect(mobileNavigation).toHaveCount(5);
   const mobileNavigationRows = await mobileNavigation.evaluateAll((buttons) =>
     buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
@@ -519,7 +519,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(opportunitiesTable).toBeHidden();
 
   await page.setViewportSize({ width: 320, height: 458 });
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("tab", { name: "Dashboard", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your search, at a glance." }),
   ).toBeVisible();
@@ -531,7 +531,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
 
-  await page.getByRole("button", { name: "Applications", exact: true }).click();
+  await page.getByRole("tab", { name: "Applications", exact: true }).click();
   await expect(
     page.getByRole("list", { name: "Applications mobile records" }),
   ).toBeVisible();
@@ -539,9 +539,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
-  await page
-    .getByRole("button", { name: "Opportunities", exact: true })
-    .click();
+  await page.getByRole("tab", { name: "Opportunities", exact: true }).click();
 
   // A 2048px-wide browser at 140% zoom has an effective viewport of 1463px.
   // Keep the full register, including its final columns, within that width.
@@ -1565,6 +1563,25 @@ type MobileGeometryAudit = {
   touchTargets: string[];
 };
 
+type MobileNavigationMetric = {
+  ariaLabel: string;
+  button: {
+    height: number;
+    width: number;
+  };
+  labelOffset: number;
+  mobileLabel: string | null;
+  numberOffset: number;
+  sourceFontSize: string;
+  typography: {
+    fontFamily: string;
+    fontSize: string;
+    fontWeight: string;
+    letterSpacing: string;
+    lineHeight: string;
+  };
+};
+
 const mobileGeometryAuditScript = String.raw`
   (() => {
     const root = document.documentElement;
@@ -1576,6 +1593,7 @@ const mobileGeometryAuditScript = String.raw`
       "select",
       "summary",
       "textarea",
+      "ion-tab-button",
       "[role='button']",
     ].join(",");
     const clippingSelector = [
@@ -1689,6 +1707,104 @@ async function auditMobileGeometry(page: Page): Promise<MobileGeometryAudit> {
   return page.evaluate<MobileGeometryAudit>(mobileGeometryAuditScript);
 }
 
+async function auditMobileNavigation(
+  page: Page,
+): Promise<MobileNavigationMetric[]> {
+  return page.evaluate<MobileNavigationMetric[]>(String.raw`
+    (() =>
+      [...document.querySelectorAll(".workspace-tab-button")].map((button) => {
+        const number = button.querySelector(".workspace-nav-number");
+        const label = button.querySelector(".workspace-nav-label");
+        if (!number || !label) {
+          throw new Error("Primary navigation tab is missing its number or label");
+        }
+
+        const buttonBox = button.getBoundingClientRect();
+        const labelBox = label.getBoundingClientRect();
+        const numberBox = number.getBoundingClientRect();
+        const sourceStyle = getComputedStyle(label);
+        const labelStyle = getComputedStyle(label, "::after");
+
+        return {
+          ariaLabel: button.getAttribute("aria-label") || "",
+          button: {
+            height: buttonBox.height,
+            width: buttonBox.width,
+          },
+          labelOffset: labelBox.top - buttonBox.top,
+          mobileLabel: label.getAttribute("data-mobile-label"),
+          numberOffset: numberBox.top - buttonBox.top,
+          sourceFontSize: sourceStyle.fontSize,
+          typography: {
+            fontFamily: labelStyle.fontFamily,
+            fontSize: labelStyle.fontSize,
+            fontWeight: labelStyle.fontWeight,
+            letterSpacing: labelStyle.letterSpacing,
+            lineHeight: labelStyle.lineHeight,
+          },
+        };
+      }))()
+  `);
+}
+
+function navigationMetricFailures(
+  route: MobileAuditRoute,
+  profile: MobileViewportProfile,
+  metrics: MobileNavigationMetric[],
+): string[] {
+  const context = `${route.slug}/${profile.slug}`;
+  if (metrics.length !== 5) {
+    return [
+      `${context}: expected five navigation items, received ${String(metrics.length)}`,
+    ];
+  }
+
+  const failures: string[] = [];
+  const first = metrics[0];
+  if (!first) return [`${context}: navigation metrics are empty`];
+  const firstTypography = JSON.stringify(first.typography);
+
+  for (const metric of metrics) {
+    if (!metric.mobileLabel) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} does not use the shared mobile label`,
+      );
+    }
+    if (metric.sourceFontSize !== "0px") {
+      failures.push(
+        `${context}: ${metric.ariaLabel} exposes its desktop label at ${metric.sourceFontSize}`,
+      );
+    }
+    if (Math.abs(metric.button.width - first.button.width) > 0.51) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} width ${metric.button.width.toFixed(2)}px does not match ${first.button.width.toFixed(2)}px`,
+      );
+    }
+    if (Math.abs(metric.button.height - first.button.height) > 0.51) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} height ${metric.button.height.toFixed(2)}px does not match ${first.button.height.toFixed(2)}px`,
+      );
+    }
+    if (Math.abs(metric.numberOffset - first.numberOffset) > 0.51) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} number offset ${metric.numberOffset.toFixed(2)}px does not match ${first.numberOffset.toFixed(2)}px`,
+      );
+    }
+    if (Math.abs(metric.labelOffset - first.labelOffset) > 0.51) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} label offset ${metric.labelOffset.toFixed(2)}px does not match ${first.labelOffset.toFixed(2)}px`,
+      );
+    }
+    if (JSON.stringify(metric.typography) !== firstTypography) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} typography ${JSON.stringify(metric.typography)} does not match ${firstTypography}`,
+      );
+    }
+  }
+
+  return failures;
+}
+
 test("audits every authenticated page across the mobile browser matrix", async ({
   page,
 }) => {
@@ -1717,7 +1833,7 @@ test("audits every authenticated page across the mobile browser matrix", async (
       );
       const navigation = page.locator(".workspace-sidebar nav");
       await expect(navigation).toBeInViewport();
-      await expect(navigation.getByRole("button")).toHaveCount(5);
+      await expect(navigation.getByRole("tab")).toHaveCount(5);
       const navigationBox = await navigation.boundingBox();
       if (
         !navigationBox ||
@@ -1745,10 +1861,152 @@ test("audits every authenticated page across the mobile browser matrix", async (
           `${route.slug}/${profile.slug}: touch target below 44px ${target}`,
         );
       }
+      failures.push(
+        ...navigationMetricFailures(
+          route,
+          profile,
+          await auditMobileNavigation(page),
+        ),
+      );
     }
   }
 
   expect(failures, failures.slice(0, 200).join("\n")).toEqual([]);
+});
+
+test("keeps Ionic mobile navigation anchored through scroll and viewport changes", async ({
+  page,
+}) => {
+  await authenticateMobileAudit(page);
+  await page.setViewportSize({ height: 458, width: 430 });
+  await openMobileAuditRoute(page, mobileAuditRoutes[0]!);
+
+  const navigation = page.locator(".workspace-sidebar nav");
+  const tabBar = navigation.locator("ion-tab-bar");
+  await expect(tabBar).toBeVisible();
+  await expect(navigation.getByRole("tab")).toHaveCount(5);
+
+  await page.evaluate(
+    "Object.assign(window, { __mobileNavigationSentinel: 'preserved' })",
+  );
+  await navigation
+    .getByRole("tab", { name: "Applications", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/applications$/);
+  expect(
+    await page.evaluate<string | undefined>(
+      "window.__mobileNavigationSentinel",
+    ),
+  ).toBe("preserved");
+
+  const viewportDrivenBottomRules = await page.evaluate<string[]>(String.raw`
+    (() => {
+      const matches = [];
+      const visit = (rules) => {
+        for (const rule of rules) {
+          if (
+            rule.style &&
+            rule.selectorText &&
+            rule.selectorText.includes(".workspace-sidebar nav")
+          ) {
+            const bottom = rule.style.getPropertyValue("bottom");
+            if (/v(?:h|w|b|i|min|max)/i.test(bottom)) {
+              matches.push(rule.selectorText + " { bottom: " + bottom + " }");
+            }
+          }
+          if (rule.cssRules) visit(rule.cssRules);
+        }
+      };
+      for (const sheet of document.styleSheets) {
+        visit(sheet.cssRules);
+      }
+      return matches;
+    })()
+  `);
+  expect(
+    viewportDrivenBottomRules,
+    viewportDrivenBottomRules.join("\n"),
+  ).toEqual([]);
+
+  const contentScroller = page.locator(".workspace-main").first();
+  await expect(contentScroller).toBeVisible();
+
+  for (const height of [458, 568, 932, 458]) {
+    await page.setViewportSize({ height, width: 430 });
+
+    const shell = await page.evaluate<{
+      bodyOverflow: string;
+      contentOverflow: string;
+      contentPosition: string;
+      rootOverflow: string;
+      shellPosition: string;
+    }>(String.raw`
+      (() => {
+        const content = document.querySelector(".workspace-main");
+        const shell = document.querySelector(".workspace-app-shell");
+        if (!content || !shell) {
+          throw new Error("Authenticated app shell is missing");
+        }
+        return {
+          bodyOverflow: getComputedStyle(document.body).overflow,
+          contentOverflow: getComputedStyle(content).overflowY,
+          contentPosition: getComputedStyle(content).position,
+          rootOverflow: getComputedStyle(document.documentElement).overflow,
+          shellPosition: getComputedStyle(shell).position,
+        };
+      })()
+    `);
+    expect(shell).toEqual({
+      bodyOverflow: "hidden",
+      contentOverflow: "auto",
+      contentPosition: "absolute",
+      rootOverflow: "hidden",
+      shellPosition: "fixed",
+    });
+
+    for (const scrollTarget of [0, 360, 10_000]) {
+      await contentScroller.evaluate(
+        (element, top) => element.scrollTo({ behavior: "instant", top }),
+        scrollTarget,
+      );
+      await page.evaluate(
+        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      );
+      expect(await page.evaluate("window.scrollY")).toBe(0);
+      const position = await page.evaluate<{
+        backfaceVisibility: string;
+        bottom: string;
+        bottomGap: number;
+        position: string;
+        transform: string;
+        willChange: string;
+      }>(String.raw`
+        (() => {
+          const navigation = document.querySelector(".workspace-sidebar nav");
+          if (!navigation) throw new Error("Primary navigation is missing");
+          const box = navigation.getBoundingClientRect();
+          const style = getComputedStyle(navigation);
+          const viewportBottom =
+            (window.visualViewport?.offsetTop || 0) +
+            (window.visualViewport?.height || window.innerHeight);
+          return {
+            backfaceVisibility: style.backfaceVisibility,
+            bottom: style.bottom,
+            bottomGap: viewportBottom - box.bottom,
+            position: style.position,
+            transform: style.transform,
+            willChange: style.willChange,
+          };
+        })()
+      `);
+      expect(position.position).toBe("fixed");
+      expect(position.bottom).toBe("0px");
+      expect(Math.abs(position.bottomGap)).toBeLessThanOrEqual(1);
+      expect(position.backfaceVisibility).toBe("hidden");
+      expect(position.transform).not.toBe("none");
+      expect(position.willChange).toContain("transform");
+    }
+  }
 });
 
 const mobileBaselineProfiles: ReadonlyArray<MobileViewportProfile> = [
@@ -1821,7 +2079,7 @@ test("keeps authenticated mobile screenshot baselines", async ({ page }) => {
             ].join(","),
           ),
         ],
-        maxDiffPixelRatio: 0.0025,
+        maxDiffPixels: 320,
       });
     }
   }
@@ -1883,7 +2141,7 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
 
     const bottomNavigation = page.locator(".workspace-sidebar nav");
     for (const navigationButton of await bottomNavigation
-      .getByRole("button")
+      .getByRole("tab")
       .all()) {
       await expect(navigationButton).toBeInViewport();
       const box = await navigationButton.boundingBox();
@@ -1934,9 +2192,7 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
       await stageFilter.getByRole("button", { name: "Done" }).click();
 
       const navigation = page.locator(".workspace-sidebar nav");
-      for (const navigationButton of await navigation
-        .getByRole("button")
-        .all()) {
+      for (const navigationButton of await navigation.getByRole("tab").all()) {
         const box = await navigationButton.boundingBox();
         expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
         expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
