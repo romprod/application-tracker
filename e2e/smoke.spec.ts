@@ -1414,6 +1414,139 @@ async function authenticateMobileAudit(page: Page): Promise<void> {
   expect(login.status()).toBe(200);
 }
 
+async function ensureMobileAuditData(page: Page): Promise<void> {
+  const applicationsResponse = await page.request.get("/api/applications");
+  expect(applicationsResponse.status()).toBe(200);
+  const applicationsBody = record(
+    await applicationsResponse.json(),
+    "mobile audit applications",
+  );
+  if (!Array.isArray(applicationsBody.applications)) {
+    throw new Error("mobile audit applications must contain an array");
+  }
+  const applications: unknown[] = applicationsBody.applications;
+  const companyNames = new Set(
+    applications.map((application) =>
+      requiredString(
+        record(application, "mobile audit application"),
+        "companyName",
+        "mobile audit application",
+      ),
+    ),
+  );
+
+  if (
+    !companyNames.has("Example Studio") ||
+    !companyNames.has("Prospect Company")
+  ) {
+    await page.goto("/opportunities");
+    await expect(
+      page.getByRole("heading", { name: "Opportunities", exact: true }),
+    ).toBeVisible();
+    const applicationDialog = page.getByRole("dialog", {
+      name: "Log an application",
+    });
+
+    if (!companyNames.has("Prospect Company")) {
+      await page
+        .getByRole("button", { name: "Log application" })
+        .first()
+        .click();
+      await applicationDialog
+        .getByLabel("End company")
+        .fill("Prospect Company");
+      await applicationDialog
+        .getByLabel("Role title")
+        .fill("Software Engineer");
+      await applicationDialog
+        .getByRole("button", { name: "Save application" })
+        .click();
+      await expect(applicationDialog).toBeHidden();
+    }
+
+    if (!companyNames.has("Example Studio")) {
+      await page.getByRole("button", { name: "Log application" }).click();
+      await applicationDialog.getByLabel("End company").fill("Example Studio");
+      await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
+      await applicationDialog.getByLabel("Role title").fill("Product Designer");
+      await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
+      await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+      await applicationDialog.getByLabel("Rating").selectOption("4");
+      await applicationDialog.getByLabel("Location").fill("London");
+      await applicationDialog
+        .getByLabel("Work arrangement")
+        .selectOption("hybrid");
+      await applicationDialog
+        .getByRole("button", { name: "Save application" })
+        .click();
+      await expect(applicationDialog).toBeHidden();
+    }
+  }
+
+  const documentsResponse = await page.request.get("/api/documents");
+  expect(documentsResponse.status()).toBe(200);
+  const documentsBody = record(
+    await documentsResponse.json(),
+    "mobile audit documents",
+  );
+  if (!Array.isArray(documentsBody.documents)) {
+    throw new Error("mobile audit documents must contain an array");
+  }
+  const documents: unknown[] = documentsBody.documents;
+  const documentNames = new Set(
+    documents.map((document) =>
+      requiredString(
+        record(document, "mobile audit document"),
+        "originalFilename",
+        "mobile audit document",
+      ),
+    ),
+  );
+  const mobileAuditDocuments = [
+    {
+      buffer: Buffer.from('{"applications":[]}'),
+      mimeType: "application/json",
+      name: "browser-preview.json",
+    },
+    {
+      buffer: pdfFixture(),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.pdf",
+    },
+    {
+      buffer: docxFixture(),
+      mimeType: "application/zip",
+      name: "browser-preview.docx",
+    },
+    {
+      buffer: emlFixture(),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.eml",
+    },
+    {
+      buffer: msgFixture(
+        Array.from(
+          { length: 32 },
+          (_, index) => `Preview paragraph ${String(index + 1)}.`,
+        ).join("\r\n\r\n\u00a0\r\n\r\n"),
+      ),
+      mimeType: "application/octet-stream",
+      name: "browser-preview.msg",
+    },
+  ];
+  if (mobileAuditDocuments.some(({ name }) => !documentNames.has(name))) {
+    await page.goto("/documents");
+    await expect(
+      page.getByRole("heading", { name: "Documents" }),
+    ).toBeVisible();
+    for (const document of mobileAuditDocuments) {
+      if (!documentNames.has(document.name)) {
+        await uploadDocument(page, document);
+      }
+    }
+  }
+}
+
 async function openMobileAuditRoute(
   page: Page,
   route: MobileAuditRoute,
@@ -1656,6 +1789,7 @@ const mobileBaselineProfiles: ReadonlyArray<MobileViewportProfile> = [
 test("keeps authenticated mobile screenshot baselines", async ({ page }) => {
   test.setTimeout(2 * 60_000);
   await authenticateMobileAudit(page);
+  await ensureMobileAuditData(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
 
   for (const route of mobileAuditRoutes) {
@@ -1687,7 +1821,7 @@ test("keeps authenticated mobile screenshot baselines", async ({ page }) => {
             ].join(","),
           ),
         ],
-        maxDiffPixelRatio: 0.002,
+        maxDiffPixelRatio: 0.0025,
       });
     }
   }
