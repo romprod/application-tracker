@@ -2200,3 +2200,32 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
     }
   }
 });
+
+test("matches the mobile document background to the Android browser chin", async ({
+  page,
+}) => {
+  await authenticateMobileAudit(page);
+  await page.setViewportSize({ height: 932, width: 430 });
+  await openMobileAuditRoute(page, mobileAuditRoutes[0]!);
+
+  const colors = await page.evaluate<{
+    body: string;
+    document: string;
+    navigation: string;
+  }>(String.raw`
+    (() => {
+      const navigation = document.querySelector(".workspace-sidebar nav");
+      if (!navigation) throw new Error("Mobile navigation is missing");
+
+      return {
+        body: getComputedStyle(document.body).backgroundColor,
+        document: getComputedStyle(document.documentElement).backgroundColor,
+        navigation: getComputedStyle(navigation).backgroundColor,
+      };
+    })()
+  `);
+
+  expect(colors.document).not.toBe("rgba(0, 0, 0, 0)");
+  expect(colors.body).toBe(colors.navigation);
+  expect(colors.document).toBe(colors.navigation);
+});

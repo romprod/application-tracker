@@ -2944,6 +2944,7 @@
   body:has(.workspace-app-shell) > #root {
     height: 100%;
     overflow: hidden;
+    background: #183c37;
   }
 
   .workspace-app-shell {
