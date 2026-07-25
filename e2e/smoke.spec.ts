@@ -2066,7 +2066,7 @@ test("keeps authenticated mobile screenshot baselines", async ({ page }) => {
             ].join(","),
           ),
         ],
-        maxDiffPixelRatio: 0.0005,
+        maxDiffPixels: 320,
       });
     }
   }

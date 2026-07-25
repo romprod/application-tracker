@@ -144,6 +144,11 @@ trees, device screenshots, Chrome DevTools Protocol metrics, and logcat.
 The tests live in `e2e/smoke.spec.ts`. Baseline PNGs live in
 `e2e/smoke.spec.ts-snapshots/`.
 
+Visual comparison allows at most 320 changed pixels per image. This is narrowly
+above the measured 295-pixel Linux antialiasing variance around placeholder
+text and remains independent of screenshot size. Exact structural assertions
+protect tab consistency.
+
 The permanent checks now fail if:
 
 - the five tabs differ in width, height, number offset, label offset, or
@@ -155,7 +160,7 @@ The permanent checks now fail if:
 - the fixed app shell or internal content scroller is removed;
 - window scroll changes while authenticated content scrolls;
 - navigation loses fixed positioning or compositor promotion; or
-- any authenticated page exceeds the tightened 0.05% screenshot tolerance.
+- any authenticated page differs from its baseline by more than 320 pixels.
 
 Run the complete browser suite:
 
