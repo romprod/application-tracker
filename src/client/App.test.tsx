@@ -677,6 +677,7 @@ describe("application shell", () => {
     );
 
     await screen.findByRole("heading", { name: "Documents" });
+    await screen.findByRole("table", { name: "Documents" });
     expect(applicationsClient.listApplications).not.toHaveBeenCalled();
     expect(referenceValuesClient.listValues).not.toHaveBeenCalled();
 
