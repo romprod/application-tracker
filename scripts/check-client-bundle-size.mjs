@@ -1,14 +1,24 @@
 import { gzipSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
+import { DomUtils, parseDocument } from "htmlparser2";
+
 const clientRoot = new URL("../dist/client/", import.meta.url);
 const index = await readFile(new URL("index.html", clientRoot), "utf8");
-const entryMatch = /<script[^>]+src="([^"]+)"[^>]*><\/script>/.exec(index);
+const document = parseDocument(index);
+const entryScript = DomUtils.findOne(
+  ({ attribs, name }) =>
+    name === "script" &&
+    attribs.type === "module" &&
+    typeof attribs.src === "string",
+  document.children,
+);
+const entryPath = entryScript?.attribs.src;
 
-if (!entryMatch?.[1]) {
+if (!entryPath) {
   throw new Error("The built client entry script could not be resolved");
 }
 
-const entryUrl = new URL(entryMatch[1].replace(/^\//, ""), clientRoot);
+const entryUrl = new URL(entryPath.replace(/^\//, ""), clientRoot);
 const entry = await readFile(entryUrl);
 const maximumEntryBytes = 500_000;
 const maximumEntryGzipBytes = 150_000;
