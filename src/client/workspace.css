@@ -1237,6 +1237,10 @@
   border-radius: 999px;
 }
 
+.tracker-table-shell.compact :is(.tracker-reference, .tracker-status-chip) {
+  white-space: nowrap;
+}
+
 .tracker-status-chip[data-status="interview"] {
   color: #815f1c;
   background: #f4e3be;
