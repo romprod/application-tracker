@@ -112,7 +112,10 @@
 }
 
 .workspace-tab-bar {
-  display: none;
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .workspace-sidebar li > button,
@@ -3014,23 +3017,15 @@
   }
 
   .workspace-sidebar nav > .workspace-tab-bar {
-    --background: var(--tracker-green);
-    --border: 0;
-    --color: rgb(245 240 228 / 62%);
-    --color-selected: #fff;
-    --ion-safe-area-bottom: env(safe-area-inset-bottom);
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     width: 100%;
     height: 62px;
     contain: layout style;
   }
 
   .workspace-tab-button {
-    --background: transparent;
-    --background-focused: rgb(255 255 255 / 6%);
-    --color: rgb(245 240 228 / 62%);
-    --color-selected: #fff;
-    width: 20%;
+    width: 100%;
     min-width: 0;
     max-width: none;
     height: 62px;
@@ -3505,6 +3500,8 @@
     border: 1px solid var(--tracker-line);
     border-radius: 4px;
     box-shadow: 0 8px 24px rgb(25 37 35 / 5%);
+    content-visibility: auto;
+    contain-intrinsic-size: 0 250px;
   }
 
   .tracker-mobile-register li > button:focus-visible {
@@ -3745,6 +3742,8 @@
     background: var(--tracker-paper);
     border: 1px solid var(--tracker-line);
     border-radius: 5px;
+    content-visibility: auto;
+    contain-intrinsic-size: 0 210px;
   }
 
   .document-mobile-heading {
@@ -4057,9 +4056,9 @@
   }
 
   .workspace-sidebar nav > .workspace-tab-bar {
-    --ion-safe-area-bottom: 0px;
     height: 100%;
-    flex-direction: column;
+    grid-template-rows: repeat(5, minmax(44px, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .workspace-tab-button {
@@ -4198,13 +4197,13 @@
   }
 
   .workspace-sidebar nav > .workspace-tab-bar {
-    --ion-safe-area-bottom: env(safe-area-inset-bottom);
     height: 44px;
-    flex-direction: row;
+    grid-template-rows: 1fr;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .workspace-tab-button {
-    width: 20%;
+    width: 100%;
     height: 44px;
     min-height: 44px;
   }

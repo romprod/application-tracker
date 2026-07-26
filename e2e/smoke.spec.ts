@@ -433,6 +433,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(
     page.getByRole("list", { name: "Opportunities mobile records" }),
   ).toBeVisible();
+  await expect(opportunitiesTable).toHaveCount(0);
   await expect(
     page.getByRole("combobox", { name: "Sort Opportunities" }),
   ).toBeVisible();
@@ -519,19 +520,31 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(opportunitiesTable).toBeHidden();
 
   await page.setViewportSize({ width: 320, height: 458 });
-  await page.getByRole("tab", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your search, at a glance." }),
   ).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Applications mobile records" }),
   ).toBeVisible();
+  const deferredDashboardCard = page
+    .getByRole("list", { name: "Applications mobile records" })
+    .getByRole("button", {
+      name: "Open Example Studio · Product Designer",
+    });
+  await deferredDashboardCard.scrollIntoViewIfNeeded();
+  const deferredDashboardCardBox = await deferredDashboardCard.boundingBox();
+  expect(deferredDashboardCardBox).not.toBeNull();
+  expect(deferredDashboardCardBox!.x).toBeGreaterThanOrEqual(0);
+  expect(
+    deferredDashboardCardBox!.x + deferredDashboardCardBox!.width,
+  ).toBeLessThanOrEqual(320);
   expect(await page.evaluate<number>("window.scrollY")).toBe(0);
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
 
-  await page.getByRole("tab", { name: "Applications", exact: true }).click();
+  await page.getByRole("button", { name: "Applications", exact: true }).click();
   await expect(
     page.getByRole("list", { name: "Applications mobile records" }),
   ).toBeVisible();
@@ -539,7 +552,9 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(
     await page.evaluate<number>("document.documentElement.scrollWidth"),
   ).toBeLessThanOrEqual(320);
-  await page.getByRole("tab", { name: "Opportunities", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Opportunities", exact: true })
+    .click();
 
   // A 2048px-wide browser at 140% zoom has an effective viewport of 1463px.
   // Keep the full register, including its final columns, within that width.
@@ -716,6 +731,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(documentMetricsBox).not.toBeNull();
   expect(documentMetricsBox!.height).toBeLessThanOrEqual(100);
   await expect(page.locator(".document-table-scroll")).toBeHidden();
+  await expect(page.locator(".document-table-scroll")).toHaveCount(0);
   const mobileDocuments = page.getByRole("list", {
     name: "Documents mobile records",
   });
@@ -1593,7 +1609,6 @@ const mobileGeometryAuditScript = String.raw`
       "select",
       "summary",
       "textarea",
-      "ion-tab-button",
       "[role='button']",
     ].join(",");
     const clippingSelector = [
@@ -1616,7 +1631,9 @@ const mobileGeometryAuditScript = String.raw`
         style.display !== "none" &&
         style.visibility !== "hidden" &&
         box.width > 0 &&
-        box.height > 0
+        box.height > 0 &&
+        box.bottom >= -1 &&
+        box.top <= window.innerHeight + 1
       );
     }
 
@@ -1833,7 +1850,7 @@ test("audits every authenticated page across the mobile browser matrix", async (
       );
       const navigation = page.locator(".workspace-sidebar nav");
       await expect(navigation).toBeInViewport();
-      await expect(navigation.getByRole("tab")).toHaveCount(5);
+      await expect(navigation.getByRole("button")).toHaveCount(5);
       const navigationBox = await navigation.boundingBox();
       if (
         !navigationBox ||
@@ -1874,7 +1891,7 @@ test("audits every authenticated page across the mobile browser matrix", async (
   expect(failures, failures.slice(0, 200).join("\n")).toEqual([]);
 });
 
-test("keeps Ionic mobile navigation anchored through scroll and viewport changes", async ({
+test("keeps mobile navigation anchored and resets route scroll", async ({
   page,
 }) => {
   await authenticateMobileAudit(page);
@@ -1882,17 +1899,27 @@ test("keeps Ionic mobile navigation anchored through scroll and viewport changes
   await openMobileAuditRoute(page, mobileAuditRoutes[0]!);
 
   const navigation = page.locator(".workspace-sidebar nav");
-  const tabBar = navigation.locator("ion-tab-bar");
+  const tabBar = navigation.locator(".workspace-tab-bar");
+  const contentScroller = page.locator(".workspace-main").first();
   await expect(tabBar).toBeVisible();
-  await expect(navigation.getByRole("tab")).toHaveCount(5);
+  await expect(navigation.getByRole("button")).toHaveCount(5);
 
   await page.evaluate(
     "Object.assign(window, { __mobileNavigationSentinel: 'preserved' })",
   );
+  await contentScroller.evaluate((element) => {
+    element.scrollTop = 360;
+  });
+  expect(await contentScroller.evaluate((element) => element.scrollTop)).toBe(
+    360,
+  );
   await navigation
-    .getByRole("tab", { name: "Applications", exact: true })
+    .getByRole("button", { name: "Applications", exact: true })
     .click();
   await expect(page).toHaveURL(/\/applications$/);
+  expect(await contentScroller.evaluate((element) => element.scrollTop)).toBe(
+    0,
+  );
   expect(
     await page.evaluate<string | undefined>(
       "window.__mobileNavigationSentinel",
@@ -1928,7 +1955,6 @@ test("keeps Ionic mobile navigation anchored through scroll and viewport changes
     viewportDrivenBottomRules.join("\n"),
   ).toEqual([]);
 
-  const contentScroller = page.locator(".workspace-main").first();
   await expect(contentScroller).toBeVisible();
 
   for (const height of [458, 568, 932, 458]) {
@@ -2141,7 +2167,7 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
 
     const bottomNavigation = page.locator(".workspace-sidebar nav");
     for (const navigationButton of await bottomNavigation
-      .getByRole("tab")
+      .getByRole("button")
       .all()) {
       await expect(navigationButton).toBeInViewport();
       const box = await navigationButton.boundingBox();
@@ -2192,7 +2218,9 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
       await stageFilter.getByRole("button", { name: "Done" }).click();
 
       const navigation = page.locator(".workspace-sidebar nav");
-      for (const navigationButton of await navigation.getByRole("tab").all()) {
+      for (const navigationButton of await navigation
+        .getByRole("button")
+        .all()) {
         const box = await navigationButton.boundingBox();
         expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
         expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

@@ -1,5 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { IonLabel, IonTabBar, IonTabButton } from "@ionic/react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 
 import {
   browserAuthClient,
@@ -12,12 +11,10 @@ import {
   browserApplicationsClient,
   type ApplicationsClient,
 } from "./applications_client";
-import { ApplicationWorkspace } from "./application_workspace";
 import {
   browserDocumentsClient,
   type DocumentsClient,
 } from "./documents_client";
-import { DocumentsWorkspace } from "./documents_workspace";
 import {
   browserEmailLinksClient,
   type EmailLinksClient,
@@ -53,6 +50,35 @@ import {
   workspacePagePath,
   type WorkspacePage,
 } from "./workspace_routes";
+import {
+  clearWorkspaceDataCache,
+  loadCachedReferenceValues,
+  updateCachedReferenceValues,
+} from "./workspace_data_cache";
+
+const loadApplicationWorkspace = () => import("./application_workspace");
+const loadDocumentsWorkspace = () => import("./documents_workspace");
+const ApplicationWorkspace = lazy(() =>
+  loadApplicationWorkspace().then((module) => ({
+    default: module.ApplicationWorkspace,
+  })),
+);
+const DocumentsWorkspace = lazy(() =>
+  loadDocumentsWorkspace().then((module) => ({
+    default: module.DocumentsWorkspace,
+  })),
+);
+
+function preloadWorkspacePage(page: WorkspacePage): void {
+  if (
+    page === "overview" ||
+    page === "opportunities" ||
+    page === "applications"
+  ) {
+    void loadApplicationWorkspace();
+  }
+  if (page === "documents") void loadDocumentsWorkspace();
+}
 
 type ReadyPage = WorkspacePage;
 
@@ -92,6 +118,15 @@ function routeForSession(session: AuthenticatedSession): ReadyPage {
   return route.page;
 }
 
+function resetWorkspaceScroll(): void {
+  const content = document.querySelector<HTMLElement>(
+    ".workspace-main, .workspace-app-shell .settings-main",
+  );
+  if (content) content.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}
+
 export function App({
   applicationsClient = browserApplicationsClient,
   authClient = browserAuthClient,
@@ -108,6 +143,7 @@ export function App({
   useEffect(
     () =>
       observeAuthenticationRequired(() => {
+        clearWorkspaceDataCache();
         setView((current) =>
           current.kind === "ready"
             ? {
@@ -164,6 +200,7 @@ export function App({
 
     function handlePopState() {
       const page = routeForSession(session);
+      resetWorkspaceScroll();
       setView((current) => {
         if (current.kind !== "ready") return current;
         return {
@@ -196,9 +233,10 @@ export function App({
     });
     void authClient
       .logout()
-      .then(() =>
-        setView({ kind: "login", notice: "You have signed out safely." }),
-      )
+      .then(() => {
+        clearWorkspaceDataCache();
+        setView({ kind: "login", notice: "You have signed out safely." });
+      })
       .catch(() =>
         setView({
           kind: "ready",
@@ -219,14 +257,13 @@ export function App({
     if (window.location.pathname !== route.path) {
       window.history.pushState(null, "", route.path);
     }
+    resetWorkspaceScroll();
     setView({
       kind: "ready",
       page: route.page,
       session: view.session,
       signingOut: view.signingOut,
     });
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
   }
 
   const isSetup = view.kind === "setup";
@@ -312,26 +349,30 @@ export function App({
           (view.page === "overview" ||
             view.page === "opportunities" ||
             view.page === "applications") && (
-            <ApplicationWorkspace
-              applicationsClient={applicationsClient}
-              emailLinksClient={emailLinksClient}
-              page={view.page}
-              referenceValuesClient={referenceValuesClient}
-              session={view.session}
-              navigate={navigate}
-              {...(view.logoutError ? { error: view.logoutError } : {})}
-              {...(view.notice ? { notice: view.notice } : {})}
-            />
+            <Suspense fallback={<WorkspaceLoadingView label="workspace" />}>
+              <ApplicationWorkspace
+                applicationsClient={applicationsClient}
+                emailLinksClient={emailLinksClient}
+                page={view.page}
+                referenceValuesClient={referenceValuesClient}
+                session={view.session}
+                navigate={navigate}
+                {...(view.logoutError ? { error: view.logoutError } : {})}
+                {...(view.notice ? { notice: view.notice } : {})}
+              />
+            </Suspense>
           )}
         {view.kind === "ready" && view.page === "settings-users" && (
           <UsersSettingsView navigate={navigate} usersClient={usersClient} />
         )}
         {view.kind === "ready" && view.page === "documents" && (
-          <DocumentsWorkspace
-            applicationsClient={applicationsClient}
-            documentsClient={documentsClient}
-            referenceValuesClient={referenceValuesClient}
-          />
+          <Suspense fallback={<WorkspaceLoadingView label="documents" />}>
+            <DocumentsWorkspace
+              applicationsClient={applicationsClient}
+              documentsClient={documentsClient}
+              referenceValuesClient={referenceValuesClient}
+            />
+          </Suspense>
         )}
         {view.kind === "ready" && view.page === "settings-lists" && (
           <ListsSettingsView
@@ -482,121 +523,23 @@ function Sidebar({
         </div>
       </div>
       <nav aria-label="Primary navigation">
-        <IonTabBar className="workspace-tab-bar">
-          <IonTabButton
-            tab="dashboard"
-            href="/dashboard"
-            aria-label="Dashboard"
-            aria-current={activePage === "overview" ? "page" : undefined}
-            className={
-              activePage === "overview"
-                ? "workspace-tab-button active-navigation"
-                : "workspace-tab-button"
-            }
-            onClick={() => onNavigate("overview")}
-          >
-            <span className="workspace-nav-number" aria-hidden="true">
-              01
-            </span>
-            <IonLabel className="workspace-nav-label" data-mobile-label="Home">
-              Dashboard
-            </IonLabel>
-          </IonTabButton>
-          <IonTabButton
-            tab="opportunities"
-            href="/opportunities"
-            aria-label="Opportunities"
-            aria-current={activePage === "opportunities" ? "page" : undefined}
-            className={
-              activePage === "opportunities"
-                ? "workspace-tab-button active-navigation"
-                : "workspace-tab-button"
-            }
-            onClick={() => onNavigate("opportunities")}
-          >
-            <span className="workspace-nav-number" aria-hidden="true">
-              02
-            </span>
-            <IonLabel className="workspace-nav-label" data-mobile-label="Roles">
-              Opportunities
-            </IonLabel>
-          </IonTabButton>
-          <IonTabButton
-            tab="applications"
-            href="/applications"
-            aria-label="Applications"
-            aria-current={activePage === "applications" ? "page" : undefined}
-            className={
-              activePage === "applications"
-                ? "workspace-tab-button active-navigation"
-                : "workspace-tab-button"
-            }
-            onClick={() => onNavigate("applications")}
-          >
-            <span className="workspace-nav-number" aria-hidden="true">
-              03
-            </span>
-            <IonLabel
-              className="workspace-nav-label"
-              data-mobile-label="Applied"
-            >
-              Applications
-            </IonLabel>
-          </IonTabButton>
-          <IonTabButton
-            tab="documents"
-            href="/documents"
-            aria-label="Documents"
-            aria-current={activePage === "documents" ? "page" : undefined}
-            className={
-              activePage === "documents"
-                ? "workspace-tab-button active-navigation"
-                : "workspace-tab-button"
-            }
-            onClick={() => onNavigate("documents")}
-          >
-            <span className="workspace-nav-number" aria-hidden="true">
-              04
-            </span>
-            <IonLabel className="workspace-nav-label" data-mobile-label="Files">
-              Documents
-            </IonLabel>
-          </IonTabButton>
-          <IonTabButton
-            tab="settings"
-            href="/settings"
-            aria-label="Settings"
-            aria-current={
-              activePage.startsWith("settings-") ? "page" : undefined
-            }
-            className={
-              activePage.startsWith("settings-")
-                ? "workspace-tab-button active-navigation"
-                : "workspace-tab-button"
-            }
-            onClick={() => onNavigate("settings-lists")}
-          >
-            <span className="workspace-nav-number" aria-hidden="true">
-              05
-            </span>
-            <IonLabel
-              className="workspace-nav-label"
-              data-mobile-label="Settings"
-            >
-              Settings
-            </IonLabel>
-          </IonTabButton>
-        </IonTabBar>
-        <ul>
+        <ul className="workspace-tab-bar">
           <li>
             <button
               type="button"
               aria-label="Dashboard"
               aria-current={activePage === "overview" ? "page" : undefined}
-              className={activePage === "overview" ? "active-navigation" : ""}
+              className={`workspace-tab-button${
+                activePage === "overview" ? " active-navigation" : ""
+              }`}
+              onFocus={() => preloadWorkspacePage("overview")}
               onClick={() => onNavigate("overview")}
+              onPointerDown={() => preloadWorkspacePage("overview")}
+              onPointerEnter={() => preloadWorkspacePage("overview")}
             >
-              <span aria-hidden="true">01</span>
+              <span className="workspace-nav-number" aria-hidden="true">
+                01
+              </span>
               <span className="workspace-nav-label" data-mobile-label="Home">
                 Dashboard
               </span>
@@ -607,12 +550,17 @@ function Sidebar({
               type="button"
               aria-label="Opportunities"
               aria-current={activePage === "opportunities" ? "page" : undefined}
-              className={
-                activePage === "opportunities" ? "active-navigation" : ""
-              }
+              className={`workspace-tab-button${
+                activePage === "opportunities" ? " active-navigation" : ""
+              }`}
+              onFocus={() => preloadWorkspacePage("opportunities")}
               onClick={() => onNavigate("opportunities")}
+              onPointerDown={() => preloadWorkspacePage("opportunities")}
+              onPointerEnter={() => preloadWorkspacePage("opportunities")}
             >
-              <span aria-hidden="true">02</span>
+              <span className="workspace-nav-number" aria-hidden="true">
+                02
+              </span>
               <span className="workspace-nav-label" data-mobile-label="Roles">
                 Opportunities
               </span>
@@ -623,12 +571,17 @@ function Sidebar({
               type="button"
               aria-label="Applications"
               aria-current={activePage === "applications" ? "page" : undefined}
-              className={
-                activePage === "applications" ? "active-navigation" : ""
-              }
+              className={`workspace-tab-button${
+                activePage === "applications" ? " active-navigation" : ""
+              }`}
+              onFocus={() => preloadWorkspacePage("applications")}
               onClick={() => onNavigate("applications")}
+              onPointerDown={() => preloadWorkspacePage("applications")}
+              onPointerEnter={() => preloadWorkspacePage("applications")}
             >
-              <span aria-hidden="true">03</span>
+              <span className="workspace-nav-number" aria-hidden="true">
+                03
+              </span>
               <span className="workspace-nav-label" data-mobile-label="Applied">
                 Applications
               </span>
@@ -639,10 +592,17 @@ function Sidebar({
               type="button"
               aria-label="Documents"
               aria-current={activePage === "documents" ? "page" : undefined}
-              className={activePage === "documents" ? "active-navigation" : ""}
+              className={`workspace-tab-button${
+                activePage === "documents" ? " active-navigation" : ""
+              }`}
+              onFocus={() => preloadWorkspacePage("documents")}
               onClick={() => onNavigate("documents")}
+              onPointerDown={() => preloadWorkspacePage("documents")}
+              onPointerEnter={() => preloadWorkspacePage("documents")}
             >
-              <span aria-hidden="true">04</span>
+              <span className="workspace-nav-number" aria-hidden="true">
+                04
+              </span>
               <span className="workspace-nav-label" data-mobile-label="Files">
                 Documents
               </span>
@@ -655,12 +615,14 @@ function Sidebar({
               aria-current={
                 activePage.startsWith("settings-") ? "page" : undefined
               }
-              className={
-                activePage.startsWith("settings-") ? "active-navigation" : ""
-              }
+              className={`workspace-tab-button${
+                activePage.startsWith("settings-") ? " active-navigation" : ""
+              }`}
               onClick={() => onNavigate("settings-lists")}
             >
-              <span aria-hidden="true">05</span>
+              <span className="workspace-nav-number" aria-hidden="true">
+                05
+              </span>
               <span
                 className="workspace-nav-label"
                 data-mobile-label="Settings"
@@ -696,6 +658,16 @@ function LoadingView() {
       <p className="eyebrow">Installation state</p>
       <h1>Opening your ledger.</h1>
       <p>Checking whether this installation needs its first administrator.</p>
+    </main>
+  );
+}
+
+function WorkspaceLoadingView({ label }: { label: string }) {
+  return (
+    <main id="main-content" tabIndex={-1} className="workspace-main">
+      <p className="tracker-loading" role="status">
+        Opening {label}…
+      </p>
     </main>
   );
 }
@@ -1226,8 +1198,7 @@ function ListsSettingsView({
 
   useEffect(() => {
     let active = true;
-    void referenceValuesClient
-      .listValues()
+    void loadCachedReferenceValues(referenceValuesClient)
       .then((loaded) => {
         if (active) setValues(loaded);
       })
@@ -1240,9 +1211,10 @@ function ListsSettingsView({
   }, [referenceValuesClient]);
 
   function replaceValue(updated: ReferenceValue) {
-    setValues((current) =>
-      current?.map((value) => (value.id === updated.id ? updated : value)),
-    );
+    const includeUpdated = (current: ReferenceValue[]) =>
+      current.map((value) => (value.id === updated.id ? updated : value));
+    setValues((current) => (current ? includeUpdated(current) : current));
+    updateCachedReferenceValues(referenceValuesClient, includeUpdated);
   }
 
   function createValue(
@@ -1262,7 +1234,12 @@ function ListsSettingsView({
         label,
       })
       .then((created) => {
-        setValues((current) => [...(current ?? []), created]);
+        const includeCreated = (current: ReferenceValue[]) => [
+          ...current,
+          created,
+        ];
+        setValues((current) => includeCreated(current ?? []));
+        updateCachedReferenceValues(referenceValuesClient, includeCreated);
         setDrafts((current) => ({ ...current, [category]: "" }));
         if (category === "status") setNewStatusTerminal(false);
         setAddingCategory(undefined);
@@ -1302,7 +1279,10 @@ function ListsSettingsView({
     void referenceValuesClient
       .deleteValue(value.id)
       .then(() => {
-        setValues((current) => current?.filter(({ id }) => id !== value.id));
+        const removeDeleted = (current: ReferenceValue[]) =>
+          current.filter(({ id }) => id !== value.id);
+        setValues((current) => (current ? removeDeleted(current) : current));
+        updateCachedReferenceValues(referenceValuesClient, removeDeleted);
         setConfirmingId(undefined);
         setNotice(`${value.label} was removed.`);
       })
