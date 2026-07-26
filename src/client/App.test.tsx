@@ -659,6 +659,66 @@ describe("application shell", () => {
     expect(window.location.pathname).toBe("/documents");
   });
 
+  it("defers document upload data until the user opens the upload dialog", async () => {
+    window.history.replaceState(null, "", "/documents");
+    const applicationsClient = createApplicationsClient();
+    const referenceValuesClient = createReferenceValuesClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={createDocumentsClient()}
+        referenceValuesClient={referenceValuesClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Documents" });
+    expect(applicationsClient.listApplications).not.toHaveBeenCalled();
+    expect(referenceValuesClient.listValues).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    await screen.findByRole("dialog", { name: "Add a document" });
+    expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
+    expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
+  });
+
+  it("reuses shared workspace data while moving between tabs", async () => {
+    const applicationsClient = createApplicationsClient();
+    const referenceValuesClient = createReferenceValuesClient();
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        authClient={createAuthClient(authenticatedSession)}
+        documentsClient={createDocumentsClient()}
+        referenceValuesClient={referenceValuesClient}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    await screen.findByRole("heading", {
+      name: "Your search, at a glance.",
+    });
+    await waitFor(() => {
+      expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
+      expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    await screen.findByRole("heading", { name: "Documents" });
+    fireEvent.click(screen.getByRole("button", { name: "Applications" }));
+    await screen.findByRole("heading", { name: "Applications" });
+
+    expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
+    expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
+  });
+
   it("writes navigation to history and responds to popstate", async () => {
     window.history.replaceState(null, "", "/dashboard");
     const pushState = vi.spyOn(window.history, "pushState");
@@ -674,11 +734,17 @@ describe("application shell", () => {
       />,
     );
 
+    await screen.findByRole("heading", {
+      name: "Your search, at a glance.",
+    });
+    const workspace = screen.getByRole("main");
+    workspace.scrollTop = 120;
     fireEvent.click(
       await screen.findByRole("button", { name: "Opportunities" }),
     );
     expect(pushState).toHaveBeenCalledWith(null, "", "/opportunities");
     expect(window.location.pathname).toBe("/opportunities");
+    expect(workspace.scrollTop).toBe(0);
 
     window.history.replaceState(null, "", "/dashboard");
     fireEvent.popState(window);
@@ -2564,7 +2630,7 @@ describe("application shell", () => {
         name: "Make the tracker fit your search.",
       }),
     ).toBeInTheDocument();
-    expect(referenceValuesClient.listValues).toHaveBeenCalledTimes(2);
+    expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
     expect(screen.getByText("Referral")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add source" }));

@@ -20,6 +20,11 @@ import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
+import { useCompactWorkspaceLayout } from "./use_compact_workspace_layout";
+import {
+  loadCachedApplications,
+  loadCachedReferenceValues,
+} from "./workspace_data_cache";
 
 export function DocumentsWorkspace({
   applicationsClient,
@@ -35,13 +40,14 @@ export function DocumentsWorkspace({
   const [applications, setApplications] = useState<ApplicationRecord[]>();
   const [referenceValues, setReferenceValues] = useState<ReferenceValue[]>();
   const [loadError, setLoadError] = useState(false);
-  const [supportingDataError, setSupportingDataError] = useState(false);
+  const [supportingDataLoading, setSupportingDataLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [previewTarget, setPreviewTarget] = useState<DocumentRecord>();
   const [preview, setPreview] = useState<DocumentPreview>();
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string>();
+  const compactWorkspaceLayout = useCompactWorkspaceLayout();
 
   useEffect(() => {
     let active = true;
@@ -60,32 +66,31 @@ export function DocumentsWorkspace({
     };
   }, [documentsClient]);
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([
-      applicationsClient.listApplications(),
-      referenceValuesClient.listValues(),
-    ])
-      .then(([loadedApplications, loadedReferenceValues]) => {
-        if (!active) return;
-        setApplications(loadedApplications);
-        setReferenceValues(loadedReferenceValues);
-      })
-      .catch(() => {
-        if (active) setSupportingDataError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [applicationsClient, referenceValuesClient]);
-
   function openUpload() {
-    if (!applications || !referenceValues || maxUploadBytes === undefined) {
-      setNotice(
-        supportingDataError
-          ? "Document types or applications could not be loaded. Reload the page to try again."
-          : "Document options are still loading. Please try again.",
-      );
+    if (supportingDataLoading) return;
+    if (maxUploadBytes === undefined) {
+      setNotice("Document options are still loading. Please try again.");
+      return;
+    }
+    if (!applications || !referenceValues) {
+      setSupportingDataLoading(true);
+      setNotice(undefined);
+      void Promise.all([
+        loadCachedApplications(applicationsClient),
+        loadCachedReferenceValues(referenceValuesClient),
+      ])
+        .then(([loadedApplications, loadedReferenceValues]) => {
+          setApplications(loadedApplications);
+          setReferenceValues(loadedReferenceValues);
+          setSupportingDataLoading(false);
+          setUploadOpen(true);
+        })
+        .catch(() => {
+          setSupportingDataLoading(false);
+          setNotice(
+            "Document types or applications could not be loaded. Reload the page to try again.",
+          );
+        });
       return;
     }
     setNotice(undefined);
@@ -128,11 +133,12 @@ export function DocumentsWorkspace({
           </div>
           <button
             className="tracker-button tracker-button-primary"
+            disabled={supportingDataLoading}
             type="button"
             onClick={openUpload}
           >
             <span aria-hidden="true">+</span>
-            Upload document
+            {supportingDataLoading ? "Loading options…" : "Upload document"}
           </button>
         </header>
 
@@ -147,6 +153,7 @@ export function DocumentsWorkspace({
         {documents && (
           <DocumentLibrary
             documents={documents}
+            compactWorkspaceLayout={compactWorkspaceLayout}
             onPreview={openPreview}
             onUpload={openUpload}
           />
@@ -191,10 +198,12 @@ export function DocumentsWorkspace({
 }
 
 function DocumentLibrary({
+  compactWorkspaceLayout,
   documents,
   onPreview,
   onUpload,
 }: {
+  compactWorkspaceLayout: boolean;
   documents: DocumentRecord[];
   onPreview: (document: DocumentRecord) => void;
   onUpload: () => void;
@@ -255,151 +264,157 @@ function DocumentLibrary({
               {documents.length} {documents.length === 1 ? "file" : "files"}
             </span>
           </div>
-          <div className="document-table-scroll">
-            <table className="document-table" aria-label="Documents">
-              <thead>
-                <tr>
-                  <th scope="col">File</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Linked applications</th>
-                  <th scope="col">Stored</th>
-                  <th scope="col">
-                    <span className="sr-only">Download</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((document) => (
-                  <tr key={document.id}>
-                    <td>
-                      <div className="document-file-cell">
-                        <span aria-hidden="true">
-                          {fileMonogram(document.originalFilename)}
-                        </span>
-                        <div>
-                          <strong>{document.originalFilename}</strong>
-                          <small>
-                            {formatBytes(document.byteSize)} ·{" "}
-                            {document.mediaType}
-                          </small>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="tracker-reference">
-                        {document.documentType}
-                      </span>
-                    </td>
-                    <td>
-                      {document.applications.length === 0 ? (
-                        <span className="document-unlinked">Not linked</span>
-                      ) : (
-                        <ul className="document-associations">
-                          {document.applications.map((application) => (
-                            <li key={application.id}>
-                              <strong>{application.companyName}</strong>
-                              <span>{application.roleTitle}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                    <td className="document-stored-cell">
-                      <div className="document-stored-stack">
-                        <strong>{formatStoredDate(document.createdAt)}</strong>
-                        <small>by {document.uploadedByDisplayName}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="document-actions">
-                        {supportsInlinePreview(document) && (
-                          <button
-                            className="document-preview-button"
-                            type="button"
-                            aria-label={`Preview ${document.originalFilename}`}
-                            onClick={() => onPreview(document)}
-                          >
-                            Preview
-                          </button>
-                        )}
-                        <a
-                          className="document-download"
-                          href={`/api/documents/${encodeURIComponent(document.id)}/download`}
-                        >
-                          Download
-                          <span aria-hidden="true">↓</span>
-                        </a>
-                      </div>
-                    </td>
+          {!compactWorkspaceLayout ? (
+            <div className="document-table-scroll">
+              <table className="document-table" aria-label="Documents">
+                <thead>
+                  <tr>
+                    <th scope="col">File</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Linked applications</th>
+                    <th scope="col">Stored</th>
+                    <th scope="col">
+                      <span className="sr-only">Download</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <ul
-            className="document-mobile-list"
-            aria-label="Documents mobile records"
-          >
-            {documents.map((document) => (
-              <li key={document.id}>
-                <div className="document-mobile-heading">
-                  <span aria-hidden="true">
-                    {fileMonogram(document.originalFilename)}
-                  </span>
-                  <div>
-                    <strong>{document.originalFilename}</strong>
-                    <small>
-                      {document.documentType} · {formatBytes(document.byteSize)}
-                    </small>
+                </thead>
+                <tbody>
+                  {documents.map((document) => (
+                    <tr key={document.id}>
+                      <td>
+                        <div className="document-file-cell">
+                          <span aria-hidden="true">
+                            {fileMonogram(document.originalFilename)}
+                          </span>
+                          <div>
+                            <strong>{document.originalFilename}</strong>
+                            <small>
+                              {formatBytes(document.byteSize)} ·{" "}
+                              {document.mediaType}
+                            </small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="tracker-reference">
+                          {document.documentType}
+                        </span>
+                      </td>
+                      <td>
+                        {document.applications.length === 0 ? (
+                          <span className="document-unlinked">Not linked</span>
+                        ) : (
+                          <ul className="document-associations">
+                            {document.applications.map((application) => (
+                              <li key={application.id}>
+                                <strong>{application.companyName}</strong>
+                                <span>{application.roleTitle}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td className="document-stored-cell">
+                        <div className="document-stored-stack">
+                          <strong>
+                            {formatStoredDate(document.createdAt)}
+                          </strong>
+                          <small>by {document.uploadedByDisplayName}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="document-actions">
+                          {supportsInlinePreview(document) && (
+                            <button
+                              className="document-preview-button"
+                              type="button"
+                              aria-label={`Preview ${document.originalFilename}`}
+                              onClick={() => onPreview(document)}
+                            >
+                              Preview
+                            </button>
+                          )}
+                          <a
+                            className="document-download"
+                            href={`/api/documents/${encodeURIComponent(document.id)}/download`}
+                          >
+                            Download
+                            <span aria-hidden="true">↓</span>
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <ul
+              className="document-mobile-list"
+              aria-label="Documents mobile records"
+            >
+              {documents.map((document) => (
+                <li key={document.id}>
+                  <div className="document-mobile-heading">
+                    <span aria-hidden="true">
+                      {fileMonogram(document.originalFilename)}
+                    </span>
+                    <div>
+                      <strong>{document.originalFilename}</strong>
+                      <small>
+                        {document.documentType} ·{" "}
+                        {formatBytes(document.byteSize)}
+                      </small>
+                    </div>
                   </div>
-                </div>
-                <dl className="document-mobile-facts">
-                  <div>
-                    <dt>Stored</dt>
-                    <dd>{formatStoredDate(document.createdAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Uploaded by</dt>
-                    <dd>{document.uploadedByDisplayName}</dd>
-                  </div>
-                  <div className="document-mobile-links">
-                    <dt>Linked roles</dt>
-                    <dd>
-                      {document.applications.length === 0 ? (
-                        <span>Not linked</span>
-                      ) : (
-                        <ul>
-                          {document.applications.map((application) => (
-                            <li key={application.id}>
-                              <strong>{application.companyName}</strong>
-                              <span>{application.roleTitle}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="document-mobile-actions">
-                  {supportsInlinePreview(document) && (
-                    <button
-                      type="button"
-                      aria-label={`Preview ${document.originalFilename}`}
-                      onClick={() => onPreview(document)}
+                  <dl className="document-mobile-facts">
+                    <div>
+                      <dt>Stored</dt>
+                      <dd>{formatStoredDate(document.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Uploaded by</dt>
+                      <dd>{document.uploadedByDisplayName}</dd>
+                    </div>
+                    <div className="document-mobile-links">
+                      <dt>Linked roles</dt>
+                      <dd>
+                        {document.applications.length === 0 ? (
+                          <span>Not linked</span>
+                        ) : (
+                          <ul>
+                            {document.applications.map((application) => (
+                              <li key={application.id}>
+                                <strong>{application.companyName}</strong>
+                                <span>{application.roleTitle}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="document-mobile-actions">
+                    {supportsInlinePreview(document) && (
+                      <button
+                        type="button"
+                        aria-label={`Preview ${document.originalFilename}`}
+                        onClick={() => onPreview(document)}
+                      >
+                        Preview
+                      </button>
+                    )}
+                    <a
+                      href={`/api/documents/${encodeURIComponent(document.id)}/download`}
                     >
-                      Preview
-                    </button>
-                  )}
-                  <a
-                    href={`/api/documents/${encodeURIComponent(document.id)}/download`}
-                  >
-                    Download
-                    <span aria-hidden="true">↓</span>
-                  </a>
-                </div>
-              </li>
-            ))}
-          </ul>
+                      Download
+                      <span aria-hidden="true">↓</span>
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </>

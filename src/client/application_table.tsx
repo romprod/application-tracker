@@ -18,6 +18,7 @@ import {
   type ApplicationSortKey,
 } from "./application_sort";
 import { dueLabel } from "./application_next_action";
+import { useCompactWorkspaceLayout } from "./use_compact_workspace_layout";
 
 export type ApplicationColumnFilters = Partial<
   Record<ApplicationSortKey, string[]>
@@ -89,6 +90,7 @@ export function ApplicationTable({
   );
   const filteringEnabled =
     columnFilters !== undefined && onColumnFiltersChange !== undefined;
+  const compactWorkspaceLayout = useCompactWorkspaceLayout();
   const rows = useMemo(() => {
     const filtered = columnFilters
       ? filterApplicationsByColumns(applications, columnFilters)
@@ -213,170 +215,177 @@ export function ApplicationTable({
 
   return (
     <div className={`tracker-table-shell${compact ? " compact" : ""}`}>
-      <div className="tracker-mobile-register">
-        {!compact && (
-          <div className="tracker-mobile-register-tools">
-            <label>
-              <span>Sort records</span>
-              <select
-                aria-label={`Sort ${label}`}
-                value={mobileSortValue}
-                onChange={(event) => {
-                  const selected = mobileSortOptions.find(
-                    ({ value }) => value === event.target.value,
-                  );
-                  setSort(selected?.sort ?? null);
-                }}
-              >
-                {mobileSortOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {filteringEnabled && (
-              <div
-                className="tracker-mobile-filter-row"
-                role="group"
-                aria-label={`Filter ${label}`}
-              >
-                {mobileFilterColumns.map(({ key, label: columnLabel }) => {
-                  const selected = columnFilters?.[key] ?? [];
-                  return (
-                    <button
-                      key={key}
-                      className={
-                        selected.length > 0 ? "has-active-filter" : undefined
-                      }
-                      type="button"
-                      aria-expanded={openFilter === key}
-                      aria-haspopup="dialog"
-                      onClick={(event) =>
-                        openColumnFilter(key, event.currentTarget)
-                      }
-                    >
-                      <FilterIcon />
-                      {columnLabel}
-                      {selected.length > 0 && (
-                        <span aria-label={`${selected.length} selected`}>
-                          {selected.length}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-        <ol aria-label={`${label} mobile records`}>
-          {rows.length === 0 ? (
-            <li className="tracker-mobile-empty">
-              <span aria-hidden="true">⌕</span>
-              <strong>No records match these filters.</strong>
-              <small>
-                Clear a filter or change the search above to see more.
-              </small>
-            </li>
-          ) : (
-            rows.map((application) => (
-              <MobileApplicationCard
-                application={application}
-                key={application.id}
-                onOpen={onOpen}
-              />
-            ))
+      {compactWorkspaceLayout ? (
+        <div className="tracker-mobile-register">
+          {!compact && (
+            <div className="tracker-mobile-register-tools">
+              <label>
+                <span>Sort records</span>
+                <select
+                  aria-label={`Sort ${label}`}
+                  value={mobileSortValue}
+                  onChange={(event) => {
+                    const selected = mobileSortOptions.find(
+                      ({ value }) => value === event.target.value,
+                    );
+                    setSort(selected?.sort ?? null);
+                  }}
+                >
+                  {mobileSortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {filteringEnabled && (
+                <div
+                  className="tracker-mobile-filter-row"
+                  role="group"
+                  aria-label={`Filter ${label}`}
+                >
+                  {mobileFilterColumns.map(({ key, label: columnLabel }) => {
+                    const selected = columnFilters?.[key] ?? [];
+                    return (
+                      <button
+                        key={key}
+                        className={
+                          selected.length > 0 ? "has-active-filter" : undefined
+                        }
+                        type="button"
+                        aria-expanded={openFilter === key}
+                        aria-haspopup="dialog"
+                        onClick={(event) =>
+                          openColumnFilter(key, event.currentTarget)
+                        }
+                      >
+                        <FilterIcon />
+                        {columnLabel}
+                        {selected.length > 0 && (
+                          <span aria-label={`${selected.length} selected`}>
+                            {selected.length}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
-        </ol>
-      </div>
-      <table className="tracker-applications-table" aria-label={label}>
-        <thead>
-          <tr>
-            {sortableHeader("Ref", "reference")}
-            {sortableHeader("End company / role", "company")}
-            {!compact && sortableHeader("Agency", "agency")}
-            {sortableHeader("Stage", "status")}
-            {!compact && sortableHeader("Salary", "salary")}
-            {!compact && sortableHeader("Rating", "rating")}
-            {!compact && sortableHeader("Applied", "appliedOn")}
-            {!compact && sortableHeader("Location", "location")}
-            {!compact && sortableHeader("Work arrangement", "workArrangement")}
-            {sortableHeader("Next action", "nextAction")}
-            {sortableHeader("Updated", "updatedAt")}
-            <th scope="col">
-              <span className="sr-only">Open</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr className="tracker-table-empty-row">
-              <td colSpan={compact ? 6 : 12}>
+          <ol aria-label={`${label} mobile records`}>
+            {rows.length === 0 ? (
+              <li className="tracker-mobile-empty">
                 <span aria-hidden="true">⌕</span>
                 <strong>No records match these filters.</strong>
                 <small>
-                  Clear a column filter or change the search above to see more.
+                  Clear a filter or change the search above to see more.
                 </small>
-              </td>
+              </li>
+            ) : (
+              rows.map((application) => (
+                <MobileApplicationCard
+                  application={application}
+                  key={application.id}
+                  onOpen={onOpen}
+                />
+              ))
+            )}
+          </ol>
+        </div>
+      ) : (
+        <table className="tracker-applications-table" aria-label={label}>
+          <thead>
+            <tr>
+              {sortableHeader("Ref", "reference")}
+              {sortableHeader("End company / role", "company")}
+              {!compact && sortableHeader("Agency", "agency")}
+              {sortableHeader("Stage", "status")}
+              {!compact && sortableHeader("Salary", "salary")}
+              {!compact && sortableHeader("Rating", "rating")}
+              {!compact && sortableHeader("Applied", "appliedOn")}
+              {!compact && sortableHeader("Location", "location")}
+              {!compact &&
+                sortableHeader("Work arrangement", "workArrangement")}
+              {sortableHeader("Next action", "nextAction")}
+              {sortableHeader("Updated", "updatedAt")}
+              <th scope="col">
+                <span className="sr-only">Open</span>
+              </th>
             </tr>
-          ) : (
-            rows.map((application) => (
-              <tr
-                key={application.id}
-                tabIndex={0}
-                onClick={() => onOpen(application)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onOpen(application);
-                  }
-                }}
-              >
-                <td>
-                  <span className="tracker-reference">
-                    {applicationReference(application.id)}
-                  </span>
-                </td>
-                <td>
-                  <strong>{application.companyName}</strong>
-                  <span>{application.roleTitle}</span>
-                </td>
-                {!compact && <td>{application.agency ?? "—"}</td>}
-                <td>
-                  <StatusChip status={application.status} />
-                </td>
-                {!compact && <td>{application.salary ?? "—"}</td>}
-                {!compact && (
-                  <td>
-                    <RatingStars rating={application.rating} />
-                  </td>
-                )}
-                {!compact && <td>{formatDate(application.appliedOn)}</td>}
-                {!compact && <td>{application.location ?? "—"}</td>}
-                {!compact && (
-                  <td>{formatWorkArrangement(application.workArrangement)}</td>
-                )}
-                <NextActionCell application={application} />
-                <td>{formatDate(application.updatedAt)}</td>
-                <td>
-                  <button
-                    className="tracker-open-row"
-                    type="button"
-                    aria-label={`Open ${application.companyName}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpen(application);
-                    }}
-                  >
-                    <span aria-hidden="true">›</span>
-                  </button>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr className="tracker-table-empty-row">
+                <td colSpan={compact ? 6 : 12}>
+                  <span aria-hidden="true">⌕</span>
+                  <strong>No records match these filters.</strong>
+                  <small>
+                    Clear a column filter or change the search above to see
+                    more.
+                  </small>
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              rows.map((application) => (
+                <tr
+                  key={application.id}
+                  tabIndex={0}
+                  onClick={() => onOpen(application)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpen(application);
+                    }
+                  }}
+                >
+                  <td>
+                    <span className="tracker-reference">
+                      {applicationReference(application.id)}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{application.companyName}</strong>
+                    <span>{application.roleTitle}</span>
+                  </td>
+                  {!compact && <td>{application.agency ?? "—"}</td>}
+                  <td>
+                    <StatusChip status={application.status} />
+                  </td>
+                  {!compact && <td>{application.salary ?? "—"}</td>}
+                  {!compact && (
+                    <td>
+                      <RatingStars rating={application.rating} />
+                    </td>
+                  )}
+                  {!compact && <td>{formatDate(application.appliedOn)}</td>}
+                  {!compact && <td>{application.location ?? "—"}</td>}
+                  {!compact && (
+                    <td>
+                      {formatWorkArrangement(application.workArrangement)}
+                    </td>
+                  )}
+                  <NextActionCell application={application} />
+                  <td>{formatDate(application.updatedAt)}</td>
+                  <td>
+                    <button
+                      className="tracker-open-row"
+                      type="button"
+                      aria-label={`Open ${application.companyName}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpen(application);
+                      }}
+                    >
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
       {openFilterColumn &&
         createPortal(
           <ColumnFilterMenu

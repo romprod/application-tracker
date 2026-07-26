@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ApplicationsClientError,
@@ -23,12 +31,24 @@ import {
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
 import { dueLabel, nextActionApplications } from "./application_next_action";
-import { DuplicateApplicationsDialog } from "./duplicate_applications_dialog";
 import type {
   ReferenceValue,
   ReferenceValuesClient,
 } from "./reference_values_client";
 import type { EmailLinksClient } from "./email_links_client";
+import {
+  loadCachedApplications,
+  loadCachedReferenceValues,
+  updateCachedApplications,
+} from "./workspace_data_cache";
+
+const loadDuplicateApplicationsDialog = () =>
+  import("./duplicate_applications_dialog");
+const DuplicateApplicationsDialog = lazy(() =>
+  loadDuplicateApplicationsDialog().then((module) => ({
+    default: module.DuplicateApplicationsDialog,
+  })),
+);
 
 export function ApplicationWorkspace({
   applicationsClient,
@@ -74,8 +94,7 @@ export function ApplicationWorkspace({
 
   useEffect(() => {
     let active = true;
-    void applicationsClient
-      .listApplications()
+    void loadCachedApplications(applicationsClient)
       .then((loaded) => {
         if (active) setApplications(loaded);
       })
@@ -89,8 +108,7 @@ export function ApplicationWorkspace({
 
   useEffect(() => {
     let active = true;
-    void referenceValuesClient
-      .listValues()
+    void loadCachedReferenceValues(referenceValuesClient)
       .then((loaded) => {
         if (active) setReferenceValues(loaded);
       })
@@ -180,9 +198,12 @@ export function ApplicationWorkspace({
     void applicationsClient
       .deleteApplication(removing.id)
       .then(() => {
+        const removeDeleted = (current: ApplicationRecord[]) =>
+          current.filter(({ id }) => id !== removing.id);
         setApplications((current) =>
-          current?.filter(({ id }) => id !== removing.id),
+          current ? removeDeleted(current) : current,
         );
+        updateCachedApplications(applicationsClient, removeDeleted);
         setDeletionTarget(undefined);
         setNotice(`${removing.companyName} was removed.`);
         setDeleting(false);
@@ -205,10 +226,12 @@ export function ApplicationWorkspace({
       : applicationsClient.createApplication(applicationInput(form));
     void operation
       .then((saved) => {
-        setApplications((current) => [
+        const includeSaved = (current: ApplicationRecord[]) => [
           saved,
-          ...(current ?? []).filter(({ id }) => id !== saved.id),
-        ]);
+          ...current.filter(({ id }) => id !== saved.id),
+        ];
+        setApplications((current) => includeSaved(current ?? []));
+        updateCachedApplications(applicationsClient, includeSaved);
         setSelectedApplication((current) =>
           current?.id === saved.id ? saved : current,
         );
@@ -232,11 +255,14 @@ export function ApplicationWorkspace({
           caught.application
         ) {
           const latest = caught.application;
-          setApplications((current) =>
-            current?.map((application) =>
+          const includeLatest = (current: ApplicationRecord[]) =>
+            current.map((application) =>
               application.id === latest.id ? latest : application,
-            ),
+            );
+          setApplications((current) =>
+            current ? includeLatest(current) : current,
           );
+          updateCachedApplications(applicationsClient, includeLatest);
           setConflictApplication(latest);
           setFormError(
             "This application changed after you opened it. Reload the latest version before saving.",
@@ -344,20 +370,32 @@ export function ApplicationWorkspace({
         />
       )}
       {reviewingDuplicates && (
-        <DuplicateApplicationsDialog
-          applicationsClient={applicationsClient}
-          onClose={() => setReviewingDuplicates(false)}
-          onMerged={(survivor, sourceApplicationId) => {
-            setApplications((current) => [
-              survivor,
-              ...(current ?? []).filter(
-                ({ id }) => id !== survivor.id && id !== sourceApplicationId,
-              ),
-            ]);
-            setReviewingDuplicates(false);
-            setNotice(`${survivor.companyName} duplicates were merged safely.`);
-          }}
-        />
+        <Suspense
+          fallback={
+            <p className="tracker-loading" role="status">
+              Opening duplicate review…
+            </p>
+          }
+        >
+          <DuplicateApplicationsDialog
+            applicationsClient={applicationsClient}
+            onClose={() => setReviewingDuplicates(false)}
+            onMerged={(survivor, sourceApplicationId) => {
+              const includeSurvivor = (current: ApplicationRecord[]) => [
+                survivor,
+                ...current.filter(
+                  ({ id }) => id !== survivor.id && id !== sourceApplicationId,
+                ),
+              ];
+              setApplications((current) => includeSurvivor(current ?? []));
+              updateCachedApplications(applicationsClient, includeSurvivor);
+              setReviewingDuplicates(false);
+              setNotice(
+                `${survivor.companyName} duplicates were merged safely.`,
+              );
+            }}
+          />
+        </Suspense>
       )}
     </main>
   );
@@ -596,6 +634,7 @@ function ApplicationsPage({
   page: "applications" | "opportunities";
 }) {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [columnFilters, setColumnFilters] = useState<ApplicationColumnFilters>(
     {},
   );
@@ -607,7 +646,7 @@ function ApplicationsPage({
     [applications, page],
   );
   const searchResults = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
+    const query = deferredSearch.trim().toLocaleLowerCase();
     return query
       ? visibleApplications.filter((application) =>
           [
@@ -634,7 +673,7 @@ function ApplicationsPage({
           ].some((value) => value?.toLocaleLowerCase().includes(query)),
         )
       : visibleApplications;
-  }, [search, visibleApplications]);
+  }, [deferredSearch, visibleApplications]);
   const filtered = useMemo(
     () => filterApplicationsByColumns(searchResults, columnFilters),
     [columnFilters, searchResults],
@@ -665,7 +704,10 @@ function ApplicationsPage({
           <button
             className="tracker-button tracker-button-quiet"
             type="button"
+            onFocus={() => void loadDuplicateApplicationsDialog()}
             onClick={onReviewDuplicates}
+            onPointerDown={() => void loadDuplicateApplicationsDialog()}
+            onPointerEnter={() => void loadDuplicateApplicationsDialog()}
           >
             Review duplicates
           </button>
@@ -694,7 +736,11 @@ function ApplicationsPage({
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <span className="tracker-result-count" aria-live="polite">
+        <span
+          className="tracker-result-count"
+          aria-busy={search !== deferredSearch}
+          aria-live="polite"
+        >
           {filtered.length} {filtered.length === 1 ? "record" : "records"}
         </span>
       </div>

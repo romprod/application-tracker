@@ -20,7 +20,8 @@
     "build": "npm run clean && npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run mcp:schema:check",
+    "bundle:size:check": "node scripts/check-client-bundle-size.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run bundle:size:check && npm run mcp:schema:check",
     "clean": "node scripts/clean.mjs",
     "db:backup": "node dist/server/server/database_maintenance.js backup",
     "db:restore": "node dist/server/server/database_maintenance.js restore",
@@ -45,7 +46,6 @@
   "dependencies": {
     "@fontsource-variable/archivo": "5.2.8",
     "@fontsource-variable/newsreader": "5.2.10",
-    "@ionic/react": "8.8.15",
     "@kenjiuno/msgreader": "1.28.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "12.11.1",
