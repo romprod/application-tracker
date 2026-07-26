@@ -2229,33 +2229,74 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
   }
 });
 
-test("matches the mobile document background to the Android browser chin", async ({
+test("extends mobile navigation through the Android browser chin", async ({
   page,
 }) => {
   await authenticateMobileAudit(page);
   await page.setViewportSize({ height: 932, width: 430 });
   await openMobileAuditRoute(page, mobileAuditRoutes[0]!);
+  await page.evaluate(
+    "document.documentElement.style.setProperty('--workspace-safe-area-bottom', '24px')",
+  );
 
-  const colors = await page.evaluate<{
-    body: string;
-    document: string;
-    navigation: string;
-  }>(String.raw`
-    (() => {
-      const navigation = document.querySelector(".workspace-sidebar nav");
-      if (!navigation) throw new Error("Mobile navigation is missing");
+  const readNavigationMetrics = () =>
+    page.evaluate<{
+      body: string;
+      bottomGap: number;
+      document: string;
+      height: number;
+      navigation: string;
+      paddingBottom: string;
+      tabBarHeight: number;
+      width: number;
+    }>(String.raw`
+      (() => {
+        const navigation = document.querySelector(".workspace-sidebar nav");
+        const tabBar = navigation?.querySelector(".workspace-tab-bar");
+        if (!navigation || !tabBar) {
+          throw new Error("Mobile navigation is missing");
+        }
 
-      return {
-        body: getComputedStyle(document.body).backgroundColor,
-        document: getComputedStyle(document.documentElement).backgroundColor,
-        navigation: getComputedStyle(navigation).backgroundColor,
-      };
-    })()
-  `);
+        const navigationBox = navigation.getBoundingClientRect();
+        const tabBarBox = tabBar.getBoundingClientRect();
+        const viewportBottom =
+          (window.visualViewport?.offsetTop || 0) +
+          (window.visualViewport?.height || window.innerHeight);
 
-  expect(colors.document).not.toBe("rgba(0, 0, 0, 0)");
-  expect(colors.body).toBe(colors.navigation);
-  expect(colors.document).toBe(colors.navigation);
+        return {
+          body: getComputedStyle(document.body).backgroundColor,
+          bottomGap: viewportBottom - navigationBox.bottom,
+          document: getComputedStyle(document.documentElement).backgroundColor,
+          height: navigationBox.height,
+          navigation: getComputedStyle(navigation).backgroundColor,
+          paddingBottom: getComputedStyle(navigation).paddingBottom,
+          tabBarHeight: tabBarBox.height,
+          width: navigationBox.width,
+        };
+      })()
+    `);
+
+  const portrait = await readNavigationMetrics();
+  expect(portrait.document).not.toBe("rgba(0, 0, 0, 0)");
+  expect(portrait.body).toBe(portrait.navigation);
+  expect(portrait.document).toBe(portrait.navigation);
+  expect(portrait.paddingBottom).toBe("24px");
+  expect(portrait.height - portrait.tabBarHeight).toBeGreaterThanOrEqual(24);
+  expect(Math.abs(portrait.bottomGap)).toBeLessThanOrEqual(1);
+
+  await page.setViewportSize({ height: 320, width: 568 });
+  const sideNavigation = await readNavigationMetrics();
+  expect(sideNavigation.paddingBottom).toBe("0px");
+  expect(sideNavigation.width).toBe(72);
+
+  await page.setViewportSize({ height: 216, width: 568 });
+  const shortLandscape = await readNavigationMetrics();
+  expect(shortLandscape.paddingBottom).toBe("24px");
+  expect(
+    shortLandscape.height - shortLandscape.tabBarHeight,
+  ).toBeGreaterThanOrEqual(24);
+  expect(shortLandscape.width).toBe(568);
+  expect(Math.abs(shortLandscape.bottomGap)).toBeLessThanOrEqual(1);
 });
 
 test("keeps the compact dashboard table contained on desktop", async ({

@@ -2997,6 +2997,10 @@
     inset: auto 0 auto;
     z-index: 90;
     bottom: 0;
+    padding-bottom: var(
+      --workspace-safe-area-bottom,
+      env(safe-area-inset-bottom, 0px)
+    );
     margin: 0;
     backface-visibility: hidden;
     background: var(--tracker-green);
@@ -3135,7 +3139,6 @@
 
   .workspace-sidebar nav {
     bottom: 0;
-    padding-bottom: 0;
   }
 
   .workspace-sidebar nav > .workspace-tab-bar {
@@ -4190,7 +4193,10 @@
     inset: auto 0 0;
     width: 100%;
     height: auto;
-    padding-bottom: 0;
+    padding-bottom: var(
+      --workspace-safe-area-bottom,
+      env(safe-area-inset-bottom, 0px)
+    );
     overflow-y: visible;
     border-top: 1px solid rgb(255 255 255 / 8%);
     border-right: 0;
