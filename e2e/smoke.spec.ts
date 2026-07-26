@@ -2229,3 +2229,61 @@ test("matches the mobile document background to the Android browser chin", async
   expect(colors.body).toBe(colors.navigation);
   expect(colors.document).toBe(colors.navigation);
 });
+
+test("keeps the compact dashboard table contained on desktop", async ({
+  page,
+}) => {
+  await authenticateMobileAudit(page);
+  await ensureMobileAuditData(page);
+  await page.setViewportSize({ height: 1096, width: 2484 });
+  await openMobileAuditRoute(page, mobileAuditRoutes[0]!);
+
+  const geometry = await page.evaluate<{
+    clientWidth: number;
+    headerCount: number;
+    lastHeaderRight: number;
+    referenceWhiteSpace: string;
+    shellRight: number;
+    scrollWidth: number;
+    statusWhiteSpace: string;
+    tableRight: number;
+  }>(String.raw`
+    (() => {
+      const shell = document.querySelector(
+        ".tracker-recent .tracker-table-shell.compact",
+      );
+      const table = shell?.querySelector(".tracker-applications-table");
+      const headers = [...(table?.querySelectorAll("thead th") ?? [])];
+      if (!shell || !table || headers.length === 0) {
+        throw new Error("Compact dashboard table is missing");
+      }
+
+      const shellBox = shell.getBoundingClientRect();
+      const tableBox = table.getBoundingClientRect();
+      const lastHeaderBox = headers.at(-1).getBoundingClientRect();
+      const reference = table.querySelector("tbody .tracker-reference");
+      const status = table.querySelector("tbody .tracker-status-chip");
+      if (!reference || !status) {
+        throw new Error("Compact dashboard table tokens are missing");
+      }
+
+      return {
+        clientWidth: shell.clientWidth,
+        headerCount: headers.length,
+        lastHeaderRight: lastHeaderBox.right,
+        referenceWhiteSpace: getComputedStyle(reference).whiteSpace,
+        shellRight: shellBox.right,
+        scrollWidth: shell.scrollWidth,
+        statusWhiteSpace: getComputedStyle(status).whiteSpace,
+        tableRight: tableBox.right,
+      };
+    })()
+  `);
+
+  expect(geometry.headerCount).toBe(6);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(geometry.tableRight).toBeLessThanOrEqual(geometry.shellRight + 1);
+  expect(geometry.lastHeaderRight).toBeLessThanOrEqual(geometry.shellRight + 1);
+  expect(geometry.referenceWhiteSpace).toBe("nowrap");
+  expect(geometry.statusWhiteSpace).toBe("nowrap");
+});
