@@ -1700,11 +1700,20 @@ a {
   box-shadow: none;
 }
 
+.tracker-table-shell:has(> .tracker-applications-table) {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .tracker-applications-table,
 .document-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: auto;
+}
+
+.tracker-table-shell:not(.compact) > .tracker-applications-table {
+  table-layout: fixed;
 }
 
 .tracker-applications-table th,
