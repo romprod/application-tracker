@@ -13,6 +13,7 @@ import type { AuthService } from "../application/auth.js";
 import type { McpStatusService } from "../application/mcp_status.js";
 import type { McpClientCredentialsService } from "../application/mcp_clients.js";
 import type { McpBuiltInOAuthService } from "../application/mcp_builtin_oauth.js";
+import type { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import type { UserAdministrationService } from "../application/users.js";
 import type { ReferenceValuesService } from "../application/reference_values.js";
 import type { DocumentsRouteOptions } from "./documents_routes.js";
@@ -42,6 +43,7 @@ export interface AppOptions {
   documents?: DocumentsRouteOptions;
   httpRateLimit?: HttpRateLimitPolicy;
   logger?: ApplicationLogger;
+  jobEmailReconciliationService?: JobEmailReconciliationService;
   mcpStatusService?: McpStatusService;
   mcpClientsService?: McpClientCredentialsService;
   mcpOAuthConnectionsService?: McpBuiltInOAuthService;
@@ -143,6 +145,7 @@ export function createApp(options: AppOptions = {}): Express {
       createApplicationsRouter(
         options.authService,
         options.applicationsService,
+        options.jobEmailReconciliationService,
       ),
     );
   }

@@ -235,6 +235,7 @@ async function startApplication(): Promise<void> {
         requests: config.http.rateLimitRequests,
         windowMs: config.http.rateLimitWindowMs,
       },
+      jobEmailReconciliationService,
       trustProxyHops: config.http.trustProxyHops,
       logger,
       mcpClientsService,

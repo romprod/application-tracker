@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import type {
+  ApplicationEvidence,
   ApplicationEvent,
   ApplicationRecord,
   CreateApplicationInput,
@@ -222,6 +223,59 @@ function linkHost(value: string): string {
   }
 }
 
+interface DrawerRelatedLink {
+  detail: string;
+  label: string;
+  url: string;
+}
+
+function relatedLinks(
+  application: ApplicationRecord,
+  evidence: ApplicationEvidence | undefined,
+): DrawerRelatedLink[] {
+  const links = application.links.map((link) => ({
+    detail: linkHost(link.url),
+    label: link.label,
+    url: link.url,
+  }));
+  const seen = new Set([
+    ...(application.sourceUrl ? [application.sourceUrl] : []),
+    ...application.links.map(({ url }) => url),
+  ]);
+  if (!evidence) return links;
+
+  for (const email of evidence.emailEvidence) {
+    if (!email.webUrl || seen.has(email.webUrl)) continue;
+    seen.add(email.webUrl);
+    links.push({
+      detail: `${linkHost(email.webUrl)} · Received ${formatDateTime(email.receivedAt)}`,
+      label: "Source email",
+      url: email.webUrl,
+    });
+  }
+  for (const posting of evidence.jobPostings) {
+    if (!posting.canonicalUrl || seen.has(posting.canonicalUrl)) continue;
+    seen.add(posting.canonicalUrl);
+    const provider = jobBoardProviderLabel(posting.provider);
+    links.push({
+      detail: [
+        linkHost(posting.canonicalUrl),
+        posting.externalPostingId
+          ? `Posting ${posting.externalPostingId}`
+          : undefined,
+      ]
+        .filter((value): value is string => value !== undefined)
+        .join(" · "),
+      label:
+        posting.provider === "generic"
+          ? "Job posting"
+          : `${provider} job posting`,
+      url: posting.canonicalUrl,
+    });
+  }
+  return links;
+}
+
 function useDialogFocus(
   dialogRef: RefObject<HTMLElement | null>,
   initialFocusSelector: string,
@@ -268,6 +322,9 @@ function handleDialogKeyDown(
 
 export function ApplicationDrawer({
   application,
+  evidence,
+  evidenceError,
+  evidenceLoading,
   events,
   eventsError,
   eventsLoading,
@@ -276,6 +333,9 @@ export function ApplicationDrawer({
   onEdit,
 }: {
   application: ApplicationRecord;
+  evidence: ApplicationEvidence | undefined;
+  evidenceError: boolean;
+  evidenceLoading: boolean;
   events: ApplicationEvent[] | undefined;
   eventsError: boolean;
   eventsLoading: boolean;
@@ -285,6 +345,7 @@ export function ApplicationDrawer({
 }) {
   const drawerRef = useRef<HTMLElement>(null);
   const nextActionDue = dueLabel(application.nextActionDue);
+  const applicationRelatedLinks = relatedLinks(application, evidence);
   useDialogFocus(drawerRef, ".tracker-drawer-close");
   return (
     <div
@@ -447,12 +508,12 @@ export function ApplicationDrawer({
               <span>02</span>
               <h3 id="related-links-title">Related links</h3>
             </div>
-            {application.links.length > 0 ? (
+            {applicationRelatedLinks.length > 0 && (
               <ul className="tracker-related-links">
-                {application.links.map((link, index) => (
+                {applicationRelatedLinks.map((link, index) => (
                   <li key={`${link.url}-${index}`}>
                     <a
-                      aria-label={`${link.label} — ${linkHost(link.url)} (opens in a new tab)`}
+                      aria-label={`${link.label} — ${link.detail} (opens in a new tab)`}
                       href={link.url}
                       rel="noreferrer"
                       target="_blank"
@@ -460,15 +521,28 @@ export function ApplicationDrawer({
                       <span aria-hidden="true">↗</span>
                       <span>
                         <strong>{link.label}</strong>
-                        <small>{linkHost(link.url)}</small>
+                        <small>{link.detail}</small>
                       </span>
                     </a>
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p>No additional links have been recorded.</p>
             )}
+            {evidenceLoading && (
+              <p className="tracker-loading" role="status">
+                Loading related links…
+              </p>
+            )}
+            {evidenceError && (
+              <p className="tracker-load-error" role="alert">
+                Some related links could not be loaded. Try again.
+              </p>
+            )}
+            {!evidenceLoading &&
+              !evidenceError &&
+              applicationRelatedLinks.length === 0 && (
+                <p>No related links have been recorded.</p>
+              )}
           </section>
           <section
             className="tracker-drawer-section"

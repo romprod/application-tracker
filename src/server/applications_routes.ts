@@ -11,6 +11,7 @@ import {
   type ApplicationLedgerService,
 } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
+import type { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import {
   applicationIdSchema,
   auditDuplicateApplicationsSchema,
@@ -34,6 +35,7 @@ function hasSameHostOrigin(request: Request): boolean {
 export function createApplicationsRouter(
   authService: AuthService,
   applicationsService: ApplicationLedgerService,
+  jobEmailReconciliationService?: JobEmailReconciliationService,
 ): Router {
   const router = Router();
 
@@ -169,6 +171,39 @@ export function createApplicationsRouter(
         response
           .status(400)
           .json({ error: { code: "invalid_application_reference" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.get("/:applicationId/evidence", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      const applicationExists = applicationsService
+        .listApplications(actor)
+        .some(({ id }) => id === parsedId.data);
+      if (!applicationExists) throw new ApplicationNotFoundError();
+      response.json(
+        jobEmailReconciliationService?.getApplicationEvidence(
+          actor,
+          parsedId.data,
+        ) ?? { emailEvidence: [], jobPostings: [] },
+      );
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
         return;
       }
       next(error);

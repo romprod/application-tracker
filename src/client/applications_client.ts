@@ -1,3 +1,4 @@
+import { jobBoardProviders, type JobBoardProvider } from "../domain/job_board";
 import { browserApiFetch } from "./browser_api_fetch";
 
 export type ApplicationStatus = string;
@@ -100,6 +101,31 @@ export interface ApplicationEvent {
   statusOverrideReason: string | null;
   toStatus: ApplicationStatus;
   type: "application_created" | "status_changed";
+}
+
+export interface ApplicationEmailEvidence {
+  applicationId: string;
+  createdAt: string;
+  id: string;
+  messageId: string;
+  receivedAt: string;
+  updatedAt: string;
+  webUrl: string | null;
+}
+
+export interface ApplicationJobPosting {
+  applicationId: string;
+  canonicalUrl: string | null;
+  createdAt: string;
+  externalPostingId: string | null;
+  id: string;
+  provider: JobBoardProvider;
+  updatedAt: string;
+}
+
+export interface ApplicationEvidence {
+  emailEvidence: ApplicationEmailEvidence[];
+  jobPostings: ApplicationJobPosting[];
 }
 
 export type ApplicationMergeField =
@@ -231,6 +257,7 @@ export interface ApplicationsClient {
   }): Promise<ApplicationDuplicateAudit>;
   createApplication(input: CreateApplicationInput): Promise<ApplicationRecord>;
   deleteApplication(applicationId: string): Promise<void>;
+  getApplicationEvidence(applicationId: string): Promise<ApplicationEvidence>;
   listApplicationEvents(applicationId: string): Promise<ApplicationEvent[]>;
   listApplications(): Promise<ApplicationRecord[]>;
   mergeApplications(
@@ -320,13 +347,29 @@ function isNullableIsoDate(value: unknown): value is string | null {
 
 function isNullableHttpUrl(value: unknown): value is string | null {
   if (value === null) return true;
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string" || value.length > 2048) return false;
   try {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
+    const parsed = new URL(value);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.username === "" &&
+      parsed.password === ""
+    );
   } catch {
     return false;
   }
+}
+
+function isIsoDateTime(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
+function isJobBoardProvider(value: unknown): value is JobBoardProvider {
+  return jobBoardProviders.some((provider) => provider === value);
 }
 
 function parseContact(value: unknown): ApplicationContact {
@@ -473,6 +516,61 @@ function parseApplicationEvent(value: unknown): ApplicationEvent {
     statusOverrideReason: value.statusOverrideReason,
     toStatus: value.toStatus,
     type: value.type,
+  };
+}
+
+function parseApplicationEmailEvidence(
+  value: unknown,
+): ApplicationEmailEvidence {
+  if (
+    !isRecord(value) ||
+    !isReferenceValueId(value.applicationId) ||
+    !isIsoDateTime(value.createdAt) ||
+    !isReferenceValueId(value.id) ||
+    typeof value.messageId !== "string" ||
+    value.messageId.trim().length === 0 ||
+    value.messageId.length > 998 ||
+    !isIsoDateTime(value.receivedAt) ||
+    !isIsoDateTime(value.updatedAt) ||
+    !isNullableHttpUrl(value.webUrl)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    applicationId: value.applicationId,
+    createdAt: value.createdAt,
+    id: value.id,
+    messageId: value.messageId,
+    receivedAt: value.receivedAt,
+    updatedAt: value.updatedAt,
+    webUrl: value.webUrl,
+  };
+}
+
+function parseApplicationJobPosting(value: unknown): ApplicationJobPosting {
+  if (
+    !isRecord(value) ||
+    !isReferenceValueId(value.applicationId) ||
+    !isNullableHttpUrl(value.canonicalUrl) ||
+    !isIsoDateTime(value.createdAt) ||
+    (value.externalPostingId !== null &&
+      (typeof value.externalPostingId !== "string" ||
+        value.externalPostingId.trim().length === 0 ||
+        value.externalPostingId.length > 256)) ||
+    !isReferenceValueId(value.id) ||
+    !isJobBoardProvider(value.provider) ||
+    !isIsoDateTime(value.updatedAt)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    applicationId: value.applicationId,
+    canonicalUrl: value.canonicalUrl,
+    createdAt: value.createdAt,
+    externalPostingId: value.externalPostingId,
+    id: value.id,
+    provider: value.provider,
+    updatedAt: value.updatedAt,
   };
 }
 
@@ -811,6 +909,40 @@ export const browserApplicationsClient: ApplicationsClient = {
     if (response.ok) return;
     const body = await readResponse(response);
     throw new ApplicationsClientError(errorCode(body));
+  },
+
+  async getApplicationEvidence(applicationId) {
+    const encodedId = encodeURIComponent(applicationId);
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/evidence`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    const body = await successfulBody(response);
+    if (
+      !isRecord(body) ||
+      !Array.isArray(body.emailEvidence) ||
+      !Array.isArray(body.jobPostings)
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    const emailEvidence = body.emailEvidence.map(parseApplicationEmailEvidence);
+    const jobPostings = body.jobPostings.map(parseApplicationJobPosting);
+    if (
+      emailEvidence.some(
+        (evidence) => evidence.applicationId !== applicationId,
+      ) ||
+      jobPostings.some((posting) => posting.applicationId !== applicationId)
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return {
+      emailEvidence,
+      jobPostings,
+    };
   },
 
   async listApplicationEvents(applicationId) {
