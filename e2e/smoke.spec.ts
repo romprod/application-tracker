@@ -2357,3 +2357,86 @@ test("keeps the compact dashboard table contained on desktop", async ({
   expect(geometry.referenceWhiteSpace).toBe("nowrap");
   expect(geometry.statusWhiteSpace).toBe("nowrap");
 });
+
+test("keeps the full desktop register contained with long record values", async ({
+  page,
+}) => {
+  await authenticateMobileAudit(page);
+  await page.setViewportSize({ height: 1271, width: 2262 });
+  await page.goto("/opportunities");
+  await expect(
+    page.getByRole("heading", { name: "Opportunities", exact: true }),
+  ).toBeVisible();
+
+  const companyName = "Northern Manufacturing Group";
+  const applicationsResponse = await page.request.get("/api/applications");
+  expect(applicationsResponse.status()).toBe(200);
+  const applicationsBody = record(
+    await applicationsResponse.json(),
+    "desktop register applications",
+  );
+  if (!Array.isArray(applicationsBody.applications)) {
+    throw new Error("desktop register applications must contain an array");
+  }
+  const hasStressRecord = applicationsBody.applications.some(
+    (application) =>
+      record(application, "desktop register application").companyName ===
+      companyName,
+  );
+
+  if (!hasStressRecord) {
+    await page.getByRole("button", { name: "Log application" }).first().click();
+    const applicationDialog = page.getByRole("dialog", {
+      name: "Log an application",
+    });
+    await applicationDialog.getByLabel("End company").fill(companyName);
+    await applicationDialog
+      .getByLabel("Role title")
+      .fill("Principal Infrastructure and Automation Lead");
+    await applicationDialog
+      .getByLabel("Next action")
+      .fill(
+        "Await the first-stage decision by the end of the week, then confirm the exact interview date, attendees, preparation brief, travel arrangements, and requested portfolio material.",
+      );
+    await applicationDialog
+      .getByRole("button", { name: "Save application" })
+      .click();
+    await expect(applicationDialog).toBeHidden();
+  }
+
+  const table = page.getByRole("table", { name: "Opportunities" });
+  const stressRow = table.getByRole("row").filter({ hasText: companyName });
+  await expect(stressRow).toBeVisible();
+  const geometry = await stressRow.evaluate((row) => {
+    const table = row.closest("table");
+    const shell = table?.parentElement;
+    const companyCell = row.querySelector("td:nth-child(2)");
+    const nextActionCell = row.querySelector(".tracker-next-action-cell");
+    const nextAction = nextActionCell?.querySelector("strong");
+    if (!shell || !table || !companyCell || !nextActionCell || !nextAction) {
+      throw new Error("desktop register geometry targets are missing");
+    }
+
+    const shellBox = shell.getBoundingClientRect();
+    const tableBox = table.getBoundingClientRect();
+    const companyCellBox = companyCell.getBoundingClientRect();
+    const nextActionBox = nextAction.getBoundingClientRect();
+    const nextActionCellBox = nextActionCell.getBoundingClientRect();
+    return {
+      clientWidth: shell.clientWidth,
+      companyCellWidth: companyCellBox.width,
+      nextActionCellWidth: nextActionCellBox.width,
+      nextActionWidth: nextActionBox.width,
+      scrollWidth: shell.scrollWidth,
+      shellRight: shellBox.right,
+      tableRight: tableBox.right,
+    };
+  });
+
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(geometry.tableRight).toBeLessThanOrEqual(geometry.shellRight + 1);
+  expect(geometry.companyCellWidth).toBeGreaterThanOrEqual(150);
+  expect(geometry.nextActionWidth).toBeLessThanOrEqual(
+    geometry.nextActionCellWidth + 1,
+  );
+});
