@@ -527,7 +527,7 @@ function Sidebar({
           <li>
             <button
               type="button"
-              aria-label="Dashboard"
+              aria-label="Today"
               aria-current={activePage === "overview" ? "page" : undefined}
               className={`workspace-tab-button${
                 activePage === "overview" ? " active-navigation" : ""
@@ -540,8 +540,8 @@ function Sidebar({
               <span className="workspace-nav-number" aria-hidden="true">
                 01
               </span>
-              <span className="workspace-nav-label" data-mobile-label="Home">
-                Dashboard
+              <span className="workspace-nav-label" data-mobile-label="Today">
+                Today
               </span>
             </button>
           </li>
@@ -1083,47 +1083,55 @@ function SettingsNavigation({
 }) {
   return (
     <nav className="settings-navigation" aria-label="Settings navigation">
-      <button
-        type="button"
-        aria-current={activePage === "settings-lists" ? "page" : undefined}
-        onClick={() => navigate("settings-lists")}
-      >
-        <small aria-hidden="true">01</small>
-        Lists
-      </button>
-      {canManage ? (
-        <>
-          <button
-            type="button"
-            aria-current={activePage === "settings-users" ? "page" : undefined}
-            onClick={() => navigate("settings-users")}
-          >
-            <small aria-hidden="true">02</small>
-            Users
-          </button>
-          <button
-            type="button"
-            aria-current={activePage === "settings-mcp" ? "page" : undefined}
-            onClick={() => navigate("settings-mcp")}
-          >
-            <small aria-hidden="true">03</small>
-            MCP
-          </button>
-        </>
-      ) : (
-        <>
-          <span aria-disabled="true">
-            <small>02</small>
-            Users
-            <em>admin</em>
-          </span>
-          <span aria-disabled="true">
-            <small>03</small>
-            MCP
-            <em>admin</em>
-          </span>
-        </>
-      )}
+      <div className="settings-navigation-group">
+        <p>Workspace</p>
+        <button
+          type="button"
+          aria-current={activePage === "settings-lists" ? "page" : undefined}
+          onClick={() => navigate("settings-lists")}
+        >
+          <small aria-hidden="true">01</small>
+          Lists
+        </button>
+      </div>
+      <div className="settings-navigation-group">
+        <p>Administration</p>
+        {canManage ? (
+          <>
+            <button
+              type="button"
+              aria-current={
+                activePage === "settings-users" ? "page" : undefined
+              }
+              onClick={() => navigate("settings-users")}
+            >
+              <small aria-hidden="true">02</small>
+              People
+            </button>
+            <button
+              type="button"
+              aria-current={activePage === "settings-mcp" ? "page" : undefined}
+              onClick={() => navigate("settings-mcp")}
+            >
+              <small aria-hidden="true">03</small>
+              Connections
+            </button>
+          </>
+        ) : (
+          <>
+            <span aria-disabled="true">
+              <small>02</small>
+              People
+              <em>admin</em>
+            </span>
+            <span aria-disabled="true">
+              <small>03</small>
+              Connections
+              <em>admin</em>
+            </span>
+          </>
+        )}
+      </div>
     </nav>
   );
 }
@@ -1297,11 +1305,11 @@ function ListsSettingsView({
         aria-labelledby="lists-title"
       >
         <div>
-          <p className="eyebrow">Settings · Workspace vocabulary</p>
-          <h1 id="lists-title">Make the tracker fit your search.</h1>
+          <p className="eyebrow">Settings · Workspace</p>
+          <h1 id="lists-title">Workspace vocabulary.</h1>
           <p className="lede">
-            These values power forms, filters, and MCP tools. Select any value
-            to make a change.
+            Shape the stages, sources, role types, and document types used
+            across forms, filters, and connected tools.
           </p>
         </div>
       </section>
@@ -1727,8 +1735,8 @@ function UsersSettingsView({
     <main id="main-content" tabIndex={-1} className="settings-main">
       <section className="settings-hero" aria-labelledby="settings-title">
         <div>
-          <p className="eyebrow">Settings · Local identity</p>
-          <h1 id="settings-title">Users and access.</h1>
+          <p className="eyebrow">Settings · Administration</p>
+          <h1 id="settings-title">People and access.</h1>
           <p className="lede">
             Decide who can enter this workspace, what they can administer, and
             when their access should stop.
@@ -2266,11 +2274,11 @@ function McpSettingsView({
     <main id="main-content" tabIndex={-1} className="settings-main">
       <section className="settings-hero mcp-hero" aria-labelledby="mcp-title">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h1 id="mcp-title">MCP connections.</h1>
+          <p className="eyebrow">Settings · Administration</p>
+          <h1 id="mcp-title">Connections.</h1>
           <p className="lede">
-            Connect local and remote clients, issue credentials, and control
-            their workspace access.
+            Connect AI clients, issue credentials, and control exactly how they
+            can use this workspace.
           </p>
         </div>
         <dl className="settings-totals" aria-label="MCP summary">

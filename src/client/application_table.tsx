@@ -75,6 +75,7 @@ export function ApplicationTable({
   label = "Applications",
   onColumnFiltersChange,
   onOpen,
+  variant = "applications",
 }: {
   applications: ApplicationRecord[];
   columnFilters?: ApplicationColumnFilters;
@@ -82,6 +83,7 @@ export function ApplicationTable({
   label?: string;
   onColumnFiltersChange?: (filters: ApplicationColumnFilters) => void;
   onOpen: (application: ApplicationRecord) => void;
+  variant?: "applications" | "opportunities";
 }) {
   const [sort, setSort] = useState<ApplicationSort | null>(null);
   const [openFilter, setOpenFilter] = useState<ApplicationSortKey | null>(null);
@@ -288,6 +290,7 @@ export function ApplicationTable({
                   application={application}
                   key={application.id}
                   onOpen={onOpen}
+                  variant={variant}
                 />
               ))
             )}
@@ -329,6 +332,12 @@ export function ApplicationTable({
             ) : (
               rows.map((application) => (
                 <tr
+                  className={
+                    variant === "opportunities" &&
+                    application.appliedOn !== null
+                      ? "tracker-row-in-pipeline"
+                      : undefined
+                  }
                   key={application.id}
                   tabIndex={0}
                   onClick={() => onOpen(application)}
@@ -350,7 +359,13 @@ export function ApplicationTable({
                   </td>
                   {!compact && <td>{application.agency ?? "—"}</td>}
                   <td>
-                    <StatusChip status={application.status} />
+                    <span className="tracker-stage-stack">
+                      <StatusChip status={application.status} />
+                      {variant === "opportunities" &&
+                        application.appliedOn !== null && (
+                          <small>In pipeline</small>
+                        )}
+                    </span>
                   </td>
                   {!compact && <td>{application.salary ?? "—"}</td>}
                   {!compact && (
@@ -409,9 +424,11 @@ export function ApplicationTable({
 function MobileApplicationCard({
   application,
   onOpen,
+  variant,
 }: {
   application: ApplicationRecord;
   onOpen: (application: ApplicationRecord) => void;
+  variant: "applications" | "opportunities";
 }) {
   const due = application.nextAction
     ? dueLabel(application.nextActionDue)
@@ -427,7 +444,12 @@ function MobileApplicationCard({
           <span className="tracker-reference">
             {applicationReference(application.id)}
           </span>
-          <StatusChip status={application.status} />
+          <span className="tracker-mobile-state">
+            {variant === "opportunities" && application.appliedOn !== null && (
+              <small>In pipeline</small>
+            )}
+            <StatusChip status={application.status} />
+          </span>
         </span>
         <span className="tracker-mobile-card-title">
           <strong>{application.companyName}</strong>
