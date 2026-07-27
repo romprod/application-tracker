@@ -359,12 +359,10 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(page.getByRole("status")).toHaveText(
     `Welcome, ${e2eAdministrator.displayName}.`,
   );
-  await expect(
-    page.getByRole("heading", { name: "Your search, at a glance." }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page).toHaveURL(/\/dashboard$/);
   const dashboardHero = page.getByRole("region", {
-    name: "Your search, at a glance.",
+    name: "Today",
   });
   await expect(
     dashboardHero.getByRole("button", { name: "Log application" }),
@@ -414,6 +412,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(appliedOpportunity).toContainText("Example Recruitment");
   await expect(appliedOpportunity).toContainText("£70,000–£80,000");
   await expect(appliedOpportunity).toContainText("Hybrid");
+  await expect(appliedOpportunity).toContainText("In pipeline");
 
   // Android Chrome leaves a 320 × 458 CSS-pixel content viewport on a
   // 320 × 568 device while its browser chrome is visible.
@@ -520,10 +519,8 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(opportunitiesTable).toBeHidden();
 
   await page.setViewportSize({ width: 320, height: 458 });
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Your search, at a glance." }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Applications mobile records" }),
   ).toBeVisible();
@@ -1045,10 +1042,10 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await page.getByRole("button", { name: "Settings" }).click();
   await page
     .getByRole("navigation", { name: "Settings navigation" })
-    .getByRole("button", { name: "MCP" })
+    .getByRole("button", { name: "Connections" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "MCP connections." }),
+    page.getByRole("heading", { name: "Connections." }),
   ).toBeVisible();
   const connection = page.getByRole("listitem", {
     name: `${e2eMcp.clientName}, Active`,
@@ -1182,10 +1179,10 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await page.getByRole("button", { name: "Settings" }).click();
   await page
     .getByRole("navigation", { name: "Settings navigation" })
-    .getByRole("button", { name: "MCP" })
+    .getByRole("button", { name: "Connections" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "MCP connections." }),
+    page.getByRole("heading", { name: "Connections." }),
   ).toBeVisible();
   const managedConnection = page.getByRole("listitem", {
     name: `${e2eMcp.clientName}, Active`,
@@ -1289,9 +1286,9 @@ type MobileViewportProfile = {
 
 const mobileAuditRoutes: ReadonlyArray<MobileAuditRoute> = [
   {
-    heading: "Your search, at a glance.",
+    heading: "Today",
     path: "/dashboard",
-    ready: ".tracker-dashboard-grid",
+    ready: ".today-layout",
     slug: "dashboard",
   },
   {
@@ -1313,19 +1310,19 @@ const mobileAuditRoutes: ReadonlyArray<MobileAuditRoute> = [
     slug: "documents",
   },
   {
-    heading: "Make the tracker fit your search.",
+    heading: "Workspace vocabulary.",
     path: "/settings/lists",
     ready: ".lists-workspace",
     slug: "settings-lists",
   },
   {
-    heading: "MCP connections.",
+    heading: "Connections.",
     path: "/settings/mcp",
     ready: ".mcp-workspace",
     slug: "settings-mcp",
   },
   {
-    heading: "Users and access.",
+    heading: "People and access.",
     path: "/settings/users",
     ready: ".users-workspace",
     slug: "settings-users",
@@ -2280,7 +2277,9 @@ test("extends mobile navigation through the Android browser chin", async ({
   expect(portrait.document).not.toBe("rgba(0, 0, 0, 0)");
   expect(portrait.body).toBe(portrait.navigation);
   expect(portrait.document).toBe(portrait.navigation);
+  expect(portrait.navigation).toBe("rgb(24, 60, 55)");
   expect(portrait.paddingBottom).toBe("24px");
+  expect(portrait.tabBarHeight).toBe(56);
   expect(portrait.height - portrait.tabBarHeight).toBeGreaterThanOrEqual(24);
   expect(Math.abs(portrait.bottomGap)).toBeLessThanOrEqual(1);
 
@@ -2295,6 +2294,8 @@ test("extends mobile navigation through the Android browser chin", async ({
   expect(
     shortLandscape.height - shortLandscape.tabBarHeight,
   ).toBeGreaterThanOrEqual(24);
+  expect(shortLandscape.navigation).toBe("rgb(24, 60, 55)");
+  expect(shortLandscape.tabBarHeight).toBe(44);
   expect(shortLandscape.width).toBe(568);
   expect(Math.abs(shortLandscape.bottomGap)).toBeLessThanOrEqual(1);
 });

@@ -26,7 +26,9 @@ import {
   ApplicationEmptyState,
   ApplicationLoadError,
   ApplicationTable,
+  applicationReference,
   filterApplicationsByColumns,
+  formatDate,
   type ApplicationColumnFilters,
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
@@ -305,7 +307,7 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
-          onViewAll={() => navigate("opportunities")}
+          onViewAll={() => navigate("applications")}
           referenceValues={referenceValues ?? []}
           session={session}
         />
@@ -418,36 +420,83 @@ function DashboardView({
   referenceValues: ReferenceValue[];
   session: AuthenticatedSession;
 }) {
-  const count = (statusId: string) =>
-    applications?.filter((application) => application.statusId === statusId)
-      .length ?? 0;
   const total = applications?.length ?? 0;
+  const applied =
+    applications?.filter(({ appliedOn }) => appliedOn !== null) ?? [];
+  const count = (statusId: string) =>
+    applied.filter((application) => application.statusId === statusId).length;
   const open =
     applications?.filter(({ statusIsTerminal }) => !statusIsTerminal).length ??
     0;
-  const referencedStatusIds = new Set(
-    (applications ?? []).map(({ statusId }) => statusId),
-  );
+  const livePipeline = applied.filter(
+    ({ statusIsTerminal }) => !statusIsTerminal,
+  ).length;
+  const closedPipeline = applied.filter(
+    ({ statusIsTerminal }) => statusIsTerminal,
+  ).length;
+  const referencedStatusIds = new Set(applied.map(({ statusId }) => statusId));
   const statusCounts = referenceValues.filter(
     ({ category, id, isActive }) =>
       category === "status" && (isActive || referencedStatusIds.has(id)),
   );
   const activeFocus = nextActionApplications(applications ?? []);
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const weekEnd = new Date(today);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEndKey = localDateKey(weekEnd);
+  const attention = activeFocus.filter(
+    ({ nextActionDue }) => nextActionDue !== null && nextActionDue <= todayKey,
+  );
+  const thisWeek = activeFocus.filter(
+    ({ nextActionDue }) =>
+      nextActionDue !== null &&
+      nextActionDue > todayKey &&
+      nextActionDue <= weekEndKey,
+  );
+  const quietCutoff = new Date(today);
+  quietCutoff.setDate(quietCutoff.getDate() - 14);
+  const quiet = (applications ?? [])
+    .filter(
+      ({ statusIsTerminal, updatedAt }) =>
+        !statusIsTerminal && new Date(updatedAt) < quietCutoff,
+    )
+    .sort(
+      (left, right) =>
+        new Date(left.updatedAt).getTime() -
+        new Date(right.updatedAt).getTime(),
+    );
+  const dayLabel = new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "long",
+    weekday: "long",
+  }).format(today);
+  const attentionSummary =
+    attention.length === 0
+      ? "Nothing is overdue or due today."
+      : `${attention.length} ${
+          attention.length === 1 ? "action needs" : "actions need"
+        } attention.`;
+  const weekSummary =
+    thisWeek.length === 0
+      ? "No other actions are due in the next seven days."
+      : `${thisWeek.length} more ${
+          thisWeek.length === 1 ? "action is" : "actions are"
+        } due in the next seven days.`;
 
   return (
     <div className="workspace-page dashboard-page">
-      <section className="tracker-dashboard-hero" aria-labelledby="page-title">
-        <div className="tracker-hero-copy">
-          <span className="eyebrow">{session.workspace.name} · Dashboard</span>
-          <h1 id="page-title" aria-label="Your search, at a glance.">
-            Your search,
-            <br />
-            <em>at a glance.</em>
-          </h1>
+      <section className="today-heading" aria-labelledby="page-title">
+        <div>
+          <span className="eyebrow">
+            {session.workspace.name} · {dayLabel}
+          </span>
+          <h1 id="page-title">Today</h1>
           <p>
-            Every opportunity in one calm, private workspace—clear enough to see
-            what is moving and what needs attention.
+            {attentionSummary} {weekSummary}
           </p>
+        </div>
+        <div className="tracker-page-actions">
           <button
             className="tracker-button tracker-button-primary"
             type="button"
@@ -457,29 +506,6 @@ function DashboardView({
             Log application
           </button>
         </div>
-        <div
-          className="tracker-hero-figure"
-          aria-label={`${open} open applications`}
-        >
-          <div className="tracker-figure-ring">
-            <strong>{open}</strong>
-            <span>open</span>
-          </div>
-          <p>{total} applications recorded</p>
-        </div>
-      </section>
-
-      <section className="tracker-metrics" aria-label="Application metrics">
-        <Metric label="Total" value={total} note="all records" />
-        <Metric label="Open" value={open} note="active search" accent />
-        {statusCounts.slice(0, 4).map((status) => (
-          <Metric
-            key={status.id}
-            label={status.label}
-            value={count(status.id)}
-            note={status.isTerminal ? "closed outcome" : "workspace status"}
-          />
-        ))}
       </section>
 
       {loadError && <ApplicationLoadError />}
@@ -488,98 +514,181 @@ function DashboardView({
       )}
       {applications && (
         <>
-          <div className="tracker-dashboard-grid">
-            <section
-              className="tracker-panel"
-              aria-labelledby="distribution-title"
-            >
-              <div className="tracker-panel-heading">
-                <div>
-                  <span className="eyebrow">Pipeline</span>
-                  <h2 id="distribution-title">Status distribution</h2>
-                </div>
-                <span>{total} total</span>
-              </div>
-              <div className="tracker-status-bars">
-                {statusCounts.map((status) => {
-                  const value = count(status.id);
-                  const width =
-                    total === 0
-                      ? 0
-                      : Math.max((value / total) * 100, value ? 4 : 0);
-                  return (
-                    <div className="tracker-status-row" key={status.id}>
-                      <div>
-                        <span>{status.label}</span>
-                        <strong>{value}</strong>
-                      </div>
-                      <div className="tracker-status-track" aria-hidden="true">
-                        <span
-                          data-status={
-                            status.isTerminal ? "terminal" : "active"
-                          }
-                          style={{ width: `${width}%` }}
-                        />
-                      </div>
+          <div className="today-layout">
+            <div className="today-primary">
+              <TodayActionSection
+                applications={attention}
+                empty="Nothing is overdue or due today."
+                eyebrow="Immediate"
+                onOpen={onOpen}
+                title="Needs attention"
+                tone="attention"
+              />
+              <TodayActionSection
+                applications={thisWeek}
+                empty="The next seven days are clear."
+                eyebrow="Next seven days"
+                onOpen={onOpen}
+                title="Coming up"
+              />
+
+              <section
+                className="today-card today-pipeline"
+                aria-labelledby="pipeline-title"
+              >
+                <header className="today-card-heading">
+                  <div>
+                    <span className="eyebrow">Application pipeline</span>
+                    <h2 id="pipeline-title">Pipeline health</h2>
+                  </div>
+                  <button
+                    className="tracker-text-button"
+                    type="button"
+                    onClick={onViewAll}
+                  >
+                    Open pipeline <span aria-hidden="true">→</span>
+                  </button>
+                </header>
+                <p className="today-pipeline-summary">
+                  <strong>{livePipeline} live</strong>
+                  <span>·</span>
+                  <span>{closedPipeline} closed</span>
+                  <span>·</span>
+                  <span>{applied.length} applied</span>
+                </p>
+                {applied.length === 0 ? (
+                  <div className="today-empty">
+                    <span aria-hidden="true">◎</span>
+                    <p>Applied opportunities will build your pipeline here.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="today-pipeline-track"
+                      aria-label={`${applied.length} applications by stage`}
+                    >
+                      {statusCounts
+                        .filter((status) => count(status.id) > 0)
+                        .map((status) => (
+                          <span
+                            key={status.id}
+                            data-terminal={status.isTerminal || undefined}
+                            style={{ flexGrow: count(status.id) }}
+                            title={`${status.label}: ${count(status.id)}`}
+                          >
+                            {count(status.id)}
+                          </span>
+                        ))}
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-            <section
-              className="tracker-panel tracker-focus"
-              aria-labelledby="focus-title"
-            >
-              <div className="tracker-panel-heading">
-                <div>
-                  <span className="eyebrow">Current focus</span>
-                  <h2 id="focus-title">Next actions</h2>
-                </div>
-                <span>{activeFocus.length} active</span>
-              </div>
-              {activeFocus.length === 0 ? (
-                <div className="tracker-quiet-state">
-                  <span aria-hidden="true">◎</span>
-                  <p>Add a next action to an application to see it here.</p>
-                </div>
-              ) : (
-                <ol>
-                  {activeFocus.slice(0, 4).map((application) => {
-                    const due = dueLabel(application.nextActionDue);
-                    return (
+                    <ul className="today-pipeline-legend">
+                      {statusCounts
+                        .filter((status) => count(status.id) > 0)
+                        .map((status) => (
+                          <li key={status.id}>
+                            <span
+                              data-terminal={status.isTerminal || undefined}
+                              aria-hidden="true"
+                            />
+                            {status.label}
+                            <strong>{count(status.id)}</strong>
+                          </li>
+                        ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            </div>
+
+            <aside className="today-secondary" aria-label="Today summary">
+              <section
+                className="today-card today-quiet"
+                aria-labelledby="quiet-title"
+              >
+                <header className="today-card-heading">
+                  <div>
+                    <span className="eyebrow">No movement for 14 days</span>
+                    <h2 id="quiet-title">Gone quiet</h2>
+                  </div>
+                  <span>{quiet.length}</span>
+                </header>
+                {quiet.length === 0 ? (
+                  <div className="today-empty">
+                    <span aria-hidden="true">◎</span>
+                    <p>No live records have gone quiet.</p>
+                  </div>
+                ) : (
+                  <ol className="today-quiet-list">
+                    {quiet.slice(0, 5).map((application) => (
                       <li key={application.id}>
                         <button
                           type="button"
                           onClick={() => onOpen(application)}
                         >
-                          <span className={`tracker-due-label ${due.tone}`}>
-                            {due.text}
+                          <span>
+                            <strong>{application.companyName}</strong>
+                            <small>{application.roleTitle}</small>
                           </span>
-                          <strong>{application.nextAction}</strong>
-                          <small>
-                            {application.companyName} · {application.roleTitle}
-                          </small>
+                          <span>
+                            <small>
+                              {applicationReference(application.id)}
+                            </small>
+                            <time dateTime={application.updatedAt}>
+                              {formatDate(application.updatedAt)}
+                            </time>
+                          </span>
                         </button>
                       </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </section>
+                    ))}
+                  </ol>
+                )}
+              </section>
+
+              <section
+                className="today-card today-snapshot"
+                aria-labelledby="snapshot-title"
+              >
+                <header className="today-card-heading">
+                  <div>
+                    <span className="eyebrow">Workspace</span>
+                    <h2 id="snapshot-title">At a glance</h2>
+                  </div>
+                </header>
+                <dl>
+                  <div>
+                    <dt>Open records</dt>
+                    <dd>{open}</dd>
+                  </div>
+                  <div>
+                    <dt>Saved opportunities</dt>
+                    <dd>{total - applied.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Undated actions</dt>
+                    <dd>
+                      {
+                        activeFocus.filter(
+                          ({ nextActionDue }) => nextActionDue === null,
+                        ).length
+                      }
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </aside>
           </div>
 
           <section className="tracker-recent" aria-labelledby="recent-title">
             <div className="tracker-section-heading">
               <div>
                 <span className="eyebrow">Latest movement</span>
-                <h2 id="recent-title">Recent applications</h2>
+                <h2 id="recent-title">Recent movement</h2>
               </div>
               <button
                 className="tracker-text-button"
                 type="button"
                 onClick={onViewAll}
               >
-                View all <span aria-hidden="true">→</span>
+                Open pipeline <span aria-hidden="true">→</span>
               </button>
             </div>
             {applications.length === 0 ? (
@@ -598,24 +707,75 @@ function DashboardView({
   );
 }
 
-function Metric({
-  accent = false,
-  label,
-  note,
-  value,
+function TodayActionSection({
+  applications,
+  empty,
+  eyebrow,
+  onOpen,
+  title,
+  tone,
 }: {
-  accent?: boolean;
-  label: string;
-  note: string;
-  value: number;
+  applications: ApplicationRecord[];
+  empty: string;
+  eyebrow: string;
+  onOpen: (application: ApplicationRecord) => void;
+  title: string;
+  tone?: "attention";
 }) {
+  const headingId = `today-${title.toLocaleLowerCase().replaceAll(" ", "-")}`;
+
   return (
-    <article className={`tracker-metric${accent ? " accent" : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{note}</small>
-    </article>
+    <section
+      className={`today-card today-actions${tone ? ` ${tone}` : ""}`}
+      aria-labelledby={headingId}
+    >
+      <header className="today-card-heading">
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <h2 id={headingId}>{title}</h2>
+        </div>
+        <span>{applications.length}</span>
+      </header>
+      {applications.length === 0 ? (
+        <div className="today-empty">
+          <span aria-hidden="true">◎</span>
+          <p>{empty}</p>
+        </div>
+      ) : (
+        <ol className="today-action-list">
+          {applications.slice(0, 6).map((application) => {
+            const due = dueLabel(application.nextActionDue);
+            return (
+              <li key={application.id}>
+                <button type="button" onClick={() => onOpen(application)}>
+                  <span className="today-action-copy">
+                    <strong>{application.nextAction}</strong>
+                    <small>
+                      <span>{applicationReference(application.id)}</span>
+                      {application.companyName} · {application.roleTitle}
+                    </small>
+                  </span>
+                  <span className={`tracker-due-label ${due.tone}`}>
+                    {due.text}
+                  </span>
+                  <span className="today-open-label">
+                    Open <span aria-hidden="true">→</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
+}
+
+function localDateKey(date: Date): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function ApplicationsPage({
@@ -683,6 +843,19 @@ function ApplicationsPage({
   );
   const pageName = page === "applications" ? "Applications" : "Opportunities";
   const pageNameLower = pageName.toLocaleLowerCase();
+  const appliedCount =
+    applications?.filter(({ appliedOn }) => appliedOn !== null).length ?? 0;
+  const liveApplicationCount =
+    applications?.filter(
+      ({ appliedOn, statusIsTerminal }) =>
+        appliedOn !== null && !statusIsTerminal,
+    ).length ?? 0;
+  const closedApplicationCount =
+    applications?.filter(
+      ({ appliedOn, statusIsTerminal }) =>
+        appliedOn !== null && statusIsTerminal,
+    ).length ?? 0;
+  const shortlistCount = (applications?.length ?? 0) - appliedCount;
 
   return (
     <div className="workspace-page applications-page">
@@ -721,6 +894,30 @@ function ApplicationsPage({
           </button>
         </div>
       </header>
+
+      <div
+        className={`tracker-register-context ${page}`}
+        aria-label={`${pageName} purpose`}
+      >
+        <span className="eyebrow">
+          {page === "applications" ? "Pipeline" : "Shortlist"}
+        </span>
+        {page === "applications" ? (
+          <p>
+            <strong>{liveApplicationCount} live</strong>
+            <span>·</span>
+            <span>{closedApplicationCount} closed</span>
+            <span>·</span>
+            <span>{appliedCount} applied in total</span>
+          </p>
+        ) : (
+          <p>
+            <strong>{shortlistCount} still to consider</strong>
+            <span>·</span>
+            <span>{appliedCount} already in your pipeline</span>
+          </p>
+        )}
+      </div>
 
       <div className="tracker-filter-bar">
         <div className="tracker-search">
@@ -762,6 +959,7 @@ function ApplicationsPage({
           label={pageName}
           onColumnFiltersChange={setColumnFilters}
           onOpen={onOpen}
+          variant={page}
         />
       )}
     </div>

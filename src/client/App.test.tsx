@@ -704,7 +704,7 @@ describe("application shell", () => {
     );
 
     await screen.findByRole("heading", {
-      name: "Your search, at a glance.",
+      name: "Today",
     });
     await waitFor(() => {
       expect(applicationsClient.listApplications).toHaveBeenCalledOnce();
@@ -736,7 +736,7 @@ describe("application shell", () => {
     );
 
     await screen.findByRole("heading", {
-      name: "Your search, at a glance.",
+      name: "Today",
     });
     const workspace = screen.getByRole("main");
     workspace.scrollTop = 120;
@@ -750,7 +750,7 @@ describe("application shell", () => {
     window.history.replaceState(null, "", "/dashboard");
     fireEvent.popState(window);
     expect(
-      await screen.findByRole("heading", { name: "Your search, at a glance." }),
+      await screen.findByRole("heading", { name: "Today" }),
     ).toBeInTheDocument();
   });
 
@@ -775,7 +775,7 @@ describe("application shell", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Make the tracker fit your search.",
+        name: "Workspace vocabulary.",
       }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/settings/lists");
@@ -798,12 +798,12 @@ describe("application shell", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Your search, at a glance.",
+        name: "Today",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Alex Example")).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Next actions" }),
+      await screen.findByRole("heading", { name: "Needs attention" }),
     ).toBeInTheDocument();
     expect(
       screen.getAllByText("Send the portfolio follow-up.").length,
@@ -844,7 +844,7 @@ describe("application shell", () => {
       "Your session expired. Sign in again.",
     );
     expect(
-      screen.queryByRole("heading", { name: "Your search, at a glance." }),
+      screen.queryByRole("heading", { name: "Today" }),
     ).not.toBeInTheDocument();
   });
 
@@ -897,6 +897,11 @@ describe("application shell", () => {
     expect(
       within(opportunitiesTable).getByText("Example Recruitment"),
     ).toBeInTheDocument();
+    expect(
+      within(opportunitiesTable).getByText("In pipeline"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 still to consider")).toBeInTheDocument();
+    expect(screen.getByText("1 already in your pipeline")).toBeInTheDocument();
     expect(
       within(opportunitiesTable).getAllByRole("button", {
         name: /^Filter /,
@@ -991,6 +996,8 @@ describe("application shell", () => {
     expect(
       within(applicationsTable).getByText("Example Studio"),
     ).toBeInTheDocument();
+    expect(screen.getByText("1 live")).toBeInTheDocument();
+    expect(screen.getByText("1 applied in total")).toBeInTheDocument();
     expect(screen.queryByText("Prospect Company")).not.toBeInTheDocument();
     expect(
       within(applicationsTable).getAllByRole("button", { name: /^Filter / }),
@@ -1939,7 +1946,7 @@ describe("application shell", () => {
     });
     expect(
       await screen.findByRole("heading", {
-        name: "Your search, at a glance.",
+        name: "Today",
       }),
     ).toBeInTheDocument();
     expect(
@@ -1992,7 +1999,7 @@ describe("application shell", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(
-      await screen.findByRole("heading", { name: "Your search, at a glance." }),
+      await screen.findByRole("heading", { name: "Today" }),
     ).toBeInTheDocument();
   });
 
@@ -2166,10 +2173,10 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Users and access." }),
+      await screen.findByRole("heading", { name: "People and access." }),
     ).toBeInTheDocument();
     expect(usersClient.listUsers).toHaveBeenCalledOnce();
     expect(
@@ -2192,10 +2199,10 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
 
     expect(
-      await screen.findByRole("heading", { name: "MCP connections." }),
+      await screen.findByRole("heading", { name: "Connections." }),
     ).toBeInTheDocument();
     expect(mcpStatusClient.getStatus).toHaveBeenCalledOnce();
     expect(screen.getByText("Local tools ready")).toBeInTheDocument();
@@ -2233,7 +2240,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
     await screen.findByRole("heading", { name: "Connect every client." });
     expect(screen.queryByText("Workspace authority")).not.toBeInTheDocument();
     expect(
@@ -2281,7 +2288,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
     const connection = await screen.findByRole("listitem", {
       name: "Claude, Active",
     });
@@ -2346,7 +2353,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
     fireEvent.change(await screen.findByLabelText("Connection name"), {
       target: { value: "Codex on laptop" },
     });
@@ -2491,7 +2498,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
     const endpointButton = await screen.findByRole("button", {
       name: "Copy MCP endpoint for Claude ai",
     });
@@ -2597,7 +2604,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
 
     expect(
       await screen.findByText((_content, element) => {
@@ -2628,7 +2635,7 @@ describe("application shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     expect(
       await screen.findByRole("heading", {
-        name: "Make the tracker fit your search.",
+        name: "Workspace vocabulary.",
       }),
     ).toBeInTheDocument();
     expect(referenceValuesClient.listValues).toHaveBeenCalledOnce();
@@ -2687,7 +2694,7 @@ describe("application shell", () => {
       screen.getByText(/Only workspace administrators can change/),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Users" }),
+      screen.queryByRole("button", { name: "People" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("New source")).not.toBeInTheDocument();
   });
@@ -2714,7 +2721,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
     await screen.findByRole("heading", { name: "Add a local account" });
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Riley Admin" },
@@ -2756,7 +2763,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Disable Sam Member" }),
     );
@@ -2781,7 +2788,7 @@ describe("application shell", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
     fireEvent.click(
       await screen.findByRole("button", {
         name: "Link remote identity to Sam Member",
