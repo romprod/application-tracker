@@ -1,6 +1,6 @@
 interface:
   display_name: "Application Tracker Job Email"
-  short_description: "Match job emails to tracked applications safely"
+  short_description: "Resolve, inspect, and reconcile job emails safely"
   default_prompt: "Use $application-tracker-job-email with my connected Application Tracker and Softeria Microsoft 365 MCP servers."
 
 policy:

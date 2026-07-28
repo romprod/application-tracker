@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  type AddApplicationEventResult,
   ApplicationNotFoundError,
   type ApplicationDuplicateAudit,
   type ApplicationEvent,
@@ -31,6 +32,7 @@ import {
   type McpDocumentImportProgress,
 } from "./mcp_document_imports.js";
 import type {
+  AddApplicationEventInput,
   AuditDuplicateApplicationsInput,
   CreateApplicationInput,
   MergeApplicationsInput,
@@ -44,10 +46,13 @@ import {
   type ApplicationJobPosting,
   type JobEmailMatchResult,
   type JobEmailReconciliationService,
+  type LinkApplicationEvidenceResult,
   type UpsertApplicationFromEmailResult,
 } from "./job_email_reconciliation.js";
 import type {
+  LinkEmailEvidenceInput,
   MatchJobApplicationEmailInput,
+  ReconcileApplicationFromEvidenceInput,
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
 import type { EmailLinkExtractionInput } from "../domain/email_links.js";
@@ -57,7 +62,7 @@ import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 7;
+export const applicationMcpSchemaVersion = 8;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -67,9 +72,14 @@ export const applicationMcpToolNames = [
   "get_job_search_summary",
   "list_applications",
   "get_application",
+  "list_unlinked_applications",
+  "get_application_data_quality",
   "audit_duplicate_applications",
+  "find_duplicate_applications",
   "merge_applications",
   "match_job_application_email",
+  "link_email_evidence",
+  "reconcile_application_from_evidence",
   "extract_job_links",
   "resolve_job_links",
   "inspect_job_posting",
@@ -80,6 +90,7 @@ export const applicationMcpToolNames = [
   "create_application",
   "update_application",
   "bulk_update_applications",
+  "add_application_event",
   "delete_application",
   "upsert_application_from_email",
   "begin_document_import",
@@ -169,6 +180,10 @@ export interface McpApplicationsReader {
 }
 
 export interface McpApplicationsService extends McpApplicationsReader {
+  addApplicationEvent(
+    actor: AuthenticatedActor,
+    input: AddApplicationEventInput,
+  ): AddApplicationEventResult;
   auditDuplicateApplications(
     actor: AuthenticatedActor,
     input: AuditDuplicateApplicationsInput,
@@ -265,6 +280,58 @@ export interface McpApplicationList {
   total: number;
 }
 
+export interface McpUnlinkedApplication {
+  application: McpApplicationSummary;
+  emailEvidenceCount: 0;
+  jobPostingCount: 0;
+  missingEmailEvidence: true;
+  missingJobPostingEvidence: true;
+}
+
+export interface McpUnlinkedApplicationList {
+  applications: McpUnlinkedApplication[];
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export type McpApplicationDataQualityIssueCode =
+  | "missing_email_evidence"
+  | "missing_job_posting_evidence"
+  | "missing_location"
+  | "missing_next_action"
+  | "missing_role_type"
+  | "missing_source"
+  | "missing_source_url"
+  | "missing_work_arrangement"
+  | "next_action_due_without_action"
+  | "next_action_without_due_date";
+
+export interface McpApplicationDataQualityIssue {
+  code: McpApplicationDataQualityIssueCode;
+  severity: "info" | "warning";
+}
+
+export interface McpApplicationDataQualityFinding {
+  application: McpApplicationSummary;
+  issues: McpApplicationDataQualityIssue[];
+}
+
+export interface McpApplicationDataQualityReport {
+  applicationsWithFindings: number;
+  countsByCode: {
+    code: McpApplicationDataQualityIssueCode;
+    count: number;
+  }[];
+  findings: McpApplicationDataQualityFinding[];
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  totalApplications: number;
+  totalIssues: number;
+}
+
 export interface McpApplicationDetail {
   application: ApplicationRecord;
   emailEvidence: ApplicationEmailEvidence[];
@@ -320,6 +387,9 @@ export interface McpDocumentChunk {
 }
 
 export interface McpApplicationTools {
+  addApplicationEvent(
+    input: AddApplicationEventInput,
+  ): AddApplicationEventResult;
   auditDuplicateApplications(
     input: AuditDuplicateApplicationsInput,
   ): ApplicationDuplicateAudit;
@@ -347,7 +417,14 @@ export interface McpApplicationTools {
     documentId: string;
     offset: number;
   }): McpDocumentChunk;
+  findDuplicateApplications(
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit;
   getApplication(applicationId: string): McpApplicationDetail;
+  getApplicationDataQuality(input: {
+    limit: number;
+    offset: number;
+  }): McpApplicationDataQualityReport;
   getDocumentImportCapabilities(): {
     maxDocumentBytes: number;
     maxDocumentChunkBytes: number;
@@ -358,12 +435,22 @@ export interface McpApplicationTools {
   inspectJobPosting(
     input: JobPostingInspectionInput,
   ): Promise<JobPostingInspectionResult>;
+  linkEmailEvidence(
+    input: LinkEmailEvidenceInput,
+  ): LinkApplicationEvidenceResult;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
   listDocuments(input: { limit: number; offset: number }): McpDocumentList;
+  listUnlinkedApplications(input: {
+    limit: number;
+    offset: number;
+  }): McpUnlinkedApplicationList;
   matchJobApplicationEmail(
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult;
   mergeApplications(input: MergeApplicationsInput): ApplicationMergeResult;
+  reconcileApplicationFromEvidence(
+    input: ReconcileApplicationFromEvidenceInput,
+  ): LinkApplicationEvidenceResult | UpsertApplicationFromEmailResult;
   resolveJobLinks(
     input: EmailLinkExtractionInput,
   ): Promise<JobLinkResolutionResult>;
@@ -427,6 +514,38 @@ function applicationSummary(
     updatedAt: application.updatedAt,
     workArrangement: application.workArrangement,
   };
+}
+
+function dataQualityIssues(
+  application: ApplicationRecord,
+  counts: { emailEvidenceCount: number; jobPostingCount: number },
+): McpApplicationDataQualityIssue[] {
+  const issues: McpApplicationDataQualityIssue[] = [];
+  const add = (
+    code: McpApplicationDataQualityIssueCode,
+    severity: McpApplicationDataQualityIssue["severity"],
+  ) => issues.push({ code, severity });
+  if (counts.emailEvidenceCount === 0) add("missing_email_evidence", "info");
+  if (counts.jobPostingCount === 0) {
+    add("missing_job_posting_evidence", "info");
+  }
+  if (application.sourceId === null) add("missing_source", "warning");
+  if (application.sourceUrl === null) add("missing_source_url", "info");
+  if (application.roleTypeId === null) add("missing_role_type", "info");
+  if (application.location === null) add("missing_location", "info");
+  if (application.workArrangement === null) {
+    add("missing_work_arrangement", "info");
+  }
+  if (!application.statusIsTerminal && application.nextAction === null) {
+    add("missing_next_action", "warning");
+  }
+  if (application.nextAction === null && application.nextActionDue !== null) {
+    add("next_action_due_without_action", "warning");
+  }
+  if (application.nextAction !== null && application.nextActionDue === null) {
+    add("next_action_without_due_date", "info");
+  }
+  return issues;
 }
 
 export class ApplicationMcpService implements McpApplicationTools {
@@ -545,11 +664,108 @@ export class ApplicationMcpService implements McpApplicationTools {
     };
   }
 
+  public listUnlinkedApplications(input: {
+    limit: number;
+    offset: number;
+  }): McpUnlinkedApplicationList {
+    const actor = this.actorProvider.getActor();
+    const applicationById = new Map(
+      this.applications
+        .listApplications(actor)
+        .map((application) => [application.id, application]),
+    );
+    const unlinked = this.jobEmailService()
+      .listEvidenceCounts(actor)
+      .filter(
+        ({ emailEvidenceCount, jobPostingCount }) =>
+          emailEvidenceCount === 0 && jobPostingCount === 0,
+      )
+      .flatMap((counts): McpUnlinkedApplication[] => {
+        const application = applicationById.get(counts.applicationId);
+        return application
+          ? [
+              {
+                application: applicationSummary(application),
+                emailEvidenceCount: 0,
+                jobPostingCount: 0,
+                missingEmailEvidence: true,
+                missingJobPostingEvidence: true,
+              },
+            ]
+          : [];
+      });
+    const limit = Math.max(1, Math.min(input.limit, 100));
+    const offset = Math.max(0, input.offset);
+    const applications = unlinked.slice(offset, offset + limit);
+    const nextOffset = offset + applications.length;
+    return {
+      applications,
+      nextOffset: nextOffset < unlinked.length ? nextOffset : null,
+      offset,
+      returned: applications.length,
+      total: unlinked.length,
+    };
+  }
+
+  public getApplicationDataQuality(input: {
+    limit: number;
+    offset: number;
+  }): McpApplicationDataQualityReport {
+    const actor = this.actorProvider.getActor();
+    const applications = this.applications.listApplications(actor);
+    const countsByApplication = new Map(
+      this.jobEmailService()
+        .listEvidenceCounts(actor)
+        .map((counts) => [counts.applicationId, counts]),
+    );
+    const allFindings = applications.flatMap(
+      (application): McpApplicationDataQualityFinding[] => {
+        const counts = countsByApplication.get(application.id) ?? {
+          emailEvidenceCount: 0,
+          jobPostingCount: 0,
+        };
+        const issues = dataQualityIssues(application, counts);
+        return issues.length > 0
+          ? [{ application: applicationSummary(application), issues }]
+          : [];
+      },
+    );
+    const issueCounts = new Map<McpApplicationDataQualityIssueCode, number>();
+    for (const { issues } of allFindings) {
+      for (const { code } of issues) {
+        issueCounts.set(code, (issueCounts.get(code) ?? 0) + 1);
+      }
+    }
+    const limit = Math.max(1, Math.min(input.limit, 100));
+    const offset = Math.max(0, input.offset);
+    const findings = allFindings.slice(offset, offset + limit);
+    const nextOffset = offset + findings.length;
+    return {
+      applicationsWithFindings: allFindings.length,
+      countsByCode: [...issueCounts].map(([code, count]) => ({ code, count })),
+      findings,
+      nextOffset: nextOffset < allFindings.length ? nextOffset : null,
+      offset,
+      returned: findings.length,
+      totalApplications: applications.length,
+      totalIssues: [...issueCounts.values()].reduce(
+        (total, count) => total + count,
+        0,
+      ),
+    };
+  }
+
   public auditDuplicateApplications(
     input: AuditDuplicateApplicationsInput,
   ): ApplicationDuplicateAudit {
     const actor = this.actorProvider.getActor();
     return this.applications.auditDuplicateApplications(actor, input);
+  }
+
+  public findDuplicateApplications(
+    input: AuditDuplicateApplicationsInput,
+  ): ApplicationDuplicateAudit {
+    return this.auditDuplicateApplications(input);
   }
 
   public mergeApplications(
@@ -567,6 +783,24 @@ export class ApplicationMcpService implements McpApplicationTools {
   ): JobEmailMatchResult {
     const actor = this.actorProvider.getActor();
     return this.jobEmailService().match(actor, input);
+  }
+
+  public linkEmailEvidence(
+    input: LinkEmailEvidenceInput,
+  ): LinkApplicationEvidenceResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.jobEmailService().linkEvidence(actor, input);
+  }
+
+  public reconcileApplicationFromEvidence(
+    input: ReconcileApplicationFromEvidenceInput,
+  ): LinkApplicationEvidenceResult | UpsertApplicationFromEmailResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return input.mode === "link_existing"
+      ? this.jobEmailService().linkEvidence(actor, input)
+      : this.jobEmailService().upsert(actor, input.reconciliation);
   }
 
   public extractJobLinks(
@@ -709,6 +943,14 @@ export class ApplicationMcpService implements McpApplicationTools {
       return { id: application.id, updatedAt: application.updatedAt };
     });
     return { applications, updated: applications.length };
+  }
+
+  public addApplicationEvent(
+    input: AddApplicationEventInput,
+  ): AddApplicationEventResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.addApplicationEvent(actor, input);
   }
 
   public updateApplication(

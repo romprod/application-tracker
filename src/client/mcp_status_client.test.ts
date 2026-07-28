@@ -187,7 +187,7 @@ describe("browserMcpStatusClient", () => {
       recentAuditEvents: [
         {
           ...status.recentAuditEvents[0],
-          action: "extract_job_links",
+          action: "reconcile_application_from_evidence",
           targetType: "job_email",
         },
       ],

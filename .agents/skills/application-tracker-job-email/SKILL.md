@@ -7,8 +7,8 @@ description: Reconcile job-search emails and supported attachments with Applicat
 
 Reconcile each job email with the correct Application Tracker record. Use the
 email connector only to read the requested messages. Use Application Tracker's
-dedicated MCP match and upsert tools for authoritative identity, uniqueness,
-permissions, and persistence.
+dedicated MCP match and reconciliation tools for authoritative identity,
+uniqueness, permissions, and persistence.
 
 Never invent tool arguments, reference IDs, job identities, employer names, or
 application facts. Never store a full email body in Application Tracker.
@@ -24,13 +24,21 @@ Require these Application Tracker MCP tools:
 - `inspect_job_posting` before assessing or persisting a posting-only prospect;
 - `match_job_application_email`;
 - `get_application`; and
-- `upsert_application_from_email` for mutations.
+- `reconcile_application_from_evidence` for atomic mutations.
+
+When a trustworthy message must only be linked to a known record, also require
+`link_email_evidence`. Use `add_application_event` only for an explicitly
+requested standalone status transition; ordinary email-driven transitions
+belong inside `reconcile_application_from_evidence`.
 
 When the user explicitly includes duplicate detection or consolidation, also
 require:
 
-- `audit_duplicate_applications`; and
+- `find_duplicate_applications`; and
 - `merge_applications`.
+
+When the user asks for evidence-gap or data-quality review, also require
+`list_unlinked_applications` and `get_application_data_quality`.
 
 Require an already-connected `@softeria/ms-365-mcp-server` instance. Discover
 it from the current task's MCP tool inventory instead of assuming a server
@@ -91,6 +99,11 @@ worthwhile, inspected opportunities as `Prospect` records. It does not
 authorize marking messages read, moving or deleting mail, applying for a role,
 merging applications, deleting records, or changing an existing application
 to `Applied`.
+
+The automatic sequence is:
+
+`email → extract links → resolve tracking links → inspect postings → assess
+suitability → reconcile evidence → persist worthwhile prospects`.
 
 Read
 [references/current-mcp-contract.md](references/current-mcp-contract.md)
@@ -218,9 +231,9 @@ date similarity.
 ### 6. Handle duplicate consolidation as a separate action
 
 Keep duplicate handling separate from ordinary email reconciliation. For an
-`ambiguous` or `conflict` match, make no upsert. If the user asks to investigate
-duplicates, call `audit_duplicate_applications` with a bounded page and report
-each deterministic reason and confidence band.
+`ambiguous` or `conflict` match, make no reconciliation write. If the user asks
+to investigate duplicates, call `find_duplicate_applications` with a bounded
+page and report each deterministic reason and confidence band.
 
 Call `merge_applications` with `mode: "preview"` only after the user identifies
 an explicit source record and surviving target. Preview is read-only and must
@@ -253,13 +266,14 @@ relationships.
 After an approved merge, verify the returned survivor, lineage, consolidated
 relationships, and retained source event count. Then rerun
 `match_job_application_email` with the original evidence before continuing the
-email upsert. Apply the upsert only if the original reconciliation request
+evidence reconciliation. Apply the reconciliation only if the original request
 authorized it.
 
-### 7. Build the idempotent upsert
+### 7. Reconcile evidence atomically
 
-Call `upsert_application_from_email` only after the intended create-or-update
-decision is clear. Supply:
+Call `reconcile_application_from_evidence` only after the intended
+create-or-update decision is clear. Use `mode: "match_or_create"` and place the
+following fields in `reconciliation`:
 
 - `application`: the complete validated create fallback, including explicit
   company, role title, and an active status ID;
@@ -294,10 +308,16 @@ For updates:
 - remember that generic `update_application` semantics replace contacts and
   links when those arrays are present.
 
-The upsert persists posting identity and bounded email evidence in dedicated
-tables. Workspace uniqueness on posting identity, canonical URL, and Message-ID
-prevents duplicate attribution. An exact retry is safe; do not fall back to
-generic create/update after an uncertain upsert result.
+The reconciliation persists posting identity and bounded email evidence in
+dedicated tables. Workspace uniqueness on posting identity, canonical URL, and
+Message-ID prevents duplicate attribution. An exact retry is safe; do not fall
+back to generic create/update after an uncertain reconciliation result.
+
+Use `mode: "link_existing"` only when the user or a prior deterministic match
+has selected one explicit application and the operation needs to link evidence
+without changing application fields. It accepts `applicationId`, `email`, and
+optional `posting` in one transaction. If only email evidence is needed,
+`link_email_evidence` is the narrower idempotent tool.
 
 ### 8. Import a supported attachment
 
@@ -343,7 +363,7 @@ private temporary copy after successful verification.
 
 ### 9. Verify and report
 
-After a successful upsert, call `get_application` and verify:
+After a successful reconciliation, call `get_application` and verify:
 
 - company, title, and status;
 - the expected `jobPostings` entry;

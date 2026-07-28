@@ -77,7 +77,9 @@ export interface McpCredentialResult {
 
 export interface McpAuditEvent {
   action:
+    | "add_application_event"
     | "append_document_chunk"
+    | "audit_duplicate_applications"
     | "begin_document_import"
     | "bulk_update_applications"
     | "cancel_document_import"
@@ -86,15 +88,23 @@ export interface McpAuditEvent {
     | "delete_application"
     | "extract_job_links"
     | "export_document_chunk"
+    | "find_duplicate_applications"
     | "get_application"
+    | "get_application_data_quality"
     | "get_connector_schema_status"
     | "get_document_import_capabilities"
     | "get_job_search_summary"
     | "get_reference_data"
     | "get_tracker_context"
+    | "inspect_job_posting"
+    | "link_email_evidence"
     | "list_applications"
     | "list_documents"
+    | "list_unlinked_applications"
     | "match_job_application_email"
+    | "merge_applications"
+    | "reconcile_application_from_evidence"
+    | "resolve_job_links"
     | "update_application"
     | "upsert_application_from_email";
   actor: {
@@ -169,7 +179,9 @@ function isMcpEndpoint(value: unknown): value is string | null {
 function parseAuditEvent(value: unknown): McpAuditEvent {
   if (
     !isRecord(value) ||
-    (value.action !== "append_document_chunk" &&
+    (value.action !== "add_application_event" &&
+      value.action !== "append_document_chunk" &&
+      value.action !== "audit_duplicate_applications" &&
       value.action !== "begin_document_import" &&
       value.action !== "bulk_update_applications" &&
       value.action !== "cancel_document_import" &&
@@ -178,15 +190,23 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "delete_application" &&
       value.action !== "extract_job_links" &&
       value.action !== "export_document_chunk" &&
+      value.action !== "find_duplicate_applications" &&
       value.action !== "get_application" &&
+      value.action !== "get_application_data_quality" &&
       value.action !== "get_connector_schema_status" &&
       value.action !== "get_document_import_capabilities" &&
       value.action !== "get_job_search_summary" &&
       value.action !== "get_reference_data" &&
       value.action !== "get_tracker_context" &&
+      value.action !== "inspect_job_posting" &&
+      value.action !== "link_email_evidence" &&
       value.action !== "list_applications" &&
       value.action !== "list_documents" &&
+      value.action !== "list_unlinked_applications" &&
       value.action !== "match_job_application_email" &&
+      value.action !== "merge_applications" &&
+      value.action !== "reconcile_application_from_evidence" &&
+      value.action !== "resolve_job_links" &&
       value.action !== "update_application" &&
       value.action !== "upsert_application_from_email") ||
     !isRecord(value.actor) ||

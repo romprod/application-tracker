@@ -171,7 +171,7 @@ same not-found response as an unknown session, even if it belongs to the same
 user. Session admission, idle expiry, absolute expiry, and shutdown cleanup use
 the limits shown in the administrator MCP status view.
 
-The remote endpoint exposes the same 14 read-only tools and 10
+The remote endpoint exposes the same 17 read-only tools and 13
 mutation-capable tools as local stdio. Permission is selected for each OAuth
 authorization or bearer credential and is checked on every call, including
 existing sessions. OAuth tokens must also present the required

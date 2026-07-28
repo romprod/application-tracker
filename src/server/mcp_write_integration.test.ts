@@ -847,6 +847,209 @@ describe("MCP write integration", () => {
       ],
       outcome: "ambiguous",
     });
+    const unlinkedApplicationId = database
+      .prepare(
+        `SELECT id FROM applications
+         WHERE workspace_id = ? AND deleted_at IS NULL AND id <> ?`,
+      )
+      .pluck()
+      .get(setup.workspace.id, applicationId);
+    if (typeof unlinkedApplicationId !== "string") {
+      throw new Error("Missing unlinked application fixture");
+    }
+    const unlinked = await client.callTool({
+      arguments: { limit: 50, offset: 0 },
+      name: "list_unlinked_applications",
+    });
+    expect(unlinked.structuredContent).toMatchObject({
+      applications: [
+        {
+          application: { id: unlinkedApplicationId },
+          emailEvidenceCount: 0,
+          jobPostingCount: 0,
+          missingEmailEvidence: true,
+          missingJobPostingEvidence: true,
+        },
+      ],
+      returned: 1,
+      total: 1,
+    });
+    const quality = await client.callTool({
+      arguments: { limit: 50, offset: 0 },
+      name: "get_application_data_quality",
+    });
+    expect(quality.structuredContent).toMatchObject({
+      applicationsWithFindings: 2,
+      totalApplications: 2,
+    });
+    expect(
+      (
+        quality.structuredContent as {
+          countsByCode: unknown[];
+        }
+      ).countsByCode,
+    ).toEqual(
+      expect.arrayContaining([
+        { code: "missing_email_evidence", count: 1 },
+        { code: "missing_job_posting_evidence", count: 1 },
+      ]),
+    );
+    const duplicateAudit = await client.callTool({
+      arguments: { limit: 50, offset: 0 },
+      name: "audit_duplicate_applications",
+    });
+    const duplicateFind = await client.callTool({
+      arguments: { limit: 50, offset: 0 },
+      name: "find_duplicate_applications",
+    });
+    expect(duplicateFind.structuredContent).toEqual(
+      duplicateAudit.structuredContent,
+    );
+
+    const linkedEmailInput = {
+      applicationId: unlinkedApplicationId,
+      email: {
+        messageId: "<explicit-link@example.com>",
+        receivedAt: "2026-07-21T17:15:00.000Z",
+      },
+    };
+    const linkedEmail = await client.callTool({
+      arguments: linkedEmailInput,
+      name: "link_email_evidence",
+    });
+    const linkedEmailRetry = await client.callTool({
+      arguments: linkedEmailInput,
+      name: "link_email_evidence",
+    });
+    expect(linkedEmail.structuredContent).toMatchObject({
+      action: "linked",
+      application: { id: unlinkedApplicationId },
+      emailEvidenceLinked: true,
+      postingLinked: false,
+    });
+    expect(linkedEmailRetry.structuredContent).toMatchObject({
+      action: "linked",
+      emailEvidenceLinked: false,
+      postingLinked: false,
+    });
+
+    const reconciled = await client.callTool({
+      arguments: {
+        applicationId: unlinkedApplicationId,
+        email: {
+          messageId: "<explicit-reconciliation@example.com>",
+          receivedAt: "2026-07-21T17:30:00.000Z",
+        },
+        mode: "link_existing",
+        posting: {
+          url: "https://www.linkedin.com/jobs/view/5505273020",
+        },
+      },
+      name: "reconcile_application_from_evidence",
+    });
+    expect(reconciled.structuredContent).toMatchObject({
+      action: "linked",
+      application: { id: unlinkedApplicationId },
+      emailEvidenceLinked: true,
+      postingLinked: true,
+    });
+
+    const beforeEvent = await client.callTool({
+      arguments: { applicationId: unlinkedApplicationId },
+      name: "get_application",
+    });
+    const expectedUpdatedAt = String(
+      (
+        beforeEvent.structuredContent as {
+          application: { updatedAt: string };
+        }
+      ).application.updatedAt,
+    );
+    const eventInput = {
+      applicationId: unlinkedApplicationId,
+      expectedUpdatedAt,
+      occurredAt: "2026-07-21T18:00:00.000Z",
+      sourceEmailMessageId: "<explicit-event@example.com>",
+      statusId: String(statusIds.Applied),
+    };
+    const addedEvent = await client.callTool({
+      arguments: eventInput,
+      name: "add_application_event",
+    });
+    const addedEventRetry = await client.callTool({
+      arguments: eventInput,
+      name: "add_application_event",
+    });
+    expect(addedEvent.structuredContent).toMatchObject({
+      application: { id: unlinkedApplicationId, status: "Applied" },
+      event: {
+        occurredAt: eventInput.occurredAt,
+        sourceEmailMessageId: eventInput.sourceEmailMessageId,
+        toStatus: "Applied",
+        type: "status_changed",
+      },
+    });
+    expect(addedEventRetry.structuredContent).toEqual(
+      addedEvent.structuredContent,
+    );
+    const duplicateStatusEvent = await client.callTool({
+      arguments: {
+        applicationId: unlinkedApplicationId,
+        expectedUpdatedAt,
+        occurredAt: "2026-07-21T18:15:00.000Z",
+        statusId: String(statusIds.Applied),
+      },
+      name: "add_application_event",
+    });
+    const conflictingEventRetry = await client.callTool({
+      arguments: {
+        ...eventInput,
+        occurredAt: "2026-07-21T18:30:00.000Z",
+      },
+      name: "add_application_event",
+    });
+    expect(duplicateStatusEvent.content).toEqual([
+      {
+        text: '{"error":{"code":"application_event_no_change"}}',
+        type: "text",
+      },
+    ]);
+    expect(conflictingEventRetry.content).toEqual([
+      {
+        text: '{"error":{"code":"application_event_conflict"}}',
+        type: "text",
+      },
+    ]);
+    const reconciledCreate = await client.callTool({
+      arguments: {
+        mode: "match_or_create",
+        reconciliation: {
+          application: {
+            companyName: "Reconciled Prospect Ltd",
+            roleTitle: "Security Engineer",
+            statusId,
+          },
+          email: {
+            messageId: "<reconciled-create@example.com>",
+            receivedAt: "2026-07-21T18:45:00.000Z",
+          },
+          posting: {
+            url: "https://www.linkedin.com/jobs/view/6605273020",
+          },
+        },
+      },
+      name: "reconcile_application_from_evidence",
+    });
+    expect(reconciledCreate.structuredContent).toMatchObject({
+      action: "created",
+      application: {
+        companyName: "Reconciled Prospect Ltd",
+        roleTitle: "Security Engineer",
+      },
+      emailEvidenceLinked: true,
+      postingLinked: true,
+    });
+
     expect(
       database
         .prepare(
@@ -872,6 +1075,30 @@ describe("MCP write integration", () => {
       "upsert_application_from_email",
       "match_job_application_email",
       "match_job_application_email",
+    ]);
+    expect(
+      database
+        .prepare(
+          `SELECT DISTINCT action FROM mcp_audit_events
+           WHERE action IN (
+             'find_duplicate_applications',
+             'list_unlinked_applications',
+             'get_application_data_quality',
+             'link_email_evidence',
+             'reconcile_application_from_evidence',
+             'add_application_event'
+           )
+           ORDER BY action`,
+        )
+        .pluck()
+        .all(),
+    ).toEqual([
+      "add_application_event",
+      "find_duplicate_applications",
+      "get_application_data_quality",
+      "link_email_evidence",
+      "list_unlinked_applications",
+      "reconcile_application_from_evidence",
     ]);
   });
 });

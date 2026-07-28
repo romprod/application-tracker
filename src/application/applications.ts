@@ -1,5 +1,6 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type {
+  AddApplicationEventInput,
   ApplicationContactInput,
   ApplicationLinkInput,
   ApplicationMergeField,
@@ -102,7 +103,12 @@ export interface ApplicationEvent {
 export interface ApplicationStatusEventInput {
   effectiveAt: string;
   overrideReason: string | null;
-  sourceEmailMessageId: string;
+  sourceEmailMessageId: string | null;
+}
+
+export interface AddApplicationEventResult {
+  application: ApplicationRecord;
+  event: ApplicationEvent;
 }
 
 export type ApplicationDuplicateConfidence =
@@ -301,6 +307,13 @@ export class ApplicationStatusStaleError extends Error {
   }
 }
 
+export class ApplicationEventNoChangeError extends Error {
+  public constructor() {
+    super("The requested status is already current");
+    this.name = "ApplicationEventNoChangeError";
+  }
+}
+
 export class ApplicationMergeNotFoundError extends Error {
   public constructor() {
     super("One or both applications could not be found");
@@ -474,6 +487,62 @@ export class ApplicationLedgerService {
     });
     if (!application) throw new ApplicationNotFoundError();
     return application;
+  }
+
+  public addApplicationEvent(
+    actor: AuthenticatedActor,
+    input: AddApplicationEventInput,
+  ): AddApplicationEventResult {
+    const current = this.listApplications(actor).find(
+      ({ id }) => id === input.applicationId,
+    );
+    if (!current) throw new ApplicationNotFoundError();
+    const sourceEmailMessageId = input.sourceEmailMessageId ?? null;
+    const existingSourceEvent = sourceEmailMessageId
+      ? this.listApplicationEvents(actor, input.applicationId).find(
+          (event) =>
+            event.type === "status_changed" &&
+            event.sourceEmailMessageId === sourceEmailMessageId,
+        )
+      : undefined;
+    if (existingSourceEvent) {
+      if (
+        current.statusId === input.statusId &&
+        existingSourceEvent.occurredAt === input.occurredAt &&
+        existingSourceEvent.toStatus === current.status
+      ) {
+        return { application: current, event: existingSourceEvent };
+      }
+      throw new ApplicationStatusEventConflictError();
+    }
+    if (current.statusId === input.statusId) {
+      throw new ApplicationEventNoChangeError();
+    }
+
+    const application = this.updateApplicationFromEmail(
+      actor,
+      input.applicationId,
+      {
+        expectedUpdatedAt: input.expectedUpdatedAt,
+        statusId: input.statusId,
+      },
+      {
+        effectiveAt: input.occurredAt,
+        overrideReason: input.statusOverride?.reason ?? null,
+        sourceEmailMessageId,
+      },
+    );
+    const event = this.listApplicationEvents(actor, input.applicationId).find(
+      (candidate) =>
+        candidate.type === "status_changed" &&
+        candidate.occurredAt === input.occurredAt &&
+        candidate.sourceEmailMessageId === sourceEmailMessageId &&
+        candidate.toStatus === application.status,
+    );
+    if (!event) {
+      throw new Error("The immutable application event could not be read back");
+    }
+    return { application, event };
   }
 
   public updateApplicationFromEmail(

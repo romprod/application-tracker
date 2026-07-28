@@ -1455,16 +1455,21 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           : this.activeReference(input.workspaceId, statusId, "status");
 
       if (statusId !== current.statusId && input.statusEvent) {
-        const existingSourceEvent = this.database
-          .prepare(
-            `SELECT application_id AS applicationId, to_status AS toStatus,
-                    occurred_at AS occurredAt
-             FROM application_events
-             WHERE workspace_id = ? AND source_email_message_id = ?`,
-          )
-          .get(input.workspaceId, input.statusEvent.sourceEmailMessageId) as
-          | { applicationId: string; occurredAt: string; toStatus: string }
-          | undefined;
+        const existingSourceEvent = input.statusEvent.sourceEmailMessageId
+          ? (this.database
+              .prepare(
+                `SELECT application_id AS applicationId, to_status AS toStatus,
+                        occurred_at AS occurredAt
+                 FROM application_events
+                 WHERE workspace_id = ? AND source_email_message_id = ?`,
+              )
+              .get(
+                input.workspaceId,
+                input.statusEvent.sourceEmailMessageId,
+              ) as
+              | { applicationId: string; occurredAt: string; toStatus: string }
+              | undefined)
+          : undefined;
         if (existingSourceEvent) {
           if (
             existingSourceEvent.applicationId === input.applicationId &&
