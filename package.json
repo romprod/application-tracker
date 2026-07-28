@@ -44,6 +44,7 @@
     "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.tools.json"
   },
   "dependencies": {
+    "@azure/identity": "4.13.1",
     "@fontsource-variable/archivo": "5.2.8",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@fontsource-variable/newsreader": "5.2.10",

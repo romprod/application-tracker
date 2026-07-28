@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 30 tools:
+The local server registers 31 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -74,6 +74,7 @@ The local server registers 30 tools:
 | `match_job_application_email`         | Deterministic posting, email, or company match             |
 | `link_email_evidence`                 | Idempotently link one Message-ID to an existing record     |
 | `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
+| `sync_outlook_email_evidence`         | Server-side Outlook search, score, link, and verification  |
 | `extract_job_links`                   | Offline canonical job-link candidates                      |
 | `resolve_job_links`                   | Allowlisted tracking-link resolution                       |
 | `inspect_job_posting`                 | Structured canonical posting metadata                      |
@@ -106,8 +107,10 @@ inspector are open-world because they make tightly constrained external HTTPS
 reads; every other read tool is closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
 destructive and requires `confirm=true`. Evidence linking, reconciliation,
-job-email upsert, merging, and document-transfer mutations are non-read-only
-and idempotent.
+job-email upsert, Outlook synchronization, merging, and document-transfer
+mutations are non-read-only and idempotent. Outlook synchronization is also
+open-world because the server makes bounded Graph reads before its optional
+local write.
 
 `resolve_job_links` issues requests only to its built-in tracking-host
 allowlist. `inspect_job_posting` accepts only URLs recognized by the provider
@@ -127,6 +130,15 @@ Message-ID, received time, and Outlook `webUrl` to `link_email_evidence`. Use
 run the established match/create/update workflow. The stored link is returned
 by `get_application` in `emailEvidence[].webUrl`. This dedicated evidence link
 is separate from the application's user-managed related `links`.
+
+When server-side Outlook synchronization is configured, a client that already
+has one application ID calls `sync_outlook_email_evidence` directly. It must not
+call `get_tracker_context`, `get_application`, or a separate Microsoft 365 MCP
+as preflight or verification for this path. The single result includes the
+application read-back, existing-evidence validation, bounded candidate
+assessments, link outcome, and stored-evidence verification. The tool requires
+`read_write` because it may create an evidence link. See
+[`outlook-email-sync.md`](outlook-email-sync.md).
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.

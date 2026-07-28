@@ -42,9 +42,21 @@ flowchart LR
   MCPStdio --> UseCases
   UseCases --> Repositories["Repository interfaces"]
   Repositories --> SQLite[("SQLite")]
+  UseCases --> GraphMail["Bounded Outlook mail reader"]
+  GraphMail -->|"HTTPS + app token"| Graph["Microsoft Graph"]
   UseCases --> PreviewQueue["Preview supervisor"]
   PreviewQueue --> Worker["Disposable resource-limited parser process"]
 ```
+
+The optional Outlook integration is a prepare-and-commit use case. It performs
+all Microsoft Graph authentication, folder traversal, evidence validation,
+search, and message-detail reads before opening a SQLite transaction. The
+prepared deterministic decision is then committed with the evidence link,
+read-back verification, and MCP audit event in one immediate transaction. A
+concurrent application change or audit failure rolls the evidence write back.
+The server never writes to the mailbox and does not persist access tokens,
+message bodies, subjects, or senders. See
+[`outlook-email-sync.md`](outlook-email-sync.md).
 
 ## Database contract
 
@@ -97,8 +109,8 @@ or incomplete production configuration stops startup with a concise error.
 configuration remain ignored.
 
 Configuration is grouped into server, database, session, setup, OIDC, MCP,
-document processing, and proxy settings. Secret values never appear in health
-responses or logs.
+optional Microsoft Graph mail access, document processing, and proxy settings.
+Secret values never appear in health responses or logs.
 
 ## Delivery contract
 

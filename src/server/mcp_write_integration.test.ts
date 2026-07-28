@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { DocumentLibraryService } from "../application/documents.js";
@@ -15,6 +15,11 @@ import {
 import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
+import {
+  OutlookEmailSyncService,
+  type OutlookMailMessageDetail,
+  type OutlookMailReader,
+} from "../application/outlook_email_sync.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
@@ -347,6 +352,160 @@ describe("MCP write integration", () => {
         .prepare("SELECT count(*) FROM applications WHERE deleted_at IS NULL")
         .pluck()
         .get(),
+    ).toBe(0);
+  });
+
+  it("keeps Graph reads outside transactions and rolls back a sync link when audit storage fails", async () => {
+    const database = openApplicationDatabase(":memory:");
+    databases.push(database);
+    const setup = new SqliteSetupRepository(
+      database,
+    ).createInitialAdministrator({
+      completedAt: "2026-07-21T14:00:00.000Z",
+      displayName: "Alex Example",
+      passwordHash: "scrypt$1024$8$1$salt$hash-value-long-enough",
+      username: "alex",
+      workspaceName: "Applications",
+    });
+    const actorProvider = new LocalMcpActorProvider(
+      new SqliteMcpActorRepository(database),
+      { username: "alex", workspaceSlug: "default" },
+    );
+    const applications = new ApplicationLedgerService(
+      new SqliteApplicationsRepository(database),
+      () => new Date("2026-07-21T15:00:00.000Z"),
+    );
+    const jobEmails = new JobEmailReconciliationService(
+      new SqliteJobEmailReconciliationRepository(database),
+      applications,
+      (operation) => database.transaction(operation).immediate(),
+      () => new Date("2026-07-21T16:00:00.000Z"),
+    );
+    const transactionStates: boolean[] = [];
+    const message: OutlookMailMessageDetail = {
+      body: {
+        content:
+          "Thank you for applying for Platform Engineer at Example Company. We received your application.",
+        contentType: "text",
+      },
+      bodyPreview:
+        "Thank you for applying for Platform Engineer at Example Company.",
+      from: { address: "recruiter@example.com", name: "Recruiter" },
+      headers: [],
+      id: "message-1",
+      internetMessageId: "<message-1@example.com>",
+      receivedAt: "2026-07-21T15:30:00.000Z",
+      replyTo: [],
+      subject: "Application received: Platform Engineer",
+      webUrl: "https://outlook.office.com/mail/inbox/id/message-1",
+    };
+    const mail: OutlookMailReader = {
+      getMessages: vi.fn(() => {
+        transactionStates.push(database.inTransaction);
+        return Promise.resolve([message]);
+      }),
+      searchMessages: vi.fn(() => {
+        transactionStates.push(database.inTransaction);
+        return Promise.resolve({
+          messages: [
+            {
+              bodyPreview: message.bodyPreview,
+              from: message.from,
+              id: message.id,
+              internetMessageId: message.internetMessageId,
+              receivedAt: message.receivedAt,
+              searchKinds: ["company_role"],
+              subject: message.subject,
+              webUrl: message.webUrl,
+            },
+          ],
+          queriesRun: 1,
+        });
+      }),
+      validateEvidence: vi.fn(() => {
+        transactionStates.push(database.inTransaction);
+        return Promise.resolve([]);
+      }),
+    };
+    const emailLinks = new EmailLinkExtractionService();
+    const outlookSync = new OutlookEmailSyncService(
+      applications,
+      jobEmails,
+      emailLinks,
+      mail,
+    );
+    const tools = new ApplicationMcpService(
+      actorProvider,
+      applications,
+      new ReferenceValuesService(new SqliteReferenceValuesRepository(database)),
+      new McpConnectionAccessPolicy("read_write"),
+      new DocumentLibraryService(
+        new SqliteDocumentsRepository(database, documentPolicy),
+        documentPolicy,
+      ),
+      new McpDocumentImportManager(documentPolicy.maxUploadBytes),
+      emailLinks,
+      jobEmails,
+      outlookSync,
+    );
+    const actor = actorProvider.getActor();
+    const statusId = database
+      .prepare(
+        `SELECT id FROM reference_values
+         WHERE workspace_id = ? AND category = 'status'
+         ORDER BY sort_order LIMIT 1`,
+      )
+      .pluck()
+      .get(setup.workspace.id) as string;
+    const application = applications.createApplication(actor, {
+      appliedOn: "2026-07-20",
+      companyName: "Example Company",
+      contacts: [{ email: "recruiter@example.com", name: "Recruiter" }],
+      roleTitle: "Platform Engineer",
+      statusId,
+    });
+    database.exec(`
+      CREATE TRIGGER reject_outlook_sync_audit
+      BEFORE INSERT ON mcp_audit_events
+      BEGIN
+        SELECT RAISE(ABORT, 'synthetic Outlook sync audit failure');
+      END;
+    `);
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: setup.administrator.id,
+        recorder: new McpAuditService(new SqliteMcpAuditRepository(database)),
+        runAtomically: (operation) =>
+          database.transaction(operation).immediate(),
+        workspaceId: setup.workspace.id,
+      },
+    });
+    const client = new Client({ name: "outlook-sync-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    clients.push(client);
+    servers.push(server);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: { applicationId: application.id },
+      name: "sync_outlook_email_evidence",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      { text: '{"error":{"code":"internal_error"}}', type: "text" },
+    ]);
+    expect(transactionStates).toEqual([false, false, false]);
+    expect(
+      database
+        .prepare("SELECT count(*) FROM application_email_evidence")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(
+      database.prepare("SELECT count(*) FROM mcp_audit_events").pluck().get(),
     ).toBe(0);
   });
 

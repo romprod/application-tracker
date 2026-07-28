@@ -4,8 +4,11 @@
 
 Application Tracker helps an individual or small team manage a shared job
 application workspace. It records applications, actions, events, documents,
-and configurable reference values without sending that data to a hosted
-service.
+and configurable reference values locally. By default it sends none of that
+workspace content to a hosted service. When an operator explicitly enables the
+optional Outlook evidence integration, the server sends bounded application
+identity searches to Microsoft Graph and reads mail from one externally scoped
+mailbox.
 
 ## Installation and identity
 
@@ -70,6 +73,14 @@ can be enabled per connection by a workspace administrator. Application
 deletion is a soft delete, is advertised as destructive, and requires explicit
 confirmation in the tool input. A successful mutation and its audit event
 commit atomically.
+
+For one known application's Outlook evidence, the MCP client calls
+`sync_outlook_email_evidence` once. Application Tracker performs the Graph
+authentication, existing-evidence validation, bounded folder search, message
+retrieval, versioned deterministic scoring, optional evidence link, application
+read-back, verification, and audit. The client does not invoke a separate
+Microsoft 365 MCP for this workflow. Graph reads occur before the SQLite
+transaction; only the evidence link and successful audit row commit together.
 
 ## Duplicate application contract
 

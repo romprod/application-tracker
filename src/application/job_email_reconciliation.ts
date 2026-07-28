@@ -2,7 +2,10 @@ import type {
   ApplicationRecord,
   ApplicationLedgerService,
 } from "./applications.js";
-import { ApplicationNotFoundError } from "./applications.js";
+import {
+  ApplicationConflictError,
+  ApplicationNotFoundError,
+} from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import {
   JobBoardProviderRegistry,
@@ -176,7 +179,7 @@ interface MatchCriterion {
   level: JobEmailMatchLevel;
 }
 
-function normalizeIdentityText(value: string): string {
+export function normalizeJobEmailIdentityText(value: string): string {
   return value
     .normalize("NFKC")
     .replace(/[\u2018\u2019]/g, "'")
@@ -292,12 +295,19 @@ export class JobEmailReconciliationService {
   public linkEvidence(
     actor: AuthenticatedActor,
     input: LinkApplicationEvidenceInput,
+    expectedApplicationUpdatedAt?: string,
   ): LinkApplicationEvidenceResult {
     return this.runAtomically(() => {
       const application = this.applications
         .listApplications(actor)
         .find(({ id }) => id === input.applicationId);
       if (!application) throw new ApplicationNotFoundError();
+      if (
+        expectedApplicationUpdatedAt !== undefined &&
+        application.updatedAt !== expectedApplicationUpdatedAt
+      ) {
+        throw new ApplicationConflictError(application);
+      }
       const occurredAt = this.clock().toISOString();
       const posting = input.posting
         ? this.resolvePostingEvidence(input.posting)
@@ -403,16 +413,17 @@ export class JobEmailReconciliationService {
       });
     }
     if (input.companyName && input.roleTitle) {
-      const companyName = normalizeIdentityText(input.companyName);
-      const roleTitle = normalizeIdentityText(input.roleTitle);
+      const companyName = normalizeJobEmailIdentityText(input.companyName);
+      const roleTitle = normalizeJobEmailIdentityText(input.roleTitle);
       criteria.push({
         applicationIds: new Set(
           applications
             .filter(
               (application) =>
-                normalizeIdentityText(application.companyName) ===
+                normalizeJobEmailIdentityText(application.companyName) ===
                   companyName &&
-                normalizeIdentityText(application.roleTitle) === roleTitle,
+                normalizeJobEmailIdentityText(application.roleTitle) ===
+                  roleTitle,
             )
             .map(({ id }) => id),
         ),

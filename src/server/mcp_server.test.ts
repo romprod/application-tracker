@@ -12,6 +12,7 @@ import {
 } from "../application/mcp.js";
 import { McpWriteAccessDisabledError } from "../application/mcp_access.js";
 import type { McpAuditRecorder } from "../application/mcp_audit.js";
+import { OutlookEmailSyncOperationalError } from "../application/outlook_email_sync.js";
 import type { ApplicationLogger } from "./logging.js";
 import { createLocalMcpServer } from "./mcp_server.js";
 
@@ -129,6 +130,9 @@ function fakeTools(): McpApplicationTools {
       outcome: "none" as const,
     })),
     mergeApplications: vi.fn(),
+    prepareSyncOutlookEmailEvidence: vi.fn(() =>
+      Promise.reject(new Error("not configured")),
+    ),
     reconcileApplicationFromEvidence: vi.fn(),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
@@ -147,6 +151,51 @@ function fakeTools(): McpApplicationTools {
     ),
     updateApplication: vi.fn(),
     upsertApplicationFromEmail: vi.fn(),
+  };
+}
+
+function outlookSyncResult() {
+  return {
+    application: {
+      agency: null,
+      appliedOn: "2026-07-20",
+      companyName: "Example Company",
+      contacts: [],
+      createdAt: "2026-07-20T12:00:00.000Z",
+      id: "11111111-1111-4111-8111-111111111111",
+      links: [],
+      location: null,
+      nextAction: null,
+      nextActionDue: null,
+      notes: null,
+      rating: null,
+      roleTitle: "Platform Engineer",
+      roleType: null,
+      roleTypeId: null,
+      salary: null,
+      source: null,
+      sourceId: null,
+      sourceUrl: null,
+      status: "Applied",
+      statusId: "22222222-2222-4222-8222-222222222222",
+      statusIsTerminal: false,
+      updatedAt: "2026-07-20T12:00:00.000Z",
+      workArrangement: null,
+    },
+    candidateAssessments: [],
+    emailEvidence: [],
+    existingEvidenceValidation: [],
+    link: { attempted: false, created: false },
+    outcome: "no_match" as const,
+    scoringVersion: 1,
+    search: { candidatesRetrieved: 0, detailsRead: 0, queriesRun: 1 },
+    selectedEvidence: null,
+    threshold: 80,
+    verification: {
+      applicationReread: true as const,
+      evidenceStored: false,
+      storedMessageId: null,
+    },
   };
 }
 
@@ -201,6 +250,7 @@ describe("local MCP server", () => {
       "resolve_job_links",
       "inspect_job_posting",
     ]);
+    const openWorldWriteTools = new Set(["sync_outlook_email_evidence"]);
     const nonIdempotentWriteTools = new Set([
       "create_application",
       "update_application",
@@ -219,7 +269,7 @@ describe("local MCP server", () => {
       } else {
         expect(tool.annotations).toMatchObject({
           idempotentHint: !nonIdempotentWriteTools.has(tool.name),
-          openWorldHint: false,
+          openWorldHint: openWorldWriteTools.has(tool.name),
           readOnlyHint: false,
         });
       }
@@ -445,6 +495,99 @@ describe("local MCP server", () => {
       actorUserId: "actor-user-1",
       result: "not_found",
       targetType: "application",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("executes the one-call Outlook sync and audits its prepared commit", async () => {
+    const tools = fakeTools();
+    const commit = vi.fn(() => outlookSyncResult());
+    const prepare = vi.fn(() => Promise.resolve({ commit }));
+    tools.prepareSyncOutlookEmailEvidence = prepare;
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {
+        applicationId: "11111111-1111-4111-8111-111111111111",
+      },
+      name: "sync_outlook_email_evidence",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(outlookSyncResult());
+    expect(prepare).toHaveBeenCalledWith({
+      applicationId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(record).toHaveBeenCalledWith({
+      action: "sync_outlook_email_evidence",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("returns a stable error when server-side Outlook sync is unconfigured", async () => {
+    const tools = fakeTools();
+    tools.prepareSyncOutlookEmailEvidence = vi.fn(() =>
+      Promise.reject(
+        new OutlookEmailSyncOperationalError("outlook_email_sync_unavailable"),
+      ),
+    );
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {
+        applicationId: "11111111-1111-4111-8111-111111111111",
+      },
+      name: "sync_outlook_email_evidence",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      {
+        text: '{"error":{"code":"outlook_email_sync_unavailable"}}',
+        type: "text",
+      },
+    ]);
+    expect(record).toHaveBeenCalledWith({
+      action: "sync_outlook_email_evidence",
+      actorUserId: "actor-user-1",
+      result: "error",
+      targetType: "job_email",
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });

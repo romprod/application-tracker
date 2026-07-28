@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28,
+        21, 22, 23, 24, 25, 26, 27, 28, 29,
       ]);
       expect(
         database
@@ -848,6 +848,11 @@ describe("migrateDatabase", () => {
       for (const [id, action, occurredAt] of [
         ["audit-event-9", "resolve_job_links", "2026-07-19T12:07:00.000Z"],
         ["audit-event-10", "inspect_job_posting", "2026-07-19T12:08:00.000Z"],
+        [
+          "audit-event-11",
+          "sync_outlook_email_evidence",
+          "2026-07-19T12:09:00.000Z",
+        ],
       ]) {
         expect(() =>
           database
@@ -1106,6 +1111,7 @@ describe("migrateDatabase", () => {
       expect(auditSql).toContain("extract_job_links");
       expect(auditSql).toContain("resolve_job_links");
       expect(auditSql).toContain("inspect_job_posting");
+      expect(auditSql).toContain("sync_outlook_email_evidence");
       expect(auditSql).toContain("job_email");
     } finally {
       database.close();

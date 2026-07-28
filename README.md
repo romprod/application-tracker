@@ -5,9 +5,11 @@ documents, follow-up actions, contacts, and outcomes. It combines a responsive
 web interface with optional local and authenticated remote Model Context
 Protocol (MCP) access.
 
-The application stores its data in SQLite and sends no workspace content to a
-hosted service. A fresh installation contains no account, sample data, or
-default password.
+The application stores its data in SQLite and, by default, sends no workspace
+content to a hosted service. The optional Outlook evidence integration sends
+bounded company, role, and posting searches to Microsoft Graph and reads only
+the configured mailbox. A fresh installation contains no account, sample data,
+or default password.
 
 ## Features
 
@@ -19,8 +21,9 @@ default password.
 - Local administrator and member accounts with revocable sessions
 - Original document storage, SHA-256 deduplication, application associations,
   inline PDF viewing, bounded DOCX and email previews, and safe downloads
-- Bounded email-link extraction without server-side network requests or stored
-  email bodies
+- Bounded email-link extraction, plus optional server-side Microsoft Graph
+  synchronization that finds and verifies Outlook evidence for one known
+  application without storing email bodies
 - Local stdio MCP and authenticated Streamable HTTP MCP with bounded application
   and document transfer, explicit actor binding, website-controlled write
   access, and immutable audit events
@@ -138,38 +141,42 @@ work arrangement is hybrid. Use the Prospect stage and leave the applied date
 empty. Show me the completed record before making any further changes.
 ```
 
-With both Outlook Email and Application Tracker connected:
+When the operator has enabled Application Tracker's server-side Outlook
+integration:
 
 ```text
-Check my Outlook Jobs folder for recent job-application messages and reconcile
-them with Application Tracker. Store each supported message's stable RFC
-Message-ID and Outlook web link as email evidence. Do not create duplicates or
-guess when a match is ambiguous, and report any message for which Outlook does
-not expose a stable Message-ID.
+For Application Tracker application <application-id>, synchronize Outlook email
+evidence. Use the single sync_outlook_email_evidence tool and do not call a
+separate Outlook or Microsoft 365 connector.
 ```
+
+That tool reads the application, validates existing evidence, searches the
+configured `Inbox\Jobs` folder, retrieves and scores a bounded shortlist, links
+only a sufficiently confident RFC Message-ID, and verifies the stored evidence
+before returning. See the
+[operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill
 
 The repository includes the installable
 [Application Tracker Job Email](.agents/skills/application-tracker-job-email/SKILL.md)
-skill. It teaches compatible AI clients how to reconcile messages from an
-Outlook Jobs folder with Application Tracker through bounded link resolution,
-structured posting inspection, and atomic evidence reconciliation, while
-stopping when evidence is unavailable, ambiguous, or conflicting.
+skill. For a known application, it teaches compatible AI clients to use only
+`sync_outlook_email_evidence`; the Application Tracker server owns the Graph
+reads, scoring, evidence link, and read-back verification. No separate
+Microsoft 365 MCP is required for that path.
 
-The skill discovers an already-connected
-`@softeria/ms-365-mcp-server` instance by its live mail-tool capabilities, so
-users may name or host it however they choose and may use HTTP or stdio
-transport. The workflow requires a stable `internetMessageId`, attachment
-metadata, and bounded download tools. Agents must not silently install or
-launch a second M365 server when no compatible tool surface is attached.
+The skill retains its connector-orchestrated flow for broader Jobs-folder
+enrichment and attachment import, which are outside the one-application
+evidence-sync tool. Those workflows still discover an already-connected
+Softeria-compatible Microsoft 365 surface and never install or launch one
+silently.
 
 Codex discovers the skill from `.agents/skills` while working in this checkout.
 Other clients that support `SKILL.md` skills can install the
 `.agents/skills/application-tracker-job-email` directory using their normal
-skill installation flow. Connect both an Application Tracker MCP server and a
-Softeria Microsoft 365 MCP server before invoking
-`$application-tracker-job-email`; their local names and URLs do not matter.
+skill installation flow. The server-side one-application path needs only
+Application Tracker. Connect a Softeria-compatible Microsoft 365 MCP as well
+only for a broader folder or attachment workflow.
 
 ## Documentation
 
@@ -179,6 +186,7 @@ Softeria Microsoft 365 MCP server before invoking
 - [Reference lists](docs/reference-lists.md)
 - [User management](docs/user-management.md)
 - [MCP status](docs/mcp-status.md)
+- [Server-side Outlook evidence sync](docs/outlook-email-sync.md)
 - [MCP data transfer](docs/mcp-data-transfer.md)
 - [Capability checklist](docs/parity-checklist.md)
 
