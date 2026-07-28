@@ -96,7 +96,59 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name
+             FROM pragma_table_info('outlook_graph_connections')
+             ORDER BY cid`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "id",
+        "workspace_id",
+        "name",
+        "tenant_id",
+        "client_id",
+        "client_secret_encrypted",
+        "mailbox",
+        "folder_path",
+        "enabled",
+        "verified_at",
+        "last_tested_at",
+        "last_error_code",
+        "created_at",
+        "updated_at",
+        "updated_by_user_id",
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name
+             FROM pragma_table_info('outlook_graph_connections')
+             WHERE lower(name) IN ('client_secret', 'access_token', 'refresh_token')`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([]);
+      expect(
+        database
+          .prepare(
+            `SELECT name
+             FROM pragma_table_info('application_outlook_graph_connections')
+             ORDER BY cid`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "workspace_id",
+        "application_id",
+        "connection_id",
+        "assigned_at",
+        "assigned_by_user_id",
       ]);
       expect(
         database
@@ -106,6 +158,82 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toBeNull();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades a version-30 mailbox into an unassigned named connection", () => {
+    const database = new Database(":memory:");
+    const now = "2026-07-28T10:00:00.000Z";
+    try {
+      migrateDatabase(database, applicationMigrations.slice(0, 30));
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES ('workspace-one', 'Workspace one', 'workspace-one', ?)`,
+        )
+        .run(now);
+      database
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name, status, created_at, updated_at)
+           VALUES ('user-one', 'alex', 'Alex', 'active', ?, ?)`,
+        )
+        .run(now, now);
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES ('workspace-one', 'user-one', 'admin', ?)`,
+        )
+        .run(now);
+      database
+        .prepare(
+          `INSERT INTO outlook_graph_connections
+             (workspace_id, tenant_id, client_id, client_secret_encrypted,
+              mailbox, folder_path, enabled, verified_at, last_tested_at,
+              last_error_code, created_at, updated_at, updated_by_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, ?)`,
+        )
+        .run(
+          "workspace-one",
+          "11111111-1111-4111-8111-111111111111",
+          "22222222-2222-4222-8222-222222222222",
+          "v1.legacy-encrypted-client-secret-material",
+          "jobs@example.com",
+          "Inbox\\Jobs",
+          now,
+          now,
+          now,
+          now,
+          "user-one",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT workspace_id AS workspaceId, name, mailbox,
+                    client_secret_encrypted AS clientSecretEncrypted,
+                    length(id) AS idLength
+             FROM outlook_graph_connections`,
+          )
+          .get(),
+      ).toEqual({
+        clientSecretEncrypted: "v1.legacy-encrypted-client-secret-material",
+        idLength: 36,
+        mailbox: "jobs@example.com",
+        name: "jobs@example.com",
+        workspaceId: "workspace-one",
+      });
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_outlook_graph_connections")
+          .pluck()
+          .get(),
+      ).toBe(0);
     } finally {
       database.close();
     }

@@ -31,6 +31,8 @@ import { applicationMergesMigration } from "./migrations/026_application_merges.
 import { mcpJobPostingToolsAuditMigration } from "./migrations/027_mcp_job_posting_tools_audit.js";
 import { mcpReconciliationToolsAuditMigration } from "./migrations/028_mcp_reconciliation_tools_audit.js";
 import { mcpOutlookEmailSyncAuditMigration } from "./migrations/029_mcp_outlook_email_sync_audit.js";
+import { outlookGraphConnectionsMigration } from "./migrations/030_outlook_graph_connections.js";
+import { multipleOutlookGraphConnectionsMigration } from "./migrations/031_multiple_outlook_graph_connections.js";
 
 export interface Migration {
   name: string;
@@ -81,6 +83,8 @@ export const applicationMigrations: readonly Migration[] = [
   mcpJobPostingToolsAuditMigration,
   mcpReconciliationToolsAuditMigration,
   mcpOutlookEmailSyncAuditMigration,
+  outlookGraphConnectionsMigration,
+  multipleOutlookGraphConnectionsMigration,
 ];
 
 const createMigrationTable = `

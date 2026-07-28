@@ -34,6 +34,8 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  outlookGraphConnectionId: string | null;
+  outlookGraphConnectionName: string | null;
   rating: number | null;
   roleType: string | null;
   roleTypeId: string | null;
@@ -59,6 +61,7 @@ export interface CreateApplicationInput {
   nextAction?: string;
   nextActionDue?: string;
   notes?: string;
+  outlookGraphConnectionId?: string;
   rating?: number;
   roleTypeId?: string;
   roleTitle: string;
@@ -80,6 +83,7 @@ export interface UpdateApplicationInput {
   nextAction?: string | null;
   nextActionDue?: string | null;
   notes?: string | null;
+  outlookGraphConnectionId?: string | null;
   rating?: number | null;
   roleTypeId?: string | null;
   roleTitle?: string;
@@ -110,6 +114,7 @@ export type ApplicationMergeField =
   | "nextAction"
   | "nextActionDue"
   | "notes"
+  | "outlookGraphConnectionId"
   | "rating"
   | "roleTypeId"
   | "roleTitle"
@@ -386,6 +391,10 @@ function parseApplication(value: unknown): ApplicationRecord {
     !isNullableString(value.nextAction) ||
     !isNullableIsoDate(value.nextActionDue) ||
     !isNullableString(value.notes) ||
+    !isNullableReferenceValueId(value.outlookGraphConnectionId) ||
+    !isNullableReferenceLabel(value.outlookGraphConnectionName) ||
+    (value.outlookGraphConnectionId === null) !==
+      (value.outlookGraphConnectionName === null) ||
     (value.rating !== null &&
       (typeof value.rating !== "number" ||
         !Number.isInteger(value.rating) ||
@@ -420,6 +429,8 @@ function parseApplication(value: unknown): ApplicationRecord {
     nextAction: value.nextAction,
     nextActionDue: value.nextActionDue,
     notes: value.notes,
+    outlookGraphConnectionId: value.outlookGraphConnectionId,
+    outlookGraphConnectionName: value.outlookGraphConnectionName,
     rating: value.rating,
     roleType: value.roleType,
     roleTypeId: value.roleTypeId,
@@ -484,6 +495,7 @@ const applicationMergeFields = new Set<ApplicationMergeField>([
   "nextAction",
   "nextActionDue",
   "notes",
+  "outlookGraphConnectionId",
   "rating",
   "roleTypeId",
   "roleTitle",

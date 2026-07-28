@@ -21,6 +21,7 @@ const fieldLabels: Record<ApplicationMergeField, string> = {
   nextAction: "Next action",
   nextActionDue: "Next-action date",
   notes: "Notes",
+  outlookGraphConnectionId: "Graph origin",
   rating: "Rating",
   roleTypeId: "Role type",
   roleTitle: "Role",

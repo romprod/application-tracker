@@ -122,7 +122,10 @@ Application create, update, list, and detail contracts expose nullable `agency`,
 `salary`, `rating`, and `workArrangement` fields. `agency` is kept separate from
 the end company, `salary` preserves the advert's own bounded text, `rating` is a
 whole number from one to five, and `workArrangement` accepts `hybrid`, `remote`,
-or `office`.
+or `office`. They also expose nullable `outlookGraphConnectionId` and the
+read-only `outlookGraphConnectionName`. Set the ID when a record originates
+from a configured Graph connection. Existing and manual records remain
+unassigned until a user selects one.
 
 To link an Outlook message to a known application, pass its stable RFC
 Message-ID, received time, and Outlook `webUrl` to `link_email_evidence`. Use
@@ -150,10 +153,10 @@ Each accepted tool invocation appends an immutable audit event with its actor,
 workspace, action, target type, result, transport, and timestamp. The event
 stores no tool arguments, application content, credentials, or protocol
 payloads. If the event cannot be stored, the tool returns `internal_error`
-without returning workspace data. Settings → MCP shows the 20 most recent
-events to administrators. A successful mutation and its audit event share one
-immediate SQLite transaction. If the audit insert fails, the application change
-rolls back and the tool returns `internal_error`.
+without returning workspace data. Settings → Connections shows the 20 most
+recent events to administrators. A successful mutation and its audit event
+share one immediate SQLite transaction. If the audit insert fails, the
+application change rolls back and the tool returns `internal_error`.
 
 Deployments that need authenticated remote access can configure the separate
 Streamable HTTP endpoint described in [`remote-mcp.md`](remote-mcp.md). Both

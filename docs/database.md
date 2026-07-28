@@ -184,6 +184,13 @@ remain unchanged and keep their original application ID. The migration also
 extends the immutable MCP audit allowlist for duplicate audit and merge tools
 while preserving existing audit rows.
 
+The thirtieth migration introduced one encrypted, workspace-scoped Microsoft
+Graph mailbox connection. The thirty-first migration upgrades that row into a
+named multi-connection table and adds a workspace-scoped application
+assignment table. Existing applications remain unassigned. Deleting a
+connection cascades through assignments only; applications and email evidence
+remain stored.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

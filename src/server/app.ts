@@ -14,6 +14,7 @@ import type { McpStatusService } from "../application/mcp_status.js";
 import type { McpClientCredentialsService } from "../application/mcp_clients.js";
 import type { McpBuiltInOAuthService } from "../application/mcp_builtin_oauth.js";
 import type { UserAdministrationService } from "../application/users.js";
+import type { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import type { ReferenceValuesService } from "../application/reference_values.js";
 import type { DocumentsRouteOptions } from "./documents_routes.js";
 import { createAuthRouter, type AuthCookieOptions } from "./auth_routes.js";
@@ -28,6 +29,7 @@ import {
 import { createUsersRouter } from "./users_routes.js";
 import { createReferenceValuesRouter } from "./reference_values_routes.js";
 import { createDocumentsRouter } from "./documents_routes.js";
+import { createOutlookGraphConnectionsRouter } from "./outlook_graph_connections_routes.js";
 import {
   apiNotFoundHandler,
   createApiErrorHandler,
@@ -45,6 +47,7 @@ export interface AppOptions {
   mcpStatusService?: McpStatusService;
   mcpClientsService?: McpClientCredentialsService;
   mcpOAuthConnectionsService?: McpBuiltInOAuthService;
+  outlookGraphConnectionsService?: OutlookGraphConnectionsService;
   mcpOAuthRouter?: RequestHandler;
   mcpProtectedResourceMetadata?: McpProtectedResourceMetadataConfig;
   remoteMcpRouter?: Router;
@@ -190,6 +193,16 @@ export function createApp(options: AppOptions = {}): Express {
         options.mcpStatusService,
         options.mcpClientsService,
         options.mcpOAuthConnectionsService,
+      ),
+    );
+  }
+
+  if (options.authService) {
+    app.use(
+      "/api/settings/outlook",
+      createOutlookGraphConnectionsRouter(
+        options.authService,
+        options.outlookGraphConnectionsService,
       ),
     );
   }

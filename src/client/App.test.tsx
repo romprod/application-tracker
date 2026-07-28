@@ -34,6 +34,10 @@ import type {
   DocumentsClient,
 } from "./documents_client";
 import type { EmailLinksClient } from "./email_links_client";
+import type {
+  OutlookConnectionsClient,
+  OutlookGraphConnectionOption,
+} from "./outlook_connections_client";
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
@@ -85,6 +89,8 @@ const applicationRecord: ApplicationRecord = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  outlookGraphConnectionId: null,
+  outlookGraphConnectionName: null,
   rating: 4,
   roleType: "Full-time",
   roleTypeId: "99999999-9999-4999-8999-999999999999",
@@ -474,6 +480,38 @@ function createApplicationsClient(
         });
       }),
   } satisfies ApplicationsClient;
+}
+
+function createOutlookConnectionsClient(
+  connections: OutlookGraphConnectionOption[] = [],
+) {
+  const status = {
+    connections: [],
+    secureStorageConfigured: true,
+  };
+  return {
+    create: vi
+      .fn<OutlookConnectionsClient["create"]>()
+      .mockResolvedValue(status),
+    deleteConnection: vi
+      .fn<OutlookConnectionsClient["deleteConnection"]>()
+      .mockResolvedValue(status),
+    getStatus: vi
+      .fn<OutlookConnectionsClient["getStatus"]>()
+      .mockResolvedValue(status),
+    listOptions: vi
+      .fn<OutlookConnectionsClient["listOptions"]>()
+      .mockResolvedValue(connections),
+    setEnabled: vi
+      .fn<OutlookConnectionsClient["setEnabled"]>()
+      .mockResolvedValue(status),
+    update: vi
+      .fn<OutlookConnectionsClient["update"]>()
+      .mockResolvedValue(status),
+    verify: vi
+      .fn<OutlookConnectionsClient["verify"]>()
+      .mockResolvedValue(status),
+  } satisfies OutlookConnectionsClient;
 }
 
 function createDocumentsClient(
@@ -1390,10 +1428,19 @@ describe("application shell", () => {
 
   it("adds an application and clears the intake form", async () => {
     const applicationsClient = createApplicationsClient([]);
+    const outlookConnectionId = "33333333-3333-4333-8333-333333333333";
     const referenceValuesClient = createReferenceValuesClient();
     render(
       <App
         applicationsClient={applicationsClient}
+        outlookConnectionsClient={createOutlookConnectionsClient([
+          {
+            enabled: true,
+            id: outlookConnectionId,
+            mailbox: "jobs@example.com",
+            name: "Work tenant",
+          },
+        ])}
         referenceValuesClient={referenceValuesClient}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({
@@ -1425,6 +1472,9 @@ describe("application shell", () => {
     fireEvent.change(screen.getByLabelText("Work arrangement"), {
       target: { value: "hybrid" },
     });
+    fireEvent.change(screen.getByLabelText("Graph origin"), {
+      target: { value: outlookConnectionId },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save application" }));
 
     await waitFor(() =>
@@ -1433,6 +1483,7 @@ describe("application shell", () => {
         companyName: "Example Studio",
         contacts: [],
         links: [],
+        outlookGraphConnectionId: outlookConnectionId,
         roleTitle: "Product Designer",
         statusId: "77777777-7777-4777-8777-777777777777",
         workArrangement: "hybrid",
@@ -1504,6 +1555,7 @@ describe("application shell", () => {
           nextAction: "Send the portfolio follow-up.",
           nextActionDue: "2026-07-21",
           notes: "Referred by a former colleague.",
+          outlookGraphConnectionId: null,
           rating: 4,
           roleTypeId: "99999999-9999-4999-8999-999999999999",
           roleTitle: "Product Designer",

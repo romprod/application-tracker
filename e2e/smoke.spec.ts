@@ -1045,7 +1045,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     .getByRole("button", { name: "Connections" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Connections." }),
+    page.getByRole("heading", { name: "Connections.", exact: true }),
   ).toBeVisible();
   const connection = page.getByRole("listitem", {
     name: `${e2eMcp.clientName}, Active`,
@@ -1182,7 +1182,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     .getByRole("button", { name: "Connections" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Connections." }),
+    page.getByRole("heading", { name: "Connections.", exact: true }),
   ).toBeVisible();
   const managedConnection = page.getByRole("listitem", {
     name: `${e2eMcp.clientName}, Active`,
@@ -1220,9 +1220,12 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     })
     .click();
   expect((await failedDeletionResponse).status()).toBe(503);
-  await expect(page.getByRole("alert")).toHaveText(
-    "The MCP client change could not be saved. Existing credentials are unchanged.",
-  );
+  await expect(
+    page.getByText(
+      "The MCP client change could not be saved. Existing credentials are unchanged.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(managedConnection).toBeVisible();
   expect(
     (

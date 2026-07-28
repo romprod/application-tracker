@@ -26,6 +26,11 @@ import {
   type McpStatusClient,
 } from "./mcp_status_client";
 import {
+  browserOutlookConnectionsClient,
+  type OutlookConnectionsClient,
+} from "./outlook_connections_client";
+import { OutlookConnectionSettings } from "./outlook_connection_settings";
+import {
   browserSetupClient,
   SetupClientError,
   type InitialSetupInput,
@@ -102,6 +107,7 @@ interface AppProps {
   documentsClient?: DocumentsClient;
   emailLinksClient?: EmailLinksClient;
   mcpStatusClient?: McpStatusClient;
+  outlookConnectionsClient?: OutlookConnectionsClient;
   referenceValuesClient?: ReferenceValuesClient;
   setupClient?: SetupClient;
   usersClient?: UsersClient;
@@ -133,6 +139,7 @@ export function App({
   documentsClient = browserDocumentsClient,
   emailLinksClient = browserEmailLinksClient,
   mcpStatusClient = browserMcpStatusClient,
+  outlookConnectionsClient = browserOutlookConnectionsClient,
   referenceValuesClient = browserReferenceValuesClient,
   setupClient = browserSetupClient,
   usersClient = browserUsersClient,
@@ -353,6 +360,7 @@ export function App({
               <ApplicationWorkspace
                 applicationsClient={applicationsClient}
                 emailLinksClient={emailLinksClient}
+                outlookConnectionsClient={outlookConnectionsClient}
                 page={view.page}
                 referenceValuesClient={referenceValuesClient}
                 session={view.session}
@@ -385,6 +393,7 @@ export function App({
           <McpSettingsView
             mcpStatusClient={mcpStatusClient}
             navigate={navigate}
+            outlookConnectionsClient={outlookConnectionsClient}
           />
         )}
       </div>
@@ -2106,9 +2115,11 @@ function McpPermissionControl({
 function McpSettingsView({
   mcpStatusClient,
   navigate,
+  outlookConnectionsClient,
 }: {
   mcpStatusClient: McpStatusClient;
   navigate: (page: ReadyPage) => void;
+  outlookConnectionsClient: OutlookConnectionsClient;
 }) {
   const [status, setStatus] = useState<McpStatus>();
   const [loadError, setLoadError] = useState(false);
@@ -2289,7 +2300,7 @@ function McpSettingsView({
             </dd>
           </div>
           <div>
-            <dt>Connections</dt>
+            <dt>AI clients</dt>
             <dd>{status ? registeredClients.length : "—"}</dd>
           </div>
           <div>
@@ -2314,6 +2325,8 @@ function McpSettingsView({
       {!status && !loadError && (
         <p className="mcp-loading">Reading the protocol boundary…</p>
       )}
+
+      <OutlookConnectionSettings client={outlookConnectionsClient} />
 
       {status && (
         <div className="mcp-workspace">

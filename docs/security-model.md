@@ -7,8 +7,8 @@
 - Uploaded CVs, cover letters, and email files
 - Local password verifiers, sessions, setup tokens, MCP bearer tokens, and OAuth
   tokens
-- Optional Microsoft Graph tenant, client, and mailbox configuration and the
-  short-lived app-only access tokens obtained at runtime
+- Optional Microsoft Graph tenant, client, encrypted client secret, mailbox
+  configuration, and the short-lived app-only access tokens obtained at runtime
 - Workspace membership and administrative settings
 - SQLite integrity, backups, and migration state
 - MCP availability, actor identity, tool authority, and audit events
@@ -77,17 +77,31 @@
 
 ### Microsoft Graph and Outlook
 
-- Disabled by default with strict all-or-nothing runtime configuration
+- Disabled by default; one installation-level environment key enables
+  administrator-managed workspace connection storage
 - Dedicated Entra application with `Mail.Read` application permission only
 - External Exchange Application RBAC or application access policy restricts
   the service principal to the configured mailbox
-- Client credentials remain only in the protected runtime environment; access
-  tokens are held in memory and are never stored in SQLite
+- Only administrators can read full connection status or create, verify,
+  enable, disable, edit, or delete workspace connections
+- Authenticated members receive only connection IDs, names, mailboxes, and
+  enabled states for application assignment
+- Save and enable verify the token, mailbox, and folder before changing active
+  configuration; failed replacement checks preserve the working record
+- Client secrets are encrypted in SQLite with AES-256-GCM and additional data
+  bound to workspace, connection, tenant, and application IDs; the 256-bit
+  encryption key remains only in the protected runtime environment
+- Client secrets are never returned to the browser; access tokens are held in
+  memory and never stored
 - Requests are limited to `https://graph.microsoft.com/v1.0`, use app-only
   tokens, immutable item IDs, credential-free redirects, fixed timeouts,
   bounded retries, capped concurrency, and fixed response-size limits
 - Folder traversal begins at the well-known Inbox and follows only the
   configured bounded child path
+- Each synchronization resolves only the application's assigned connection;
+  unassigned records fail closed
+- Hard deletion cascades only through connection assignments. Applications and
+  stored evidence remain intact.
 - Existing evidence validation uses the stable RFC Message-ID and received
   timestamp; Outlook item IDs are retrieval handles only
 - Search retains at most 20 candidates and full content for at most five
@@ -98,7 +112,8 @@
 - Graph reads complete outside SQLite transactions; the evidence link,
   read-back verification, and successful MCP audit row commit atomically
 - Mailbox state is never changed, and SQLite never stores Graph tokens,
-  credentials, subjects, senders, headers, previews, or message bodies
+  plaintext client secrets, subjects, senders, headers, previews, or message
+  bodies
 - Graph response bodies and credential details never enter structured logs;
   callers receive stable operational error codes
 

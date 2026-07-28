@@ -1,8 +1,8 @@
 # MCP status
 
 Application Tracker exposes an administrator-only MCP status page at
-Settings → MCP. The page reports what the current build can do while exposing
-only the canonical public MCP endpoint from its network configuration.
+Settings → Connections. The page reports what the current build can do while
+exposing only the canonical public MCP endpoint from its network configuration.
 
 The build includes local stdio and optional remote Streamable HTTP transports
 for 17 read-only tools and 14 mutation-capable tools. The page reports
@@ -99,11 +99,11 @@ Application Tracker login and consent page. The flow uses existing local users
 and passwords and requires no external identity provider or extra environment
 variables.
 
-Settings → MCP displays the canonical remote readiness and lists both issued
-bearer credentials and OAuth connections that completed authorization in the
-current workspace. A dynamic registration that never reaches consent is not
-shown because it has no workspace or local-account binding. OAuth consent asks
-the signed-in user to choose read-only or read-and-write access for that
+Settings → Connections displays the canonical remote readiness and lists both
+issued bearer credentials and OAuth connections that completed authorization
+in the current workspace. A dynamic registration that never reaches consent is
+not shown because it has no workspace or local-account binding. OAuth consent
+asks the signed-in user to choose read-only or read-and-write access for that
 authorization only.
 
 ## Optional external OAuth verifier

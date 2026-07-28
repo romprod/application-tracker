@@ -67,6 +67,26 @@ function reader(
 }
 
 describe("MicrosoftGraphOutlookMailReader", () => {
+  it("verifies the configured mailbox and folder without reading messages", async () => {
+    const requested: URL[] = [];
+    const fetcher = vi.fn((input: string | URL | Request) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input.toString(),
+      );
+      requested.push(url);
+      return resolvedJsonResponse({
+        value: [{ displayName: "Jobs", id: "jobs-folder" }],
+      });
+    }) as unknown as typeof fetch;
+
+    await expect(reader(fetcher).verifyConnection()).resolves.toBeUndefined();
+    expect(requested).toHaveLength(1);
+    expect(requested[0]?.pathname).toContain(
+      "/users/jobs%40example.com/mailFolders/inbox/childFolders",
+    );
+    expect(requested[0]?.pathname).not.toContain("/messages");
+  });
+
   it("traverses the configured folder and safely escapes bounded searches", async () => {
     const requested: URL[] = [];
     const fetcher = vi.fn((input: string | URL | Request) => {

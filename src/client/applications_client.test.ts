@@ -29,6 +29,8 @@ const application = {
   nextAction: "Send the portfolio follow-up.",
   nextActionDue: "2026-07-21",
   notes: "Referred by a former colleague.",
+  outlookGraphConnectionId: null,
+  outlookGraphConnectionName: null,
   rating: 4,
   roleType: "Full-time",
   roleTypeId: "66666666-6666-4666-8666-666666666666",

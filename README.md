@@ -99,14 +99,14 @@ file is not a valid backup.
 Local clients should follow the [stdio guide](docs/local-mcp.md). Remote clients
 should follow the [authenticated HTTPS guide](docs/remote-mcp.md).
 
-Settings → MCP provides copyable templates for Claude.ai, remote Codex, local
+Settings → Connections provides copyable templates for Claude.ai, remote Codex, local
 Codex, and Claude Desktop. Remote interactive clients use the built-in OAuth
 flow and the same local username and password as the website; no Authentik or
 other external identity provider is required.
 
 Fresh workspaces are read-only through MCP. An administrator can enable
-**Read and write** under **Settings → MCP**. The server rechecks this policy on
-every mutation, including calls made through existing sessions.
+**Read and write** under **Settings → Connections**. The server rechecks this
+policy on every mutation, including calls made through existing sessions.
 
 ### Example prompts for ChatGPT.com
 
@@ -131,7 +131,7 @@ should focus on next, using the recorded salary, stage, next action, and notes.
 Tell me which important fields are missing.
 ```
 
-When MCP write access is enabled under **Settings → MCP**, ChatGPT.com can also
+When MCP write access is enabled under **Settings → Connections**, ChatGPT.com can also
 create or update records:
 
 ```text
@@ -141,8 +141,10 @@ work arrangement is hybrid. Use the Prospect stage and leave the applied date
 empty. Show me the completed record before making any further changes.
 ```
 
-When the operator has enabled Application Tracker's server-side Outlook
-integration:
+After the server encryption key is configured, an administrator can add, test,
+edit, disable, or delete named Outlook connections under **Settings →
+Connections**. Assign each application to its originating connection before
+synchronizing it:
 
 ```text
 For Application Tracker application <application-id>, synchronize Outlook email

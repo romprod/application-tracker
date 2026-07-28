@@ -21,6 +21,7 @@ import {
 } from "./application_table";
 import { dueLabel } from "./application_next_action";
 import type { ReferenceValue } from "./reference_values_client";
+import type { OutlookGraphConnectionOption } from "./outlook_connections_client";
 import {
   EmailLinksClientError,
   jobBoardProviderLabel,
@@ -38,6 +39,7 @@ export interface ApplicationFormState {
   nextAction: string;
   nextActionDue: string;
   notes: string;
+  outlookGraphConnectionId: string;
   rating: string;
   roleTypeId: string;
   roleTitle: string;
@@ -73,6 +75,7 @@ function emptyApplicationForm(
     nextAction: "",
     nextActionDue: "",
     notes: "",
+    outlookGraphConnectionId: "",
     rating: "",
     roleTypeId: "",
     roleTitle: "",
@@ -137,6 +140,9 @@ export function applicationInput(
     ...(nextAction ? { nextAction } : {}),
     ...(nextActionDue ? { nextActionDue } : {}),
     ...(notes ? { notes } : {}),
+    ...(form.outlookGraphConnectionId
+      ? { outlookGraphConnectionId: form.outlookGraphConnectionId }
+      : {}),
     ...(rating ? { rating } : {}),
     ...(form.roleTypeId ? { roleTypeId: form.roleTypeId } : {}),
     ...(salary ? { salary } : {}),
@@ -161,6 +167,7 @@ export function applicationUpdateInput(
     nextAction: form.nextAction.trim() || null,
     nextActionDue: form.nextActionDue.trim() || null,
     notes: form.notes.trim() || null,
+    outlookGraphConnectionId: form.outlookGraphConnectionId || null,
     rating: form.rating ? Number(form.rating) : null,
     roleTypeId: form.roleTypeId || null,
     roleTitle: form.roleTitle.trim(),
@@ -188,6 +195,7 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
     nextAction: application.nextAction ?? "",
     nextActionDue: application.nextActionDue ?? "",
     notes: application.notes ?? "",
+    outlookGraphConnectionId: application.outlookGraphConnectionId ?? "",
     rating: application.rating?.toString() ?? "",
     roleTypeId: application.roleTypeId ?? "",
     roleTitle: application.roleTitle,
@@ -356,6 +364,12 @@ export function ApplicationDrawer({
             <div>
               <dt>Source</dt>
               <dd>{application.source ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Graph origin</dt>
+              <dd>
+                {application.outlookGraphConnectionName ?? "Not assigned"}
+              </dd>
             </div>
             <div>
               <dt>Role type</dt>
@@ -609,6 +623,7 @@ export function ApplicationDialog({
   onClose,
   onReloadLatest,
   onSave,
+  outlookConnections,
   referenceValues,
   submitting,
 }: {
@@ -619,6 +634,7 @@ export function ApplicationDialog({
   onClose: () => void;
   onReloadLatest?: () => void;
   onSave: (form: ApplicationFormState) => void;
+  outlookConnections: OutlookGraphConnectionOption[];
   referenceValues: ReferenceValue[];
   submitting: boolean;
 }) {
@@ -928,6 +944,30 @@ export function ApplicationDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="field">
+                <label htmlFor="application-graph-origin">Graph origin</label>
+                <select
+                  id="application-graph-origin"
+                  value={form.outlookGraphConnectionId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      outlookGraphConnectionId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Not assigned</option>
+                  {outlookConnections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name} — {connection.mailbox}
+                      {connection.enabled ? "" : " (disabled)"}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Email evidence synchronization uses only this connection.
+                </small>
               </div>
               <div className="field">
                 <label htmlFor="application-location">Location</label>

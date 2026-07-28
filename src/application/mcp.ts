@@ -68,7 +68,7 @@ import {
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 9;
+export const applicationMcpSchemaVersion = 10;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 

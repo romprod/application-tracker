@@ -48,6 +48,7 @@ function createHarness() {
       links: ApplicationRecord["links"];
       location: string | null;
       notes: string | null;
+      outlookGraphConnectionId: string | null;
       roleTitle: string;
       sourceUrl: string | null;
       statusId: string;
@@ -65,6 +66,7 @@ function createHarness() {
       nextAction: null,
       nextActionDue: null,
       notes: overrides.notes ?? null,
+      outlookGraphConnectionId: overrides.outlookGraphConnectionId ?? null,
       rating: null,
       roleTypeId: null,
       roleTitle: overrides.roleTitle ?? "Platform Engineer",
@@ -76,6 +78,37 @@ function createHarness() {
       workArrangement: null,
     });
   return { createApplication, database, referenceId, repository, setup };
+}
+
+function addGraphConnection(
+  harness: ReturnType<typeof createHarness>,
+  id: string,
+  name: string,
+): void {
+  const { database, setup } = harness;
+  database
+    .prepare(
+      `INSERT INTO outlook_graph_connections
+         (id, workspace_id, name, tenant_id, client_id,
+          client_secret_encrypted, mailbox, folder_path, enabled, verified_at,
+          last_tested_at, last_error_code, created_at, updated_at,
+          updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Inbox\\Jobs', 1, ?, ?, NULL, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      setup.workspace.id,
+      name,
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "v2.encrypted-client-secret-material",
+      `${name.toLowerCase()}@example.com`,
+      createdAt,
+      createdAt,
+      createdAt,
+      createdAt,
+      setup.administrator.id,
+    );
 }
 
 function addSourceRelationships(
@@ -153,6 +186,71 @@ function addSourceRelationships(
 }
 
 describe("SqliteApplicationsRepository application merges", () => {
+  it("requires an explicit resolution when duplicate records have different Graph origins", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    const sourceConnectionId = "11111111-1111-4111-8111-111111111111";
+    const targetConnectionId = "22222222-2222-4222-8222-222222222222";
+    try {
+      addGraphConnection(harness, sourceConnectionId, "Work");
+      addGraphConnection(harness, targetConnectionId, "Consulting");
+      const source = createApplication({
+        outlookGraphConnectionId: sourceConnectionId,
+      });
+      const target = createApplication({
+        outlookGraphConnectionId: targetConnectionId,
+      });
+
+      const preview = repository.previewApplicationMerge(
+        setup.workspace.id,
+        source.id,
+        target.id,
+      );
+      expect(preview.fieldConflicts).toContainEqual(
+        expect.objectContaining({
+          field: "outlookGraphConnectionId",
+          resolution: null,
+          sourceValue: sourceConnectionId,
+          targetValue: targetConnectionId,
+        }),
+      );
+
+      const applied = repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: {
+          fields: { outlookGraphConnectionId: "source" },
+        },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(applied.preview.survivor).toMatchObject({
+        outlookGraphConnectionId: sourceConnectionId,
+        outlookGraphConnectionName: "Work",
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT application_id AS applicationId,
+                    connection_id AS connectionId
+             FROM application_outlook_graph_connections
+             WHERE workspace_id = ?`,
+          )
+          .all(setup.workspace.id),
+      ).toEqual([
+        {
+          applicationId: target.id,
+          connectionId: sourceConnectionId,
+        },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("returns bounded duplicate candidates with deterministic reasons", () => {
     const harness = createHarness();
     const { createApplication, database, repository, setup } = harness;

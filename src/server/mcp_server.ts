@@ -14,6 +14,7 @@ import {
   ApplicationStatusRegressionError,
   ApplicationStatusStaleError,
   InvalidApplicationReferenceError,
+  InvalidOutlookGraphConnectionAssignmentError,
 } from "../application/applications.js";
 import {
   InvalidJobPostingEvidenceError,
@@ -237,6 +238,8 @@ const applicationRecordSchema = z.strictObject({
   nextAction: z.string().nullable(),
   nextActionDue: z.iso.date().nullable(),
   notes: z.string().nullable(),
+  outlookGraphConnectionId: z.uuid().nullable(),
+  outlookGraphConnectionName: z.string().max(80).nullable(),
   rating: z.number().int().min(1).max(5).nullable(),
   roleTitle: z.string(),
   roleType: z.string().nullable(),
@@ -977,6 +980,11 @@ function executeWriteTool(
     if (error instanceof InvalidApplicationReferenceError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("invalid_application_reference")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("invalid_outlook_graph_connection_assignment")
         : failedToolResult("internal_error");
     }
     const jobEmailErrorCode =

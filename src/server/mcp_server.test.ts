@@ -168,6 +168,8 @@ function outlookSyncResult() {
       nextAction: null,
       nextActionDue: null,
       notes: null,
+      outlookGraphConnectionId: null,
+      outlookGraphConnectionName: null,
       rating: null,
       roleTitle: "Platform Engineer",
       roleType: null,

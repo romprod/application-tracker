@@ -10,6 +10,12 @@ Outlook synchronization tool. The tracker owns Microsoft Graph authentication,
 mailbox reads, deterministic scoring, persistence, audit, and verification.
 Make one tracker MCP call and do not invoke a separate email connector.
 
+The workspace administrator manages named Graph connections under **Settings →
+Connections**. Each application must use its stored Graph origin. An unassigned
+application returns `outlook_graph_connection_unassigned`; a disabled assigned
+connection returns `outlook_email_sync_unavailable`. Do not bypass either state
+with another connector for this one-application workflow.
+
 Use the connector-orchestrated workflow only when the request is broader than
 one known application's evidence sync, such as processing the Jobs folder,
 creating worthwhile prospects, or importing an attachment.
@@ -143,7 +149,8 @@ Application Tracker application.
 4. Confirm success only from `verification.applicationReread`,
    `verification.evidenceStored`, and `verification.storedMessageId`. Report the
    scoring version, threshold, bounded candidate assessments, and link flags.
-5. Stop on `outlook_email_sync_unavailable`,
+5. Stop on `outlook_graph_connection_unassigned`,
+   `outlook_email_sync_unavailable`,
    `outlook_folder_not_found`, `outlook_mailbox_unavailable`,
    `outlook_graph_authentication_failed`, `outlook_graph_forbidden`,
    `outlook_graph_throttled`, `outlook_graph_unavailable`,

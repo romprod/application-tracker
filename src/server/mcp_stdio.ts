@@ -15,6 +15,7 @@ import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
+import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
@@ -23,10 +24,9 @@ import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_r
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
-import {
-  AzureClientSecretGraphTokenProvider,
-  MicrosoftGraphOutlookMailReader,
-} from "../infrastructure/microsoft_graph_outlook_mail.js";
+import { SqliteOutlookGraphConnectionsRepository } from "../infrastructure/database/outlook_graph_connections_repository.js";
+import { AesGcmOutlookGraphSecretCipher } from "../infrastructure/auth/outlook_graph_secret_cipher.js";
+import { MicrosoftGraphOutlookConnectionAdapter } from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
 import { createLocalMcpServer } from "./mcp_server.js";
@@ -65,22 +65,21 @@ async function startLocalMcpServer(): Promise<void> {
       applicationsService,
       (operation) => database.transaction(operation).immediate(),
     );
-    const outlookEmailSyncService = config.outlookEmailSync
+    const outlookGraphConnectionsService = config.outlookConnectionEncryptionKey
+      ? new OutlookGraphConnectionsService(
+          new SqliteOutlookGraphConnectionsRepository(database),
+          new AesGcmOutlookGraphSecretCipher(
+            Buffer.from(config.outlookConnectionEncryptionKey, "hex"),
+          ),
+          new MicrosoftGraphOutlookConnectionAdapter(),
+        )
+      : undefined;
+    const outlookEmailSyncService = outlookGraphConnectionsService
       ? new OutlookEmailSyncService(
           applicationsService,
           jobEmailReconciliationService,
           emailLinksService,
-          new MicrosoftGraphOutlookMailReader(
-            {
-              folderPath: config.outlookEmailSync.folderPath,
-              mailbox: config.outlookEmailSync.mailbox,
-            },
-            new AzureClientSecretGraphTokenProvider(
-              config.outlookEmailSync.tenantId,
-              config.outlookEmailSync.clientId,
-              config.outlookEmailSync.clientSecret,
-            ),
-          ),
+          outlookGraphConnectionsService,
         )
       : undefined;
     const tools = new ApplicationMcpService(

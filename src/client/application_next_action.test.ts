@@ -21,6 +21,8 @@ function application(
     nextAction,
     nextActionDue,
     notes: null,
+    outlookGraphConnectionId: null,
+    outlookGraphConnectionName: null,
     rating: null,
     roleType: null,
     roleTypeId: null,

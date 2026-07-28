@@ -50,11 +50,12 @@ Settings uses stable subsections:
 - **Lists**: statuses, sources, role types, and document types.
 - **Users**: local accounts, roles, sessions, external identities, and account
   disablement.
-- **MCP**: enablement, sanitized health, session counts, limits, and recent
+- **Connections**: administrator-managed Outlook Graph configuration plus MCP
+  enablement, credentials, permissions, sanitized health, limits, and recent
   audit events.
 
-Only administrators may open or modify Users and MCP settings. Members may view
-Lists but cannot change them.
+Only administrators may open or modify Users and Connections settings. Members
+may view Lists but cannot change them.
 
 ## MCP contract
 
@@ -62,7 +63,7 @@ Local stdio MCP runs only when an operator starts it and receives an explicit
 workspace and actor configuration. Remote MCP accepts either a named bearer
 credential or a built-in OAuth grant bound to an active local workspace member.
 Administrators create, rotate, revoke, regenerate, and delete bearer
-credentials in Settings → MCP. Built-in OAuth uses public PKCE clients, local
+credentials in Settings → Connections. Built-in OAuth uses public PKCE clients, local
 login and consent, exact resource binding, rotating refresh tokens, and
 hash-only token storage. Optional external OAuth tokens require issuer and
 audience binding, the configured scope, and an authorized workspace membership.
@@ -81,6 +82,15 @@ retrieval, versioned deterministic scoring, optional evidence link, application
 read-back, verification, and audit. The client does not invoke a separate
 Microsoft 365 MCP for this workflow. Graph reads occur before the SQLite
 transaction; only the evidence link and successful audit row commit together.
+
+An administrator manages one or more named Graph connections under **Settings
+→ Connections**. Application Tracker verifies each tenant, application, client
+secret, mailbox, and Inbox child folder before saving or enabling it. The
+server encrypts client secrets at rest and never returns them to the browser.
+Each application stores its originating connection. Users must assign manual
+and existing records explicitly. Disabling a connection pauses its assigned
+records. Hard deletion preserves applications and evidence but clears their
+assignments after showing the affected-record count.
 
 ## Duplicate application contract
 

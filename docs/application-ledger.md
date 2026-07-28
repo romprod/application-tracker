@@ -155,6 +155,13 @@ Migration 25 adds nullable agency and salary text, a nullable one-to-five
 integer rating, and a nullable work arrangement constrained to `hybrid`,
 `remote`, or `office`. Existing records retain all four fields as unset.
 
+Migration 31 adds an optional Microsoft Graph connection assignment for each
+application. The public record includes the assigned connection ID and name.
+Creates and updates validate workspace ownership. Merges treat differing Graph
+origins as a scalar conflict that requires an explicit resolution. Hard
+connection deletion clears assignments without deleting applications or email
+evidence.
+
 Foreign keys bind records, contacts, links, events, and deletion audits to a
 workspace and its members. Creation, editing, and removal transactions update
 related state atomically. Database triggers reject event updates and deletions.
