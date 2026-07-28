@@ -55,8 +55,13 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Nine read tools and eight mutation tools are bounded and closed-world; new
+- Fourteen read-only tools and ten mutation-capable tools are bounded; new
   connections block all mutations by default
+- Job-link resolution requests only exact allowlisted tracking hosts, while
+  posting inspection accepts only provider-registry-recognized canonical URLs;
+  both use HTTPS-only credential-free requests, public DNS validation and
+  address pinning, bounded redirects, response sizes, timeouts, and outbound
+  concurrency
 - Local stdio permissions are fixed per process by `MCP_LOCAL_ACCESS_MODE`
 - Every mutation rechecks the connection-bound policy
 - Deletion requires explicit tool confirmation and uses the ledger's audited
@@ -132,6 +137,8 @@ claims, secret material, database paths, or internal errors. See
 - Preview parsing in disposable child processes outside the HTTP event loop
 - Parser-versioned, workspace-scoped text and email preview cache
 - Bounded, no-network email-link extraction with explicit user selection
+- Dedicated tracking-link resolution and structured posting inspection instead
+  of agent-controlled arbitrary URL browsing
 - Workspace-unique posting IDs, canonical URLs, and email Message-IDs without
   persisted email subjects, senders, or bodies
 

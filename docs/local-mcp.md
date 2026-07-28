@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 20 tools:
+The local server registers 24 tools:
 
 | Tool                               | Result                                                     |
 | ---------------------------------- | ---------------------------------------------------------- |
@@ -66,8 +66,12 @@ The local server registers 20 tools:
 | `get_job_search_summary`           | Status totals and due-action counts                        |
 | `list_applications`                | A bounded, optionally filtered summary page                |
 | `get_application`                  | One full record, events, and job-email evidence            |
+| `audit_duplicate_applications`     | Bounded deterministic duplicate candidates                 |
+| `merge_applications`               | Preview or apply one explicit audited merge                |
 | `match_job_application_email`      | Deterministic posting, email, or company match             |
 | `extract_job_links`                | Offline canonical job-link candidates                      |
+| `resolve_job_links`                | Allowlisted tracking-link resolution                       |
+| `inspect_job_posting`              | Structured canonical posting metadata                      |
 | `get_reference_data`               | Statuses, sources, role types, and document types          |
 | `get_document_import_capabilities` | Accepted document and chunk sizes                          |
 | `list_documents`                   | A bounded metadata and association page                    |
@@ -91,10 +95,18 @@ record rolls back the entire batch. A concurrent change returns the stable
 expected failures use stable codes such as `actor_unavailable` and
 `application_not_found`; unexpected
 failures return `internal_error` without exception details. Read tools are
-annotated as read-only, non-destructive, idempotent, and closed-world.
+annotated as read-only, non-destructive, and idempotent. The resolver and
+inspector are open-world because they make tightly constrained external HTTPS
+reads; every other read tool is closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
 destructive and requires `confirm=true`. Job-email upsert and document-transfer
 mutations are non-read-only and idempotent.
+
+`resolve_job_links` issues requests only to its built-in tracking-host
+allowlist. `inspect_job_posting` accepts only URLs recognized by the provider
+registry. Both reject credentials, cookies, non-HTTPS and nonstandard ports,
+private or mixed DNS answers, unsafe redirects, excessive responses, and
+timeouts. They pin each request to a validated public address.
 
 Application create, update, list, and detail contracts expose nullable `agency`,
 `salary`, `rating`, and `workArrangement` fields. `agency` is kept separate from
