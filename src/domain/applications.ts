@@ -198,6 +198,23 @@ export const auditDuplicateApplicationsSchema = z.strictObject({
   offset: z.number().int().nonnegative().default(0),
 });
 
+export const addApplicationEventSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  expectedUpdatedAt: z.iso.datetime(),
+  occurredAt: z.iso.datetime(),
+  sourceEmailMessageId: optionalText(998),
+  statusId: referenceValueIdSchema,
+  statusOverride: z
+    .strictObject({
+      allowStaleOrRegressive: z.literal(true),
+      reason: z.string().trim().min(1).max(500),
+    })
+    .optional(),
+});
+
+export type AddApplicationEventInput = z.infer<
+  typeof addApplicationEventSchema
+>;
 export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
 export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
 export type ApplicationChangesInput = z.infer<typeof applicationChangesSchema>;

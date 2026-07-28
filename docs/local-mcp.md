@@ -57,34 +57,40 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 24 tools:
+The local server registers 30 tools:
 
-| Tool                               | Result                                                     |
-| ---------------------------------- | ---------------------------------------------------------- |
-| `get_tracker_context`              | Bound actor, workspace, role, and access mode              |
-| `get_connector_schema_status`      | Live schema and optional distribution metadata status      |
-| `get_job_search_summary`           | Status totals and due-action counts                        |
-| `list_applications`                | A bounded, optionally filtered summary page                |
-| `get_application`                  | One full record, events, and job-email evidence            |
-| `audit_duplicate_applications`     | Bounded deterministic duplicate candidates                 |
-| `merge_applications`               | Preview or apply one explicit audited merge                |
-| `match_job_application_email`      | Deterministic posting, email, or company match             |
-| `extract_job_links`                | Offline canonical job-link candidates                      |
-| `resolve_job_links`                | Allowlisted tracking-link resolution                       |
-| `inspect_job_posting`              | Structured canonical posting metadata                      |
-| `get_reference_data`               | Statuses, sources, role types, and document types          |
-| `get_document_import_capabilities` | Accepted document and chunk sizes                          |
-| `list_documents`                   | A bounded metadata and association page                    |
-| `export_document_chunk`            | Hash-verified original-document bytes                      |
-| `create_application`               | Create one validated workspace application                 |
-| `update_application`               | Update selected fields on one application                  |
-| `bulk_update_applications`         | Atomically update selected fields on up to 25 applications |
-| `delete_application`               | Confirmed, audited soft deletion                           |
-| `upsert_application_from_email`    | Ordered, idempotent application and email reconciliation   |
-| `begin_document_import`            | Begin or resume a bounded document transfer                |
-| `append_document_chunk`            | Append or replay one hash-verified chunk                   |
-| `complete_document_import`         | Verify, store, and associate the original file             |
-| `cancel_document_import`           | Discard an unfinished transient transfer                   |
+| Tool                                  | Result                                                     |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `get_tracker_context`                 | Bound actor, workspace, role, and access mode              |
+| `get_connector_schema_status`         | Live schema and optional distribution metadata status      |
+| `get_job_search_summary`              | Status totals and due-action counts                        |
+| `list_applications`                   | A bounded, optionally filtered summary page                |
+| `get_application`                     | One full record, events, and job-email evidence            |
+| `list_unlinked_applications`          | Records with no email or posting evidence                  |
+| `get_application_data_quality`        | Bounded deterministic issue-code report                    |
+| `audit_duplicate_applications`        | Bounded deterministic duplicate candidates                 |
+| `find_duplicate_applications`         | Exact-name wrapper over the duplicate audit                |
+| `merge_applications`                  | Preview or apply one explicit audited merge                |
+| `match_job_application_email`         | Deterministic posting, email, or company match             |
+| `link_email_evidence`                 | Idempotently link one Message-ID to an existing record     |
+| `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
+| `extract_job_links`                   | Offline canonical job-link candidates                      |
+| `resolve_job_links`                   | Allowlisted tracking-link resolution                       |
+| `inspect_job_posting`                 | Structured canonical posting metadata                      |
+| `get_reference_data`                  | Statuses, sources, role types, and document types          |
+| `get_document_import_capabilities`    | Accepted document and chunk sizes                          |
+| `list_documents`                      | A bounded metadata and association page                    |
+| `export_document_chunk`               | Hash-verified original-document bytes                      |
+| `create_application`                  | Create one validated workspace application                 |
+| `update_application`                  | Update selected fields on one application                  |
+| `bulk_update_applications`            | Atomically update selected fields on up to 25 applications |
+| `add_application_event`               | Concurrency-checked immutable status transition            |
+| `delete_application`                  | Confirmed, audited soft deletion                           |
+| `upsert_application_from_email`       | Ordered, idempotent application and email reconciliation   |
+| `begin_document_import`               | Begin or resume a bounded document transfer                |
+| `append_document_chunk`               | Append or replay one hash-verified chunk                   |
+| `complete_document_import`            | Verify, store, and associate the original file             |
+| `cancel_document_import`              | Discard an unfinished transient transfer                   |
 
 Tools return JSON text and structured content. Before calling
 `update_application`, read the record and send its `updatedAt` value as
@@ -99,8 +105,9 @@ annotated as read-only, non-destructive, and idempotent. The resolver and
 inspector are open-world because they make tightly constrained external HTTPS
 reads; every other read tool is closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
-destructive and requires `confirm=true`. Job-email upsert and document-transfer
-mutations are non-read-only and idempotent.
+destructive and requires `confirm=true`. Evidence linking, reconciliation,
+job-email upsert, merging, and document-transfer mutations are non-read-only
+and idempotent.
 
 `resolve_job_links` issues requests only to its built-in tracking-host
 allowlist. `inspect_job_posting` accepts only URLs recognized by the provider
@@ -114,11 +121,12 @@ the end company, `salary` preserves the advert's own bounded text, `rating` is a
 whole number from one to five, and `workArrangement` accepts `hybrid`, `remote`,
 or `office`.
 
-To link an Outlook message to an application, pass its stable RFC Message-ID,
-received time, and Outlook `webUrl` to `upsert_application_from_email`. The
-stored link is returned by `get_application` in `emailEvidence[].webUrl`. This
-dedicated evidence link is separate from the application's user-managed related
-`links`.
+To link an Outlook message to a known application, pass its stable RFC
+Message-ID, received time, and Outlook `webUrl` to `link_email_evidence`. Use
+`reconcile_application_from_evidence` to atomically link explicit evidence or
+run the established match/create/update workflow. The stored link is returned
+by `get_application` in `emailEvidence[].webUrl`. This dedicated evidence link
+is separate from the application's user-managed related `links`.
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.

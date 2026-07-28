@@ -9,6 +9,7 @@ import {
 import { LocalMcpActorProvider } from "./mcp.js";
 import {
   InvalidJobPostingEvidenceError,
+  JobEmailEvidenceConflictError,
   JobEmailReconciliationService,
 } from "./job_email_reconciliation.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
@@ -65,6 +66,87 @@ function fixture() {
 }
 
 describe("JobEmailReconciliationService", () => {
+  it("links explicit evidence atomically and reports workspace-scoped counts", () => {
+    const { actor, applications, database, reconciliation, statusId } =
+      fixture();
+    try {
+      const application = applications.createApplication(actor, {
+        companyName: "Explicit Evidence Ltd",
+        roleTitle: "Platform Engineer",
+        statusId,
+      });
+      const other = applications.createApplication(actor, {
+        companyName: "Other Evidence Ltd",
+        roleTitle: "Data Engineer",
+        statusId,
+      });
+      const input = {
+        applicationId: application.id,
+        email: {
+          messageId: "<explicit-evidence@example.com>",
+          receivedAt: "2026-07-21T09:30:00.000Z",
+          webUrl: "https://outlook.office.com/mail/id/explicit",
+        },
+        posting: {
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      } as const;
+
+      const first = reconciliation.linkEvidence(actor, input);
+      const repeated = reconciliation.linkEvidence(actor, input);
+
+      expect(first).toMatchObject({
+        action: "linked",
+        application: { id: application.id },
+        emailEvidenceLinked: true,
+        matchLevel: null,
+        postingLinked: true,
+      });
+      expect(repeated).toMatchObject({
+        action: "linked",
+        application: { id: application.id },
+        emailEvidenceLinked: false,
+        matchLevel: null,
+        postingLinked: false,
+      });
+      expect(reconciliation.listEvidenceCounts(actor)).toEqual(
+        expect.arrayContaining([
+          {
+            applicationId: application.id,
+            emailEvidenceCount: 1,
+            jobPostingCount: 1,
+          },
+          {
+            applicationId: other.id,
+            emailEvidenceCount: 0,
+            jobPostingCount: 0,
+          },
+        ]),
+      );
+
+      expect(() =>
+        reconciliation.linkEvidence(actor, {
+          applicationId: other.id,
+          email: input.email,
+        }),
+      ).toThrow(JobEmailEvidenceConflictError);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_email_evidence")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_job_postings")
+          .pluck()
+          .get(),
+      ).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
   it("matches legacy application URLs and persists idempotent evidence", () => {
     const { actor, applications, database, reconciliation, statusId } =
       fixture();

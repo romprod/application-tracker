@@ -212,6 +212,81 @@ describe("ApplicationLedgerService", () => {
     });
   });
 
+  it("adds only a concurrency-checked immutable status event", () => {
+    const store = repository();
+    const current = {
+      agency: null,
+      appliedOn: null,
+      companyName: "Example Studio",
+      contacts: [],
+      createdAt: "2026-07-18T12:00:00.000Z",
+      id: "application-1",
+      location: null,
+      links: [],
+      nextAction: null,
+      nextActionDue: null,
+      notes: null,
+      rating: null,
+      roleTitle: "Product Designer",
+      roleType: null,
+      roleTypeId: null,
+      salary: null,
+      source: null,
+      sourceId: null,
+      sourceUrl: null,
+      status: "Prospect",
+      statusId: prospectId,
+      statusIsTerminal: false,
+      updatedAt: "2026-07-18T12:00:00.000Z",
+      workArrangement: null,
+    };
+    const event = {
+      actorDisplayName: "Alex",
+      fromStatus: "Prospect",
+      id: "event-1",
+      occurredAt: "2026-07-18T12:30:00.000Z",
+      processedAt: "2026-07-18T13:00:00.000Z",
+      sourceEmailMessageId: "<interview@example.com>",
+      statusOverrideReason: null,
+      toStatus: "Interview",
+      type: "status_changed" as const,
+    };
+    store.listApplications.mockReturnValue([current]);
+    store.listApplicationEvents
+      .mockReturnValueOnce([])
+      .mockReturnValue([event]);
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-18T13:00:00.000Z"),
+    );
+
+    const result = service.addApplicationEvent(actor, {
+      applicationId: current.id,
+      expectedUpdatedAt: current.updatedAt,
+      occurredAt: event.occurredAt,
+      sourceEmailMessageId: event.sourceEmailMessageId,
+      statusId: interviewId,
+    });
+    expect(result.application).toMatchObject({
+      id: current.id,
+      status: "Interview",
+    });
+    expect(result.event).toEqual(event);
+    expect(store.updateApplication).toHaveBeenCalledWith({
+      actorUserId: actor.userId,
+      applicationId: current.id,
+      expectedUpdatedAt: current.updatedAt,
+      statusEvent: {
+        effectiveAt: event.occurredAt,
+        overrideReason: null,
+        sourceEmailMessageId: event.sourceEmailMessageId,
+      },
+      statusId: interviewId,
+      updatedAt: "2026-07-18T13:00:00.000Z",
+      workspaceId: actor.workspaceId,
+    });
+  });
+
   it("advances the concurrency value when the clock has not advanced", () => {
     const store = repository();
     const service = new ApplicationLedgerService(

@@ -11,8 +11,10 @@ this reference.
 - [Job-link resolution](#job-link-resolution)
 - [Job-posting inspection](#job-posting-inspection)
 - [Match input and result](#match-input-and-result)
+- [Evidence gaps and data quality](#evidence-gaps-and-data-quality)
 - [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
-- [Upsert input and idempotency](#upsert-input-and-idempotency)
+- [Evidence linking and atomic reconciliation](#evidence-linking-and-atomic-reconciliation)
+- [Immutable application events](#immutable-application-events)
 - [Application detail evidence](#application-detail-evidence)
 - [Attachment document imports](#attachment-document-imports)
 - [Supported provider identities](#supported-provider-identities)
@@ -31,13 +33,14 @@ this reference.
    review.
 6. Assess suitability from structured fields only.
 7. Call `match_job_application_email` before a write.
-8. Call `upsert_application_from_email` for an authorized reconciliation.
+8. Call `reconcile_application_from_evidence` with `mode: "match_or_create"`
+   for an authorized reconciliation.
 9. Call `get_application` for read-back verification.
 
 When duplicate consolidation is explicitly in scope, call
-`audit_duplicate_applications`, then call `merge_applications` in preview mode
+`find_duplicate_applications`, then call `merge_applications` in preview mode
 before any approved apply. Rerun `match_job_application_email` after a
-successful merge and before the email upsert.
+successful merge and before the evidence reconciliation.
 
 Application Tracker is consumed directly as an MCP server. Its schema version
 and generated manifest describe that live contract. Optional publication
@@ -64,7 +67,8 @@ item. Explicitly select and verify both:
 
 - `id`, the Microsoft Graph retrieval handle; and
 - `internetMessageId`, the stable RFC Message-ID used by
-  `match_job_application_email` and `upsert_application_from_email`.
+  `match_job_application_email` and
+  `reconcile_application_from_evidence`.
 
 The same non-empty `internetMessageId` must appear in list and detail results.
 If it is absent or inconsistent, make no tracker write. For attachments, call
@@ -176,13 +180,31 @@ The result contains `outcome`, `level`, and bounded candidate summaries:
 
 Lower-confidence evidence never overrides a stronger identity.
 
+## Evidence gaps and data quality
+
+`list_unlinked_applications` is read-only and paginated with `limit` from 1 to
+100 and a non-negative `offset`. “Unlinked” means the application has neither
+dedicated email evidence nor dedicated job-posting evidence. Each summary
+returns both zero counts and both missing-evidence flags. Records with either
+evidence type are not included.
+
+`get_application_data_quality` is read-only and uses the same bounded
+pagination. It returns deterministic issue codes, per-code counts, total
+applications, applications with findings, and total issues. It never guesses a
+missing value and does not assign a subjective quality score. Codes cover
+missing dedicated evidence, source, source URL, role type, location, working
+arrangement, non-terminal next action, and inconsistent action/due-date pairs.
+Evidence and optional-field gaps are signals for review, not permission to
+invent or overwrite data.
+
 ## Duplicate audit and application merge
 
-`audit_duplicate_applications` is read-only. It accepts `limit` from 1 to 100
-and a non-negative `offset`. It returns a bounded page with `returned`, `total`,
-and nullable `nextOffset`. Each candidate contains both full application
-records, a `definite`, `probable`, or `possible` confidence band, and one or
-more deterministic reasons:
+`find_duplicate_applications` is the exact-name read-only wrapper over the
+existing `audit_duplicate_applications` algorithm. Both accept `limit` from 1
+to 100 and a non-negative `offset`, and return the same bounded page with
+`returned`, `total`, and nullable `nextOffset`. Each candidate contains both
+full application records, a `definite`, `probable`, or `possible` confidence
+band, and one or more deterministic reasons:
 
 - `posting_id`;
 - `canonical_url`;
@@ -240,9 +262,26 @@ Stable merge errors are:
 Do not retry with guessed IDs, timestamps, or resolutions. Refresh the audit or
 preview and obtain user approval for any changed decision.
 
-## Upsert input and idempotency
+## Evidence linking and atomic reconciliation
 
-`upsert_application_from_email` requires:
+`link_email_evidence` requires an explicit existing `applicationId` and one
+bounded `email` object with `messageId`, `receivedAt`, and optional `webUrl`.
+It is idempotent. A Message-ID already linked to the same application returns
+the existing row; a Message-ID attributed to another application returns
+`job_email_conflict`.
+
+`reconcile_application_from_evidence` is a discriminated union:
+
+- `mode: "link_existing"` requires an explicit `applicationId`, `email`, and
+  optional `posting`; both evidence rows are linked in one transaction; or
+- `mode: "match_or_create"` requires `reconciliation`, using the established
+  application, email, posting, update, and status-override input below.
+
+The `match_or_create` mode delegates to the same deterministic matcher and
+idempotent service as `upsert_application_from_email`; it does not introduce a
+second matching algorithm.
+
+The nested `reconciliation` requires:
 
 - `application`, using the normal `create_application` schema;
 - `email.messageId`, 1 to 998 characters;
@@ -272,7 +311,7 @@ failures are `job_email_status_stale`, `job_email_status_regression`, and
 
 The result contains:
 
-- `action`: `created`, `matched`, or `updated`;
+- `action`: `linked`, `created`, `matched`, or `updated`;
 - the full `application`;
 - `matchLevel`;
 - `postingLinked` and `emailEvidenceLinked` booleans; and
@@ -281,6 +320,30 @@ The result contains:
 Stable expected failures include `job_email_ambiguous`,
 `job_email_conflict`, `invalid_job_posting_evidence`,
 `invalid_application_reference`, and `write_access_disabled`.
+
+`upsert_application_from_email` remains available as a backward-compatible
+direct entry point to the same `match_or_create` behavior.
+
+## Immutable application events
+
+`add_application_event` does not accept arbitrary event types, notes, actors,
+or historical rows. It permits only one status transition and requires:
+
+- `applicationId`;
+- an active target `statusId`;
+- the current `expectedUpdatedAt`;
+- the effective `occurredAt`;
+- optional `sourceEmailMessageId`; and
+- optional `statusOverride` with `allowStaleOrRegressive: true` and a bounded
+  reason.
+
+The application update and immutable `status_changed` event commit together.
+Same-status, stale, regressive, conflicting, or stale-concurrency requests are
+rejected. An exact retry carrying the same source Message-ID, occurrence time,
+and target status returns the existing event without adding another row. Stable
+event failures are `application_event_no_change`, `application_event_stale`,
+`application_event_regression`, `application_event_conflict`, and
+`application_conflict`.
 
 ## Application detail evidence
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   createApplicationSchema,
   applicationChangesSchema,
+  applicationIdSchema,
 } from "./applications.js";
 import { jobBoardProviderSchema } from "./job_board.js";
 
@@ -104,10 +105,39 @@ export const upsertApplicationFromEmailSchema = z
     }
   });
 
+export const linkEmailEvidenceSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  email: jobEmailEvidenceSchema,
+});
+
+export const linkApplicationEvidenceSchema = linkEmailEvidenceSchema.extend({
+  posting: jobPostingEvidenceSchema.optional(),
+});
+
+export const reconcileApplicationFromEvidenceSchema = z.discriminatedUnion(
+  "mode",
+  [
+    linkApplicationEvidenceSchema.extend({
+      mode: z.literal("link_existing"),
+    }),
+    z.strictObject({
+      mode: z.literal("match_or_create"),
+      reconciliation: upsertApplicationFromEmailSchema,
+    }),
+  ],
+);
+
 export type JobPostingEvidenceInput = z.infer<typeof jobPostingEvidenceSchema>;
 export type JobEmailEvidenceInput = z.infer<typeof jobEmailEvidenceSchema>;
+export type LinkApplicationEvidenceInput = z.infer<
+  typeof linkApplicationEvidenceSchema
+>;
+export type LinkEmailEvidenceInput = z.infer<typeof linkEmailEvidenceSchema>;
 export type MatchJobApplicationEmailInput = z.infer<
   typeof matchJobApplicationEmailSchema
+>;
+export type ReconcileApplicationFromEvidenceInput = z.infer<
+  typeof reconcileApplicationFromEvidenceSchema
 >;
 export type UpsertApplicationFromEmailInput = z.infer<
   typeof upsertApplicationFromEmailSchema

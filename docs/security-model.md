@@ -55,7 +55,7 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Fourteen read-only tools and ten mutation-capable tools are bounded; new
+- Seventeen read-only tools and thirteen mutation-capable tools are bounded; new
   connections block all mutations by default
 - Job-link resolution requests only exact allowlisted tracking hosts, while
   posting inspection accepts only provider-registry-recognized canonical URLs;

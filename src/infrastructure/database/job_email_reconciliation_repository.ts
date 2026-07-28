@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 
 import {
   JobEmailEvidenceConflictError,
+  type ApplicationEvidenceCounts,
   type ApplicationEmailEvidence,
   type ApplicationJobPosting,
   type EvidenceLinkResult,
@@ -318,6 +319,28 @@ export class SqliteJobEmailReconciliationRepository implements JobEmailReconcili
          ORDER BY received_at DESC, id`,
       )
       .all(workspaceId, applicationId) as ApplicationEmailEvidence[];
+  }
+
+  public listEvidenceCounts(workspaceId: string): ApplicationEvidenceCounts[] {
+    return this.database
+      .prepare(
+        `SELECT
+           applications.id AS applicationId,
+           count(DISTINCT evidence.id) AS emailEvidenceCount,
+           count(DISTINCT postings.id) AS jobPostingCount
+         FROM applications
+         LEFT JOIN application_email_evidence AS evidence
+           ON evidence.workspace_id = applications.workspace_id
+          AND evidence.application_id = applications.id
+         LEFT JOIN application_job_postings AS postings
+           ON postings.workspace_id = applications.workspace_id
+          AND postings.application_id = applications.id
+         WHERE applications.workspace_id = ?
+           AND applications.deleted_at IS NULL
+         GROUP BY applications.id
+         ORDER BY applications.updated_at DESC, applications.id DESC`,
+      )
+      .all(workspaceId) as ApplicationEvidenceCounts[];
   }
 
   public listJobPostings(

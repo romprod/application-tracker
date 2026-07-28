@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import {
   ApplicationConflictError,
+  ApplicationEventNoChangeError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
@@ -49,6 +50,7 @@ import type {
   McpAuditTransport,
 } from "../application/mcp_audit.js";
 import {
+  addApplicationEventSchema,
   applicationIdSchema,
   applicationMergeFieldSchema,
   auditDuplicateApplicationsSchema,
@@ -61,7 +63,9 @@ import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { jobPostingInspectionInputSchema } from "../domain/job_postings.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import {
+  linkEmailEvidenceSchema,
   matchJobApplicationEmailSchema,
+  reconcileApplicationFromEvidenceSchema,
   upsertApplicationFromEmailSchema,
 } from "../domain/job_email_reconciliation.js";
 import { jobBoardProviderSchema } from "../domain/job_board.js";
@@ -146,6 +150,60 @@ const applicationListSchema = z.strictObject({
   offset: z.number().int().nonnegative(),
   returned: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
+});
+const boundedApplicationPageSchema = z.strictObject({
+  limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().nonnegative().default(0),
+});
+const unlinkedApplicationSchema = z.strictObject({
+  application: applicationSummarySchema,
+  emailEvidenceCount: z.literal(0),
+  jobPostingCount: z.literal(0),
+  missingEmailEvidence: z.literal(true),
+  missingJobPostingEvidence: z.literal(true),
+});
+const unlinkedApplicationListSchema = z.strictObject({
+  applications: z.array(unlinkedApplicationSchema),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+const applicationDataQualityIssueCodeSchema = z.enum([
+  "missing_email_evidence",
+  "missing_job_posting_evidence",
+  "missing_location",
+  "missing_next_action",
+  "missing_role_type",
+  "missing_source",
+  "missing_source_url",
+  "missing_work_arrangement",
+  "next_action_due_without_action",
+  "next_action_without_due_date",
+]);
+const applicationDataQualityIssueSchema = z.strictObject({
+  code: applicationDataQualityIssueCodeSchema,
+  severity: z.enum(["info", "warning"]),
+});
+const applicationDataQualityReportSchema = z.strictObject({
+  applicationsWithFindings: z.number().int().nonnegative(),
+  countsByCode: z.array(
+    z.strictObject({
+      code: applicationDataQualityIssueCodeSchema,
+      count: z.number().int().positive(),
+    }),
+  ),
+  findings: z.array(
+    z.strictObject({
+      application: applicationSummarySchema,
+      issues: z.array(applicationDataQualityIssueSchema).min(1),
+    }),
+  ),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  totalApplications: z.number().int().nonnegative(),
+  totalIssues: z.number().int().nonnegative(),
 });
 const applicationContactSchema = z.strictObject({
   email: z.string().nullable(),
@@ -337,6 +395,14 @@ const upsertApplicationFromEmailResultSchema = z.strictObject({
     .enum(["posting_id", "canonical_url", "email_message_id", "company_title"])
     .nullable(),
   postingLinked: z.boolean(),
+});
+const applicationEvidenceReconciliationResultSchema =
+  upsertApplicationFromEmailResultSchema.extend({
+    action: z.enum(["created", "linked", "matched", "updated"]),
+  });
+const addApplicationEventResultSchema = z.strictObject({
+  application: applicationRecordSchema,
+  event: applicationEventSchema,
 });
 const referenceValueSchema = z.strictObject({
   category: z.enum(["status", "source", "role_type", "document_type"]),
@@ -741,13 +807,24 @@ function executeWriteTool(
         ? failedToolResult("application_conflict")
         : failedToolResult("internal_error");
     }
+    if (error instanceof ApplicationEventNoChangeError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_event_no_change")
+        : failedToolResult("internal_error");
+    }
     const statusEventErrorCode =
       error instanceof ApplicationStatusStaleError
-        ? "job_email_status_stale"
+        ? tool === "add_application_event"
+          ? "application_event_stale"
+          : "job_email_status_stale"
         : error instanceof ApplicationStatusRegressionError
-          ? "job_email_status_regression"
+          ? tool === "add_application_event"
+            ? "application_event_regression"
+            : "job_email_status_regression"
           : error instanceof ApplicationStatusEventConflictError
-            ? "job_email_status_conflict"
+            ? tool === "add_application_event"
+              ? "application_event_conflict"
+              : "job_email_status_conflict"
             : undefined;
     if (statusEventErrorCode) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
@@ -922,6 +999,46 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "list_unlinked_applications",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "List a bounded page of applications that have neither dedicated email evidence nor dedicated job-posting evidence. Each result reports both zero evidence counts explicitly.",
+      inputSchema: boundedApplicationPageSchema,
+      outputSchema: unlinkedApplicationListSchema,
+      title: "List unlinked applications",
+    },
+    (input) =>
+      executeTool(
+        "list_unlinked_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.listUnlinkedApplications(input),
+      ),
+  );
+
+  server.registerTool(
+    "get_application_data_quality",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Return a bounded deterministic data-quality report with explicit issue codes and counts. Missing values remain missing; the report never guesses replacement data or assigns a subjective score.",
+      inputSchema: boundedApplicationPageSchema,
+      outputSchema: applicationDataQualityReportSchema,
+      title: "Get application data quality",
+    },
+    (input) =>
+      executeTool(
+        "get_application_data_quality",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.getApplicationDataQuality(input),
+      ),
+  );
+
+  server.registerTool(
     "audit_duplicate_applications",
     {
       annotations: readOnlyAnnotations,
@@ -938,6 +1055,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.auditDuplicateApplications(input),
+      ),
+  );
+
+  server.registerTool(
+    "find_duplicate_applications",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Find a bounded page of duplicate candidates using the same deterministic algorithm, confidence bands, and reasons as audit_duplicate_applications.",
+      inputSchema: auditDuplicateApplicationsSchema,
+      outputSchema: applicationDuplicateAuditSchema,
+      title: "Find duplicate applications",
+    },
+    (input) =>
+      executeTool(
+        "find_duplicate_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.findDuplicateApplications(input),
       ),
   );
 
@@ -986,6 +1123,46 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.matchJobApplicationEmail(input),
+      ),
+  );
+
+  server.registerTool(
+    "link_email_evidence",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Idempotently link one bounded RFC Message-ID evidence record to an explicit existing application. Message-IDs are workspace-unique and a conflict with another application is rejected.",
+      inputSchema: linkEmailEvidenceSchema,
+      outputSchema: applicationEvidenceReconciliationResultSchema,
+      title: "Link email evidence",
+    },
+    (input) =>
+      executeWriteTool(
+        "link_email_evidence",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.linkEmailEvidence(input),
+      ),
+  );
+
+  server.registerTool(
+    "reconcile_application_from_evidence",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Atomically reconcile trusted evidence either by linking it to one explicit existing application or by reusing the established deterministic match/create/update workflow. Ambiguity and conflicting evidence are rejected instead of guessed.",
+      inputSchema: reconcileApplicationFromEvidenceSchema,
+      outputSchema: applicationEvidenceReconciliationResultSchema,
+      title: "Reconcile application from evidence",
+    },
+    (input) =>
+      executeWriteTool(
+        "reconcile_application_from_evidence",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.reconcileApplicationFromEvidence(input),
       ),
   );
 
@@ -1191,6 +1368,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.bulkUpdateApplications(updates),
+      ),
+  );
+
+  server.registerTool(
+    "add_application_event",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Append one immutable status-transition event by changing an existing application to an explicit active status. Requires the current updatedAt and an effective timestamp; stale, regressive, same-status, or conflicting events are rejected unless an explicit override reason is supplied.",
+      inputSchema: addApplicationEventSchema,
+      outputSchema: addApplicationEventResultSchema,
+      title: "Add application event",
+    },
+    (input) =>
+      executeWriteTool(
+        "add_application_event",
+        "application",
+        logger,
+        options.audit,
+        () => tools.addApplicationEvent(input),
       ),
   );
 

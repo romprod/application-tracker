@@ -2,6 +2,7 @@ import type {
   ApplicationRecord,
   ApplicationLedgerService,
 } from "./applications.js";
+import { ApplicationNotFoundError } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import {
   JobBoardProviderRegistry,
@@ -10,6 +11,7 @@ import {
 import type {
   JobEmailEvidenceInput,
   JobPostingEvidenceInput,
+  LinkApplicationEvidenceInput,
   MatchJobApplicationEmailInput,
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
@@ -83,6 +85,12 @@ export interface EvidenceLinkResult<Record> {
   record: Record;
 }
 
+export interface ApplicationEvidenceCounts {
+  applicationId: string;
+  emailEvidenceCount: number;
+  jobPostingCount: number;
+}
+
 export interface JobEmailReconciliationRepository {
   findApplicationIdsByCanonicalUrl(
     workspaceId: string,
@@ -103,6 +111,7 @@ export interface JobEmailReconciliationRepository {
   linkJobPosting(
     input: LinkApplicationJobPostingInput,
   ): EvidenceLinkResult<ApplicationJobPosting>;
+  listEvidenceCounts(workspaceId: string): ApplicationEvidenceCounts[];
   listEmailEvidence(
     workspaceId: string,
     applicationId: string,
@@ -123,6 +132,14 @@ export interface UpsertApplicationFromEmailResult extends JobEmailApplicationEvi
   application: ApplicationRecord;
   emailEvidenceLinked: boolean;
   matchLevel: JobEmailMatchLevel | null;
+  postingLinked: boolean;
+}
+
+export interface LinkApplicationEvidenceResult extends JobEmailApplicationEvidence {
+  action: "linked";
+  application: ApplicationRecord;
+  emailEvidenceLinked: boolean;
+  matchLevel: null;
   postingLinked: boolean;
 }
 
@@ -270,6 +287,66 @@ export class JobEmailReconciliationService {
         applicationId,
       ),
     };
+  }
+
+  public linkEvidence(
+    actor: AuthenticatedActor,
+    input: LinkApplicationEvidenceInput,
+  ): LinkApplicationEvidenceResult {
+    return this.runAtomically(() => {
+      const application = this.applications
+        .listApplications(actor)
+        .find(({ id }) => id === input.applicationId);
+      if (!application) throw new ApplicationNotFoundError();
+      const occurredAt = this.clock().toISOString();
+      const posting = input.posting
+        ? this.resolvePostingEvidence(input.posting)
+        : undefined;
+      const postingResult = posting
+        ? this.repository.linkJobPosting({
+            ...posting,
+            applicationId: application.id,
+            occurredAt,
+            workspaceId: actor.workspaceId,
+          })
+        : undefined;
+      const emailResult = this.repository.linkEmailEvidence({
+        applicationId: application.id,
+        messageId: input.email.messageId,
+        occurredAt,
+        receivedAt: new Date(input.email.receivedAt).toISOString(),
+        webUrl: this.normalizedOptionalUrl(input.email),
+        workspaceId: actor.workspaceId,
+      });
+      const evidence = this.getApplicationEvidence(actor, application.id);
+      return {
+        action: "linked",
+        application,
+        emailEvidence: evidence.emailEvidence,
+        emailEvidenceLinked: emailResult.created,
+        jobPostings: evidence.jobPostings,
+        matchLevel: null,
+        postingLinked: postingResult?.created ?? false,
+      };
+    });
+  }
+
+  public listEvidenceCounts(
+    actor: AuthenticatedActor,
+  ): ApplicationEvidenceCounts[] {
+    const counts = new Map(
+      this.repository
+        .listEvidenceCounts(actor.workspaceId)
+        .map((entry) => [entry.applicationId, entry]),
+    );
+    return this.applications.listApplications(actor).map(
+      ({ id }): ApplicationEvidenceCounts =>
+        counts.get(id) ?? {
+          applicationId: id,
+          emailEvidenceCount: 0,
+          jobPostingCount: 0,
+        },
+    );
   }
 
   public match(

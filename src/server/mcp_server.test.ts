@@ -25,6 +25,7 @@ afterEach(async () => {
 
 function fakeTools(): McpApplicationTools {
   return {
+    addApplicationEvent: vi.fn(),
     auditDuplicateApplications: vi.fn(() => ({
       candidates: [],
       nextOffset: null,
@@ -50,9 +51,25 @@ function fakeTools(): McpApplicationTools {
       ],
     })),
     exportDocumentChunk: vi.fn(),
+    findDuplicateApplications: vi.fn(() => ({
+      candidates: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
     getApplication: vi.fn(() => {
       throw new ApplicationNotFoundError();
     }),
+    getApplicationDataQuality: vi.fn(() => ({
+      countsByCode: [],
+      findings: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      totalApplications: 0,
+      totalFindings: 0,
+    })),
     getJobSearchSummary: vi.fn(() => ({
       asOfDate: "2026-01-01",
       byStatus: [],
@@ -84,7 +101,15 @@ function fakeTools(): McpApplicationTools {
         status: "unavailable" as const,
       }),
     ),
+    linkEmailEvidence: vi.fn(),
     listApplications: vi.fn(() => ({
+      applications: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
+    listUnlinkedApplications: vi.fn(() => ({
       applications: [],
       nextOffset: null,
       offset: 0,
@@ -104,6 +129,7 @@ function fakeTools(): McpApplicationTools {
       outcome: "none" as const,
     })),
     mergeApplications: vi.fn(),
+    reconcileApplicationFromEvidence: vi.fn(),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
         candidates: [
@@ -158,7 +184,10 @@ describe("local MCP server", () => {
       "get_job_search_summary",
       "list_applications",
       "get_application",
+      "list_unlinked_applications",
+      "get_application_data_quality",
       "audit_duplicate_applications",
+      "find_duplicate_applications",
       "match_job_application_email",
       "extract_job_links",
       "resolve_job_links",
@@ -177,6 +206,7 @@ describe("local MCP server", () => {
       "update_application",
       "bulk_update_applications",
       "delete_application",
+      "add_application_event",
     ]);
     for (const tool of listed.tools) {
       if (readOnlyTools.has(tool.name)) {
