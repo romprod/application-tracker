@@ -38,6 +38,10 @@ import type {
   ReferenceValuesClient,
 } from "./reference_values_client";
 import type { EmailLinksClient } from "./email_links_client";
+import type {
+  OutlookConnectionsClient,
+  OutlookGraphConnectionOption,
+} from "./outlook_connections_client";
 import {
   loadCachedApplications,
   loadCachedReferenceValues,
@@ -58,6 +62,7 @@ export function ApplicationWorkspace({
   error,
   navigate,
   notice: initialNotice,
+  outlookConnectionsClient,
   page,
   referenceValuesClient,
   session,
@@ -67,6 +72,7 @@ export function ApplicationWorkspace({
   error?: string;
   navigate: (page: "applications" | "opportunities" | "overview") => void;
   notice?: string;
+  outlookConnectionsClient: OutlookConnectionsClient;
   page: "applications" | "opportunities" | "overview";
   referenceValuesClient: ReferenceValuesClient;
   session: AuthenticatedSession;
@@ -74,6 +80,8 @@ export function ApplicationWorkspace({
   const [applications, setApplications] = useState<ApplicationRecord[]>();
   const [referenceValues, setReferenceValues] = useState<ReferenceValue[]>();
   const [referenceLoadError, setReferenceLoadError] = useState(false);
+  const [outlookConnections, setOutlookConnections] =
+    useState<OutlookGraphConnectionOption[]>();
   const [loadError, setLoadError] = useState(false);
   const [notice, setNotice] = useState(initialNotice);
   const [formMode, setFormMode] = useState<"create" | "edit">();
@@ -121,6 +129,21 @@ export function ApplicationWorkspace({
       active = false;
     };
   }, [referenceValuesClient]);
+
+  useEffect(() => {
+    let active = true;
+    void outlookConnectionsClient
+      .listOptions()
+      .then((loaded) => {
+        if (active) setOutlookConnections(loaded);
+      })
+      .catch(() => {
+        if (active) setOutlookConnections([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [outlookConnectionsClient]);
 
   function openApplication(application: ApplicationRecord) {
     const request = historyRequest.current + 1;
@@ -276,7 +299,8 @@ export function ApplicationWorkspace({
         setFormError(
           caught instanceof ApplicationsClientError &&
             (caught.code === "validation_error" ||
-              caught.code === "invalid_application_reference")
+              caught.code === "invalid_application_reference" ||
+              caught.code === "invalid_outlook_graph_connection_assignment")
             ? "Review the application details and try again."
             : `The application could not be ${action}. Please try again.`,
         );
@@ -348,6 +372,7 @@ export function ApplicationWorkspace({
           error={formError}
           mode={formMode}
           onClose={closeForm}
+          outlookConnections={outlookConnections ?? []}
           {...(conflictApplication
             ? {
                 onReloadLatest: () => {

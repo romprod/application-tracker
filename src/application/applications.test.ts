@@ -167,6 +167,7 @@ describe("ApplicationLedgerService", () => {
       nextAction: "Send the portfolio follow-up.",
       nextActionDue: "2026-07-21",
       notes: null,
+      outlookGraphConnectionId: null,
       rating: 4,
       roleTypeId: null,
       roleTitle: "Product Designer",

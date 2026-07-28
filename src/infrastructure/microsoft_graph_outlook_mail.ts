@@ -16,6 +16,10 @@ import {
   type OutlookMailSearchResult,
   type OutlookSearchKind,
 } from "../application/outlook_email_sync.js";
+import type {
+  OutlookGraphConnectionAdapter,
+  OutlookGraphRuntimeConnection,
+} from "../application/outlook_graph_connections.js";
 
 const graphOrigin = "https://graph.microsoft.com";
 const graphApiRoot = `${graphOrigin}/v1.0`;
@@ -298,6 +302,10 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
     ) => delay(milliseconds),
   ) {}
 
+  public async verifyConnection(): Promise<void> {
+    await this.resolveFolderId();
+  }
+
   public async validateEvidence(
     evidence: OutlookEvidenceValidationInput[],
   ): Promise<OutlookExistingEvidenceValidation[]> {
@@ -548,5 +556,24 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
       throw new OutlookEmailSyncOperationalError("outlook_graph_unavailable");
     }
     throw new OutlookEmailSyncOperationalError("outlook_graph_unavailable");
+  }
+}
+
+export class MicrosoftGraphOutlookConnectionAdapter implements OutlookGraphConnectionAdapter {
+  public createReader(
+    config: OutlookGraphRuntimeConnection,
+  ): MicrosoftGraphOutlookMailReader {
+    return new MicrosoftGraphOutlookMailReader(
+      { folderPath: config.folderPath, mailbox: config.mailbox },
+      new AzureClientSecretGraphTokenProvider(
+        config.tenantId,
+        config.clientId,
+        config.clientSecret,
+      ),
+    );
+  }
+
+  public async verify(config: OutlookGraphRuntimeConnection): Promise<void> {
+    await this.createReader(config).verifyConnection();
   }
 }

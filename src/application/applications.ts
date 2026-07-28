@@ -41,6 +41,8 @@ export interface ApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  outlookGraphConnectionId: string | null;
+  outlookGraphConnectionName: string | null;
   rating: number | null;
   roleType: string | null;
   roleTypeId: string | null;
@@ -68,6 +70,7 @@ export interface CreateApplicationRecord {
   nextAction: string | null;
   nextActionDue: string | null;
   notes: string | null;
+  outlookGraphConnectionId?: string | null;
   rating: number | null;
   roleTypeId: string | null;
   roleTitle: string;
@@ -277,6 +280,13 @@ export class InvalidApplicationReferenceError extends Error {
   }
 }
 
+export class InvalidOutlookGraphConnectionAssignmentError extends Error {
+  public constructor() {
+    super("The Microsoft Graph connection is not available in this workspace");
+    this.name = "InvalidOutlookGraphConnectionAssignmentError";
+  }
+}
+
 export class ApplicationConflictError extends Error {
   public constructor(public readonly application: ApplicationRecord) {
     super("Application changed since it was read");
@@ -389,6 +399,7 @@ export class ApplicationLedgerService {
       nextAction: input.nextAction ?? null,
       nextActionDue: input.nextActionDue ?? null,
       notes: input.notes ?? null,
+      outlookGraphConnectionId: input.outlookGraphConnectionId ?? null,
       rating: input.rating ?? null,
       roleTypeId: input.roleTypeId ?? null,
       roleTitle: input.roleTitle,

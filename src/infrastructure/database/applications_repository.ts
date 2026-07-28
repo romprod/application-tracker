@@ -13,6 +13,7 @@ import {
   ApplicationStatusRegressionError,
   ApplicationStatusStaleError,
   InvalidApplicationReferenceError,
+  InvalidOutlookGraphConnectionAssignmentError,
   type ApplicationDuplicateAudit,
   type ApplicationDuplicateCandidate,
   type ApplicationDuplicateReason,
@@ -74,6 +75,7 @@ const mergeFields = [
   "nextAction",
   "nextActionDue",
   "notes",
+  "outlookGraphConnectionId",
   "rating",
   "roleTypeId",
   "roleTitle",
@@ -305,6 +307,8 @@ function publicApplicationSelect(): string {
             applications.next_action AS nextAction,
             applications.next_action_due AS nextActionDue,
             applications.notes,
+            graph_assignments.connection_id AS outlookGraphConnectionId,
+            graph_connections.name AS outlookGraphConnectionName,
             applications.rating,
             applications.salary,
             applications.created_at AS createdAt,
@@ -316,7 +320,13 @@ function publicApplicationSelect(): string {
           LEFT JOIN reference_values AS sources
             ON sources.id = applications.source_reference_id
           LEFT JOIN reference_values AS role_types
-            ON role_types.id = applications.role_type_reference_id`;
+            ON role_types.id = applications.role_type_reference_id
+          LEFT JOIN application_outlook_graph_connections AS graph_assignments
+            ON graph_assignments.workspace_id = applications.workspace_id
+           AND graph_assignments.application_id = applications.id
+          LEFT JOIN outlook_graph_connections AS graph_connections
+            ON graph_connections.workspace_id = graph_assignments.workspace_id
+           AND graph_connections.id = graph_assignments.connection_id`;
 }
 
 export class SqliteApplicationsRepository implements ApplicationsRepository {
@@ -762,6 +772,12 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         : target.roleType;
     survivor.source =
       survivor.sourceId === source.sourceId ? source.source : target.source;
+    survivor.outlookGraphConnectionName =
+      survivor.outlookGraphConnectionId === null
+        ? null
+        : survivor.outlookGraphConnectionId === source.outlookGraphConnectionId
+          ? source.outlookGraphConnectionName
+          : target.outlookGraphConnectionName;
     if (survivor.statusId === source.statusId) {
       survivor.status = source.status;
       survivor.statusIsTerminal = source.statusIsTerminal;
@@ -1019,6 +1035,19 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         preview.contacts.result,
       );
       this.replaceLinks(input.workspaceId, target.id, preview.links.result);
+      this.replaceOutlookGraphConnectionAssignment(
+        input.workspaceId,
+        target.id,
+        survivor.outlookGraphConnectionId,
+        input.actorUserId,
+        input.mergedAt,
+      );
+      this.database
+        .prepare(
+          `DELETE FROM application_outlook_graph_connections
+           WHERE workspace_id = ? AND application_id = ?`,
+        )
+        .run(input.workspaceId, source.id);
 
       this.database
         .prepare(
@@ -1262,6 +1291,54 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     });
   }
 
+  private requireOutlookGraphConnection(
+    workspaceId: string,
+    connectionId: string,
+  ): void {
+    const exists = this.database
+      .prepare(
+        `SELECT 1
+         FROM outlook_graph_connections
+         WHERE workspace_id = ? AND id = ?`,
+      )
+      .pluck()
+      .get(workspaceId, connectionId);
+    if (exists === undefined) {
+      throw new InvalidOutlookGraphConnectionAssignmentError();
+    }
+  }
+
+  private replaceOutlookGraphConnectionAssignment(
+    workspaceId: string,
+    applicationId: string,
+    connectionId: string | null,
+    actorUserId: string,
+    assignedAt: string,
+  ): void {
+    if (connectionId === null) {
+      this.database
+        .prepare(
+          `DELETE FROM application_outlook_graph_connections
+           WHERE workspace_id = ? AND application_id = ?`,
+        )
+        .run(workspaceId, applicationId);
+      return;
+    }
+    this.requireOutlookGraphConnection(workspaceId, connectionId);
+    this.database
+      .prepare(
+        `INSERT INTO application_outlook_graph_connections
+           (workspace_id, application_id, connection_id, assigned_at,
+            assigned_by_user_id)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(workspace_id, application_id) DO UPDATE SET
+           connection_id = excluded.connection_id,
+           assigned_at = excluded.assigned_at,
+           assigned_by_user_id = excluded.assigned_by_user_id`,
+      )
+      .run(workspaceId, applicationId, connectionId, assignedAt, actorUserId);
+  }
+
   public createApplication(input: CreateApplicationRecord): ApplicationRecord {
     const id = randomUUID();
     const eventId = randomUUID();
@@ -1330,6 +1407,13 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         );
       this.replaceContacts(input.workspaceId, id, input.contacts ?? []);
       this.replaceLinks(input.workspaceId, id, input.links ?? []);
+      this.replaceOutlookGraphConnectionAssignment(
+        input.workspaceId,
+        id,
+        input.outlookGraphConnectionId ?? null,
+        input.createdByUserId,
+        input.createdAt,
+      );
       const stored = this.findStoredApplication(input.workspaceId, id);
       if (!stored) throw new Error("Created application could not be read");
       const [created] = this.hydrateApplications(input.workspaceId, [stored]);
@@ -1525,6 +1609,15 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       if (roleTypeId && roleTypeId !== current.roleTypeId) {
         this.activeReference(input.workspaceId, roleTypeId, "role_type");
       }
+      if (
+        input.outlookGraphConnectionId !== undefined &&
+        input.outlookGraphConnectionId !== null
+      ) {
+        this.requireOutlookGraphConnection(
+          input.workspaceId,
+          input.outlookGraphConnectionId,
+        );
+      }
 
       const updateResult = this.database
         .prepare(
@@ -1589,6 +1682,15 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       }
       if (input.links !== undefined) {
         this.replaceLinks(input.workspaceId, input.applicationId, input.links);
+      }
+      if (input.outlookGraphConnectionId !== undefined) {
+        this.replaceOutlookGraphConnectionAssignment(
+          input.workspaceId,
+          input.applicationId,
+          input.outlookGraphConnectionId,
+          input.actorUserId,
+          input.updatedAt,
+        );
       }
 
       if (statusId !== current.statusId) {

@@ -8,6 +8,7 @@ import {
   ApplicationMergeVersionConflictError,
   ApplicationNotFoundError,
   InvalidApplicationReferenceError,
+  InvalidOutlookGraphConnectionAssignmentError,
   type ApplicationLedgerService,
 } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
@@ -88,6 +89,12 @@ export function createApplicationsRouter(
         response
           .status(400)
           .json({ error: { code: "invalid_application_reference" } });
+        return;
+      }
+      if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
+        response.status(400).json({
+          error: { code: "invalid_outlook_graph_connection_assignment" },
+        });
         return;
       }
       next(error);
@@ -171,6 +178,12 @@ export function createApplicationsRouter(
           .json({ error: { code: "invalid_application_reference" } });
         return;
       }
+      if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
+        response.status(400).json({
+          error: { code: "invalid_outlook_graph_connection_assignment" },
+        });
+        return;
+      }
       next(error);
     }
   });
@@ -239,6 +252,12 @@ export function createApplicationsRouter(
         response
           .status(400)
           .json({ error: { code: "invalid_application_reference" } });
+        return;
+      }
+      if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
+        response.status(400).json({
+          error: { code: "invalid_outlook_graph_connection_assignment" },
+        });
         return;
       }
       next(error);

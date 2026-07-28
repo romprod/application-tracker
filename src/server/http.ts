@@ -25,6 +25,7 @@ import { CompositeRemoteMcpAuthorizer } from "../application/mcp_remote_auth.js"
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
+import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
@@ -32,6 +33,7 @@ import { CryptoMcpClientTokenManager } from "../infrastructure/auth/mcp_client_t
 import { CryptoMcpOAuthTokenManager } from "../infrastructure/auth/mcp_oauth_token_manager.js";
 import { JoseMcpAccessTokenVerifier } from "../infrastructure/auth/mcp_access_token_verifier.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
+import { AesGcmOutlookGraphSecretCipher } from "../infrastructure/auth/outlook_graph_secret_cipher.js";
 import { StaticSetupTokenVerifier } from "../infrastructure/auth/setup_token_verifier.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
@@ -47,10 +49,8 @@ import { DocumentPreviewSupervisor } from "../infrastructure/documents/document_
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
-import {
-  AzureClientSecretGraphTokenProvider,
-  MicrosoftGraphOutlookMailReader,
-} from "../infrastructure/microsoft_graph_outlook_mail.js";
+import { SqliteOutlookGraphConnectionsRepository } from "../infrastructure/database/outlook_graph_connections_repository.js";
+import { MicrosoftGraphOutlookConnectionAdapter } from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
@@ -77,22 +77,21 @@ async function startApplication(): Promise<void> {
       applicationsService,
       (operation) => database.transaction(operation).immediate(),
     );
-    const outlookEmailSyncService = config.outlookEmailSync
+    const outlookGraphConnectionsService = config.outlookConnectionEncryptionKey
+      ? new OutlookGraphConnectionsService(
+          new SqliteOutlookGraphConnectionsRepository(database),
+          new AesGcmOutlookGraphSecretCipher(
+            Buffer.from(config.outlookConnectionEncryptionKey, "hex"),
+          ),
+          new MicrosoftGraphOutlookConnectionAdapter(),
+        )
+      : undefined;
+    const outlookEmailSyncService = outlookGraphConnectionsService
       ? new OutlookEmailSyncService(
           applicationsService,
           jobEmailReconciliationService,
           new EmailLinkExtractionService(),
-          new MicrosoftGraphOutlookMailReader(
-            {
-              folderPath: config.outlookEmailSync.folderPath,
-              mailbox: config.outlookEmailSync.mailbox,
-            },
-            new AzureClientSecretGraphTokenProvider(
-              config.outlookEmailSync.tenantId,
-              config.outlookEmailSync.clientId,
-              config.outlookEmailSync.clientSecret,
-            ),
-          ),
+          outlookGraphConnectionsService,
         )
       : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
@@ -280,6 +279,9 @@ async function startApplication(): Promise<void> {
           }
         : {}),
       mcpStatusService,
+      ...(outlookGraphConnectionsService
+        ? { outlookGraphConnectionsService }
+        : {}),
       ...(remoteMcpEndpoint
         ? { remoteMcpRouter: remoteMcpEndpoint.router() }
         : {}),

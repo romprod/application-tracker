@@ -12,10 +12,12 @@ import type { AuthenticatedActor } from "./auth.js";
 import { EmailLinkExtractionService } from "./email_links.js";
 import { JobEmailReconciliationService } from "./job_email_reconciliation.js";
 import {
+  OutlookEmailSyncOperationalError,
   OutlookEmailSyncService,
   type OutlookMailMessageDetail,
   type OutlookMailMessageSummary,
   type OutlookMailReader,
+  type OutlookMailReaderProvider,
 } from "./outlook_email_sync.js";
 
 const databases: ReturnType<typeof openApplicationDatabase>[] = [];
@@ -93,7 +95,9 @@ function mailReader(message: OutlookMailMessageDetail): InstrumentedMailReader {
 }
 
 function harness(
-  reader: OutlookMailReader = mailReader(transactionalMessage()),
+  reader: OutlookMailReader | OutlookMailReaderProvider = mailReader(
+    transactionalMessage(),
+  ),
 ) {
   const database = openApplicationDatabase(":memory:");
   databases.push(database);
@@ -163,6 +167,44 @@ function harness(
 }
 
 describe("OutlookEmailSyncService", () => {
+  it("fails closed when the application has no assigned Outlook reader", async () => {
+    const forApplication = vi.fn(() => {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_graph_connection_unassigned",
+      );
+    });
+    const provider: OutlookMailReaderProvider = {
+      forApplication,
+    };
+    const { actor, application, sync } = harness(provider);
+
+    await expect(sync.prepare(actor, application.id)).rejects.toMatchObject({
+      code: "outlook_graph_connection_unassigned",
+    });
+    expect(forApplication).toHaveBeenCalledWith(
+      actor.workspaceId,
+      application.id,
+    );
+  });
+
+  it("resolves the application's assigned reader for every synchronization", async () => {
+    const reader = mailReader(transactionalMessage());
+    const forApplication = vi.fn(() => reader);
+    const provider: OutlookMailReaderProvider = {
+      forApplication,
+    };
+    const { actor, application, sync } = harness(provider);
+
+    await sync.prepare(actor, application.id);
+    await sync.prepare(actor, application.id);
+
+    expect(forApplication).toHaveBeenCalledTimes(2);
+    expect(forApplication).toHaveBeenCalledWith(
+      actor.workspaceId,
+      application.id,
+    );
+  });
+
   it("links one high-confidence transactional message and verifies the read-back", async () => {
     const { actor, application, database, sync } = harness();
 

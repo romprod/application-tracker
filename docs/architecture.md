@@ -40,6 +40,8 @@ flowchart LR
   HTTP --> UseCases["Application use cases"]
   MCPHTTP --> UseCases
   MCPStdio --> UseCases
+  HTTP --> Connections["Administrator connection lifecycle"]
+  Connections --> UseCases
   UseCases --> Repositories["Repository interfaces"]
   Repositories --> SQLite[("SQLite")]
   UseCases --> GraphMail["Bounded Outlook mail reader"]
@@ -47,6 +49,13 @@ flowchart LR
   UseCases --> PreviewQueue["Preview supervisor"]
   PreviewQueue --> Worker["Disposable resource-limited parser process"]
 ```
+
+An administrator manages named workspace Outlook connections under **Settings
+→ Connections**. The HTTP use case verifies each connection's credentials and
+folder before encrypting its client secret and saving it in SQLite. Each
+application stores one nullable connection assignment. Runtime MCP
+synchronization resolves only that assigned connection, so disable and hard
+delete take effect without restarting the server.
 
 The optional Outlook integration is a prepare-and-commit use case. It performs
 all Microsoft Graph authentication, folder traversal, evidence validation,
@@ -109,8 +118,10 @@ or incomplete production configuration stops startup with a concise error.
 configuration remain ignored.
 
 Configuration is grouped into server, database, session, setup, OIDC, MCP,
-optional Microsoft Graph mail access, document processing, and proxy settings.
-Secret values never appear in health responses or logs.
+optional Microsoft Graph credential encryption, document processing, and proxy
+settings. Workspace Graph credentials are managed in the authenticated web
+interface after the server encryption key is configured. Secret values never
+appear in health responses or logs.
 
 ## Delivery contract
 

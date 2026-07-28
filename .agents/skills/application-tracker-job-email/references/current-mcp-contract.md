@@ -98,16 +98,25 @@ The structured result includes:
   flags; and
 - `verification.applicationReread`, `evidenceStored`, and `storedMessageId`.
 
-Stable integration errors are `outlook_email_sync_unavailable`,
-`outlook_existing_evidence_limit`, `outlook_folder_not_found`,
-`outlook_mailbox_unavailable`, `outlook_graph_authentication_failed`,
-`outlook_graph_forbidden`, `outlook_graph_throttled`,
-`outlook_graph_unavailable`, and `outlook_email_verification_failed`. Do not
-retry through a separate connector or lower-level tracker tools.
+Stable integration errors are `outlook_graph_connection_unassigned`,
+`outlook_email_sync_unavailable`, `outlook_existing_evidence_limit`,
+`outlook_folder_not_found`, `outlook_mailbox_unavailable`,
+`outlook_graph_authentication_failed`, `outlook_graph_forbidden`,
+`outlook_graph_throttled`, `outlook_graph_unavailable`, and
+`outlook_email_verification_failed`. Do not retry through a separate connector
+or lower-level tracker tools.
 
-The server persists only RFC Message-ID, received time, optional Outlook web
-URL, and evidence timestamps. It does not store Graph tokens or credentials,
-subjects, senders, headers, previews, or bodies.
+The workspace administrator manages named Graph connections under **Settings →
+Connections**. Each application stores one nullable Graph origin, and the sync
+tool resolves only that connection. Disabling it pauses synchronization. Hard
+deletion preserves applications and evidence but clears affected assignments.
+These lifecycle changes do not alter the MCP sync input.
+
+The evidence record persists only RFC Message-ID, received time, optional
+Outlook web URL, and evidence timestamps. Each workspace connection record
+contains its non-secret route metadata and an encrypted client secret. The
+server does not store Graph access tokens, plaintext secrets, subjects, senders,
+headers, previews, or bodies.
 
 ## Microsoft 365 connector discovery
 

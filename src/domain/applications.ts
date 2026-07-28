@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { outlookGraphConnectionIdSchema } from "./outlook_graph_connections.js";
 import { referenceValueIdSchema } from "./reference_values.js";
 
 export const applicationIdSchema = z.uuid();
@@ -62,6 +63,7 @@ export const createApplicationSchema = z.strictObject({
   nextAction: optionalText(500),
   nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
   notes: optionalText(5000),
+  outlookGraphConnectionId: outlookGraphConnectionIdSchema.optional(),
   rating: z.number().int().min(1).max(5).optional(),
   roleTypeId: referenceValueIdSchema.optional(),
   roleTitle: z.string().trim().min(1).max(160),
@@ -95,6 +97,9 @@ const applicationUpdateFields = {
   nextAction: nullableText(500).optional(),
   nextActionDue: z.preprocess(blankToNull, z.iso.date().nullable()).optional(),
   notes: nullableText(5000).optional(),
+  outlookGraphConnectionId: outlookGraphConnectionIdSchema
+    .nullable()
+    .optional(),
   rating: z.number().int().min(1).max(5).nullable().optional(),
   roleTypeId: referenceValueIdSchema.nullable().optional(),
   roleTitle: z.string().trim().min(1).max(160).optional(),
@@ -139,6 +144,7 @@ export const applicationMergeFieldSchema = z.enum([
   "nextAction",
   "nextActionDue",
   "notes",
+  "outlookGraphConnectionId",
   "rating",
   "roleTypeId",
   "roleTitle",

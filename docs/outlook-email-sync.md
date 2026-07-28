@@ -37,7 +37,7 @@ authentication.
 
 1. Add the Microsoft Graph **application** permission `Mail.Read`.
 2. Grant tenant administrator consent.
-3. Restrict the service principal to the one configured mailbox with
+3. Restrict each service principal to its configured mailbox with
    [Exchange Online Application RBAC](https://learn.microsoft.com/exchange/permissions-exo/application-rbac),
    which is Microsoft's preferred resource-scoping mechanism.
 4. If the tenant still uses application access policies, apply a restrictive
@@ -51,34 +51,72 @@ restriction has been tested. Use a dedicated application registration, rotate
 its secret under the operator's normal schedule, and remove old credentials
 after cutover.
 
-## Runtime configuration
+## Web-managed connections
 
-Set all values together in the service's private environment:
+Generate one installation-level encryption key and add it to the server's
+private runtime environment:
 
 ```dotenv
-OUTLOOK_EMAIL_SYNC_ENABLED=true
-MICROSOFT_GRAPH_TENANT_ID=<tenant UUID>
-MICROSOFT_GRAPH_CLIENT_ID=<application UUID>
-MICROSOFT_GRAPH_CLIENT_SECRET=<client secret>
-OUTLOOK_EMAIL_SYNC_MAILBOX=jobs@example.com
-OUTLOOK_EMAIL_SYNC_FOLDER_PATH=Inbox\Jobs
+OUTLOOK_CONNECTION_ENCRYPTION_KEY=<64 lowercase or uppercase hexadecimal characters>
 ```
 
-`OUTLOOK_EMAIL_SYNC_FOLDER_PATH` must start at Inbox and contain between two and
-five bounded path segments. `Inbox\Jobs` is the default. Startup rejects a
-partial configuration and also rejects Graph credentials while the feature is
-disabled, preventing an accidental half-enabled deployment.
+Generate it with `openssl rand -hex 32`. This key is not a Microsoft credential:
+it encrypts workspace connection secrets at rest. Keep it in the deployment
+secret store, back it up separately from SQLite, and do not change it while
+saved connections exist. If it is lost, an administrator must delete and
+recreate each connection with a new client secret.
 
-The same settings apply to the web-hosted remote MCP server and to a local stdio
-process. For stdio, put them in the private MCP process environment. For the web
-service, put them in its runtime secret store or protected `.env`, then restart
-the process.
+After restarting the server, an administrator opens **Settings →
+Connections**. The page links to Entra app registrations, the Graph `Mail.Read`
+permission reference, the Exchange admin centre, and Application RBAC guidance.
+For each named connection, the administrator enters a tenant ID, application
+ID, client secret, mailbox, and Inbox child-folder path. **Test and connect**
+checks the token, mailbox, and folder before saving. The server never returns
+the secret to the browser.
+
+The same screen supports:
+
+- **Add connection**, which creates another independently enabled mailbox
+  route;
+- **Test connection**, which verifies the saved configuration without changing
+  its enabled state;
+- **Edit details**, which retains the encrypted secret when tenant and
+  application IDs are unchanged;
+- **Disable**, which pauses synchronization for assigned applications but
+  retains the encrypted configuration and assignments;
+- **Enable**, which performs a successful live verification first; and
+- two-step **Delete**, which shows the assigned-application count before it
+  permanently removes the connection and secret ciphertext.
+
+Hard deletion preserves applications and existing email evidence. It clears
+each affected application's Graph assignment, so those records cannot
+synchronize again until a user selects another connection. Existing backup
+artifacts can still contain the old encrypted ciphertext and remain subject to
+the normal backup retention policy.
+
+The folder path must start at Inbox and contain between two and five bounded
+path segments. `Inbox\Jobs` is the default. Administrators can manage only
+their workspace's connections.
+
+Each opportunity and application has a nullable Graph origin. Records created
+from Graph-backed email processing must store the connection they came from.
+Users must assign existing or manually created records explicitly before
+synchronizing them. The application editor lists safe connection names,
+mailboxes, and enabled states; it never receives tenant IDs, application IDs,
+or secrets through that options endpoint.
+
+The web-hosted and local stdio MCP servers resolve the application's assigned
+connection for every call. A local stdio process must use the same SQLite
+database and receive the same `OUTLOOK_CONNECTION_ENCRYPTION_KEY` in its private
+process environment.
 
 ## MCP behavior
 
-The tool is discoverable even when the integration is disabled so the MCP
-schema remains stable. It requires the connection's `read_write` permission
-because a successful match may create evidence. For this one-application path:
+Once secure web storage is configured at the server, the tool remains
+discoverable when an application is unassigned or its connection is disabled,
+so the MCP schema remains stable. It requires the MCP connection's `read_write`
+permission because a successful match may create evidence. For this
+one-application path:
 
 - call only `sync_outlook_email_evidence` with the known application ID;
 - do not call `get_tracker_context` or `get_application` as preflight or
@@ -96,7 +134,8 @@ Stable operational errors include:
 
 | Code                                  | Meaning                                        |
 | ------------------------------------- | ---------------------------------------------- |
-| `outlook_email_sync_unavailable`      | Integration is disabled or unconfigured        |
+| `outlook_graph_connection_unassigned` | Application has no Graph origin                |
+| `outlook_email_sync_unavailable`      | Assigned connection is disabled                |
 | `outlook_folder_not_found`            | Configured child folder cannot be resolved     |
 | `outlook_mailbox_unavailable`         | Configured mailbox cannot be resolved          |
 | `outlook_graph_authentication_failed` | Tenant, client, or secret was rejected         |
@@ -111,11 +150,15 @@ Stable operational errors include:
 
 ## Data and logging boundary
 
-SQLite stores only the established bounded evidence fields: RFC Message-ID,
-received time, optional Outlook web URL, and persistence timestamps. The server
-does not store Graph access tokens, tenant or client secrets, message subjects,
-senders, headers, previews, or bodies. Candidate subject and sender values exist
-only in the tool result for the authorized invocation.
+The evidence tables store only the established bounded evidence fields: RFC
+Message-ID, received time, optional Outlook web URL, and persistence timestamps.
+The connection table stores names, tenant and application IDs, mailboxes,
+folders, lifecycle timestamps, enabled state, and client secrets encrypted with
+AES-256-GCM. Additional authenticated data binds each new ciphertext to its
+workspace, connection, tenant, and application IDs. The encryption key remains
+in the server environment. The server never stores Graph access tokens, message
+subjects, senders, headers, previews, or bodies. Candidate subject and sender
+values exist only in the tool result for the authorized invocation.
 
 Graph response bodies and credential failures are converted to stable error
 codes rather than logged. Requests use only `https://graph.microsoft.com/v1.0`,

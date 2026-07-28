@@ -92,7 +92,7 @@ clients. It does not issue client secrets.
 
 ## Create a direct bearer credential
 
-Sign in as a local administrator and open **Settings → MCP**:
+Sign in as a local administrator and open **Settings → Connections**:
 
 1. Enter a descriptive client name.
 2. Select the active local user that the client will act as.

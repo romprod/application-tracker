@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { ApplicationConflictError } from "../../application/applications.js";
+import {
+  ApplicationConflictError,
+  InvalidOutlookGraphConnectionAssignmentError,
+} from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
@@ -38,6 +41,39 @@ function referenceId(
     .get(workspaceId, category, label);
   if (typeof id !== "string") throw new Error("Missing test reference value");
   return id;
+}
+
+function insertGraphConnection(
+  database: ReturnType<typeof openApplicationDatabase>,
+  workspaceId: string,
+  userId: string,
+  id: string,
+  name: string,
+): void {
+  database
+    .prepare(
+      `INSERT INTO outlook_graph_connections
+         (id, workspace_id, name, tenant_id, client_id,
+          client_secret_encrypted, mailbox, folder_path, enabled, verified_at,
+          last_tested_at, last_error_code, created_at, updated_at,
+          updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      workspaceId,
+      name,
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "v2.encrypted-client-secret-material",
+      `${name.toLowerCase().replace(/\s+/g, "-")}@example.com`,
+      "Inbox\\Jobs",
+      createdAt,
+      createdAt,
+      createdAt,
+      createdAt,
+      userId,
+    );
 }
 
 describe("SqliteApplicationsRepository", () => {
@@ -139,6 +175,100 @@ describe("SqliteApplicationsRepository", () => {
           type: "application_created",
         }),
       ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("assigns, changes, clears, and validates a Graph origin transactionally", () => {
+    const { database, repository, setup } = createRepository();
+    const firstConnectionId = "11111111-1111-4111-8111-111111111111";
+    const secondConnectionId = "22222222-2222-4222-8222-222222222222";
+    try {
+      insertGraphConnection(
+        database,
+        setup.workspace.id,
+        setup.administrator.id,
+        firstConnectionId,
+        "Work tenant",
+      );
+      insertGraphConnection(
+        database,
+        setup.workspace.id,
+        setup.administrator.id,
+        secondConnectionId,
+        "Consulting tenant",
+      );
+      const application = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        outlookGraphConnectionId: firstConnectionId,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
+        workspaceId: setup.workspace.id,
+      });
+      expect(application).toMatchObject({
+        outlookGraphConnectionId: firstConnectionId,
+        outlookGraphConnectionName: "Work tenant",
+      });
+
+      const changed = repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: application.id,
+        expectedUpdatedAt: application.updatedAt,
+        outlookGraphConnectionId: secondConnectionId,
+        updatedAt: "2026-07-18T12:01:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(changed).toMatchObject({
+        outlookGraphConnectionId: secondConnectionId,
+        outlookGraphConnectionName: "Consulting tenant",
+      });
+
+      const cleared = repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: application.id,
+        expectedUpdatedAt: changed!.updatedAt,
+        outlookGraphConnectionId: null,
+        updatedAt: "2026-07-18T12:02:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(cleared).toMatchObject({
+        outlookGraphConnectionId: null,
+        outlookGraphConnectionName: null,
+      });
+
+      expect(() =>
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: application.id,
+          expectedUpdatedAt: cleared!.updatedAt,
+          outlookGraphConnectionId: "33333333-3333-4333-8333-333333333333",
+          updatedAt: "2026-07-18T12:03:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(InvalidOutlookGraphConnectionAssignmentError);
+      expect(
+        repository
+          .listApplications(setup.workspace.id)
+          .find(({ id }) => id === application.id),
+      ).toMatchObject({
+        outlookGraphConnectionId: null,
+        outlookGraphConnectionName: null,
+        updatedAt: "2026-07-18T12:02:00.000Z",
+      });
     } finally {
       database.close();
     }

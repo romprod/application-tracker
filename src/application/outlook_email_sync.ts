@@ -123,6 +123,10 @@ export interface OutlookMailReader {
   ): Promise<OutlookExistingEvidenceValidation[]>;
 }
 
+export interface OutlookMailReaderProvider {
+  forApplication(workspaceId: string, applicationId: string): OutlookMailReader;
+}
+
 export interface OutlookEmailCandidateAssessment {
   classification: OutlookEmailClassification;
   disqualifiers: OutlookEmailDisqualifier[];
@@ -167,6 +171,7 @@ export type OutlookEmailSyncOperationalErrorCode =
   | "outlook_email_sync_unavailable"
   | "outlook_existing_evidence_limit"
   | "outlook_folder_not_found"
+  | "outlook_graph_connection_unassigned"
   | "outlook_graph_authentication_failed"
   | "outlook_graph_forbidden"
   | "outlook_graph_throttled"
@@ -482,7 +487,7 @@ export class OutlookEmailSyncService {
     private readonly applications: OutlookEmailSyncApplications,
     private readonly jobEmails: JobEmailReconciliationService,
     private readonly emailLinks: EmailLinkExtractionService,
-    private readonly mail: OutlookMailReader,
+    private readonly mail: OutlookMailReader | OutlookMailReaderProvider,
   ) {}
 
   public async prepare(
@@ -493,6 +498,10 @@ export class OutlookEmailSyncService {
       .listApplications(actor)
       .find(({ id }) => id === applicationId);
     if (!application) throw new ApplicationNotFoundError();
+    const mail =
+      "forApplication" in this.mail
+        ? this.mail.forApplication(actor.workspaceId, application.id)
+        : this.mail;
 
     const evidence = this.jobEmails.getApplicationEvidence(
       actor,
@@ -503,7 +512,7 @@ export class OutlookEmailSyncService {
         "outlook_existing_evidence_limit",
       );
     }
-    const existingValidation = await this.mail.validateEvidence(
+    const existingValidation = await mail.validateEvidence(
       evidence.emailEvidence.map(({ messageId, receivedAt }) => ({
         messageId,
         receivedAt,
@@ -514,7 +523,7 @@ export class OutlookEmailSyncService {
       evidence.jobPostings,
       this.emailLinks,
     );
-    const search = await this.mail.searchMessages({
+    const search = await mail.searchMessages({
       companyName: application.companyName,
       postingIds: targetPostings.postingIds,
       roleTitle: application.roleTitle,
@@ -528,7 +537,7 @@ export class OutlookEmailSyncService {
       application,
       targetPostings.postingIds,
     );
-    const details = await this.mail.getMessages(shortlist.map(({ id }) => id));
+    const details = await mail.getMessages(shortlist.map(({ id }) => id));
     const detailsById = new Map(details.map((detail) => [detail.id, detail]));
     const assessments = shortlist.map((summary) =>
       this.assessCandidate(
