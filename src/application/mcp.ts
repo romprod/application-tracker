@@ -57,12 +57,18 @@ import type {
 } from "../domain/job_email_reconciliation.js";
 import type { EmailLinkExtractionInput } from "../domain/email_links.js";
 import type { JobPostingInspectionInput } from "../domain/job_postings.js";
+import type { SyncOutlookEmailEvidenceInput } from "../domain/outlook_email_sync.js";
 import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
 import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
+import {
+  OutlookEmailSyncOperationalError,
+  type OutlookEmailSyncResult,
+  type OutlookEmailSyncService,
+} from "./outlook_email_sync.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 8;
+export const applicationMcpSchemaVersion = 9;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -80,6 +86,7 @@ export const applicationMcpToolNames = [
   "match_job_application_email",
   "link_email_evidence",
   "reconcile_application_from_evidence",
+  "sync_outlook_email_evidence",
   "extract_job_links",
   "resolve_job_links",
   "inspect_job_posting",
@@ -451,6 +458,9 @@ export interface McpApplicationTools {
   reconcileApplicationFromEvidence(
     input: ReconcileApplicationFromEvidenceInput,
   ): LinkApplicationEvidenceResult | UpsertApplicationFromEmailResult;
+  prepareSyncOutlookEmailEvidence(
+    input: SyncOutlookEmailEvidenceInput,
+  ): Promise<PreparedMcpWriteOperation<OutlookEmailSyncResult>>;
   resolveJobLinks(
     input: EmailLinkExtractionInput,
   ): Promise<JobLinkResolutionResult>;
@@ -461,6 +471,10 @@ export interface McpApplicationTools {
   upsertApplicationFromEmail(
     input: UpsertApplicationFromEmailInput,
   ): UpsertApplicationFromEmailResult;
+}
+
+export interface PreparedMcpWriteOperation<Result extends object> {
+  commit(): Result;
 }
 
 export class LocalMcpActorUnavailableError extends Error {
@@ -558,6 +572,7 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly documentImports: McpDocumentImportManager,
     private readonly emailLinks: EmailLinkExtractionService,
     private readonly jobEmails?: JobEmailReconciliationService,
+    private readonly outlookEmailSync?: OutlookEmailSyncService,
     private readonly clock: () => Date = () => new Date(),
     private readonly jobLinkResolver = new JobLinkResolutionService(emailLinks),
     private readonly jobPostingInspector = new JobPostingInspectionService(),
@@ -803,6 +818,28 @@ export class ApplicationMcpService implements McpApplicationTools {
       : this.jobEmailService().upsert(actor, input.reconciliation);
   }
 
+  public async prepareSyncOutlookEmailEvidence(
+    input: SyncOutlookEmailEvidenceInput,
+  ): Promise<PreparedMcpWriteOperation<OutlookEmailSyncResult>> {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    const service = this.outlookEmailSyncService();
+    const prepared = await service.prepare(actor, input.applicationId);
+    return {
+      commit: () => {
+        const currentActor = this.actorProvider.getActor();
+        if (
+          currentActor.userId !== actor.userId ||
+          currentActor.workspaceId !== actor.workspaceId
+        ) {
+          throw new LocalMcpActorUnavailableError();
+        }
+        this.accessPolicy.requireWriteAccess(currentActor);
+        return service.commit(currentActor, prepared);
+      },
+    };
+  }
+
   public extractJobLinks(
     input: EmailLinkExtractionInput,
   ): McpEmailLinkCandidates {
@@ -983,5 +1020,14 @@ export class ApplicationMcpService implements McpApplicationTools {
   private jobEmailService(): JobEmailReconciliationService {
     if (!this.jobEmails) throw new JobEmailReconciliationUnavailableError();
     return this.jobEmails;
+  }
+
+  private outlookEmailSyncService(): OutlookEmailSyncService {
+    if (!this.outlookEmailSync) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    return this.outlookEmailSync;
   }
 }

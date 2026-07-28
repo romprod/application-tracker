@@ -7,6 +7,8 @@
 - Uploaded CVs, cover letters, and email files
 - Local password verifiers, sessions, setup tokens, MCP bearer tokens, and OAuth
   tokens
+- Optional Microsoft Graph tenant, client, and mailbox configuration and the
+  short-lived app-only access tokens obtained at runtime
 - Workspace membership and administrative settings
 - SQLite integrity, backups, and migration state
 - MCP availability, actor identity, tool authority, and audit events
@@ -18,6 +20,7 @@
 - Local MCP process to operating-system identity and explicit actor configuration
 - HTTP and MCP adapters to shared application use cases
 - Application use cases to workspace-scoped repositories and SQLite transactions
+- Optional Outlook synchronization to Microsoft identity and Graph over HTTPS
 - Uploaded bytes to content storage and isolated document parsers
 - Runtime environment to typed configuration and secret handling
 - Private operator configuration to public source and release artifacts
@@ -55,7 +58,7 @@
 - Private configuration selects one username and one workspace slug
 - Tool schemas contain no actor or workspace selector
 - Every tool call rechecks active account status and workspace membership
-- Seventeen read-only tools and thirteen mutation-capable tools are bounded; new
+- Seventeen read-only tools and fourteen mutation-capable tools are bounded; new
   connections block all mutations by default
 - Job-link resolution requests only exact allowlisted tracking hosts, while
   posting inspection accepts only provider-registry-recognized canonical URLs;
@@ -71,6 +74,37 @@
 - Successful mutations and their audit events share one immediate transaction,
   so an audit failure rolls the application change back
 - Stdout carries JSON-RPC only; redacted lifecycle diagnostics use stderr
+
+### Microsoft Graph and Outlook
+
+- Disabled by default with strict all-or-nothing runtime configuration
+- Dedicated Entra application with `Mail.Read` application permission only
+- External Exchange Application RBAC or application access policy restricts
+  the service principal to the configured mailbox
+- Client credentials remain only in the protected runtime environment; access
+  tokens are held in memory and are never stored in SQLite
+- Requests are limited to `https://graph.microsoft.com/v1.0`, use app-only
+  tokens, immutable item IDs, credential-free redirects, fixed timeouts,
+  bounded retries, capped concurrency, and fixed response-size limits
+- Folder traversal begins at the well-known Inbox and follows only the
+  configured bounded child path
+- Existing evidence validation uses the stable RFC Message-ID and received
+  timestamp; Outlook item IDs are retrieval handles only
+- Search retains at most 20 candidates and full content for at most five
+  shortlisted messages
+- Deterministic, versioned scoring requires a transactional classification, a
+  strong identity anchor, no ambiguity or cross-application conflict, and the
+  configured confidence threshold
+- Graph reads complete outside SQLite transactions; the evidence link,
+  read-back verification, and successful MCP audit row commit atomically
+- Mailbox state is never changed, and SQLite never stores Graph tokens,
+  credentials, subjects, senders, headers, previews, or message bodies
+- Graph response bodies and credential details never enter structured logs;
+  callers receive stable operational error codes
+
+The application-level `Mail.Read` grant is tenant-wide until Exchange resource
+scoping is applied. Operators must test the mailbox restriction before enabling
+the feature. See [`outlook-email-sync.md`](outlook-email-sync.md).
 
 ### Remote MCP
 

@@ -14,6 +14,7 @@ import { McpDocumentImportManager } from "../application/mcp_document_imports.js
 import { McpConnectionAccessPolicy } from "../application/mcp_access.js";
 import { McpAuditService } from "../application/mcp_audit.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
+import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteDocumentsRepository } from "../infrastructure/database/documents_repository.js";
@@ -22,6 +23,10 @@ import { SqliteMcpActorRepository } from "../infrastructure/database/mcp_actor_r
 import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_repository.js";
 import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
+import {
+  AzureClientSecretGraphTokenProvider,
+  MicrosoftGraphOutlookMailReader,
+} from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
 import { createLocalMcpServer } from "./mcp_server.js";
@@ -54,6 +59,30 @@ async function startLocalMcpServer(): Promise<void> {
     const applicationsService = new ApplicationLedgerService(
       new SqliteApplicationsRepository(database),
     );
+    const emailLinksService = new EmailLinkExtractionService();
+    const jobEmailReconciliationService = new JobEmailReconciliationService(
+      new SqliteJobEmailReconciliationRepository(database),
+      applicationsService,
+      (operation) => database.transaction(operation).immediate(),
+    );
+    const outlookEmailSyncService = config.outlookEmailSync
+      ? new OutlookEmailSyncService(
+          applicationsService,
+          jobEmailReconciliationService,
+          emailLinksService,
+          new MicrosoftGraphOutlookMailReader(
+            {
+              folderPath: config.outlookEmailSync.folderPath,
+              mailbox: config.outlookEmailSync.mailbox,
+            },
+            new AzureClientSecretGraphTokenProvider(
+              config.outlookEmailSync.tenantId,
+              config.outlookEmailSync.clientId,
+              config.outlookEmailSync.clientSecret,
+            ),
+          ),
+        )
+      : undefined;
     const tools = new ApplicationMcpService(
       actorProvider,
       applicationsService,
@@ -64,12 +93,9 @@ async function startLocalMcpServer(): Promise<void> {
         config.documents,
       ),
       new McpDocumentImportManager(config.documents.maxUploadBytes),
-      new EmailLinkExtractionService(),
-      new JobEmailReconciliationService(
-        new SqliteJobEmailReconciliationRepository(database),
-        applicationsService,
-        (operation) => database.transaction(operation).immediate(),
-      ),
+      emailLinksService,
+      jobEmailReconciliationService,
+      outlookEmailSyncService,
     );
     const auditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),

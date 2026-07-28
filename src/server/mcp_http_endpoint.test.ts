@@ -162,6 +162,8 @@ function initializedEndpoint(
           matches: [],
           outcome: "none",
         }),
+        prepareSyncOutlookEmailEvidence: () =>
+          Promise.reject(new Error("not used")),
         updateApplication: () => {
           throw new Error("not used");
         },

@@ -14,6 +14,13 @@ const completeRemoteEnvironment = {
   MCP_REMOTE_ENABLED: "true",
   MCP_REMOTE_URL: "https://tracker.example/mcp",
 } as const;
+const completeOutlookEnvironment = {
+  MICROSOFT_GRAPH_CLIENT_ID: "22222222-2222-4222-8222-222222222222",
+  MICROSOFT_GRAPH_CLIENT_SECRET: "private-client-secret",
+  MICROSOFT_GRAPH_TENANT_ID: "11111111-1111-4111-8111-111111111111",
+  OUTLOOK_EMAIL_SYNC_ENABLED: "true",
+  OUTLOOK_EMAIL_SYNC_MAILBOX: "jobs@example.com",
+} as const;
 
 describe("parseRuntimeConfig", () => {
   it("uses self-hosted network defaults", () => {
@@ -243,6 +250,50 @@ describe("parseRuntimeConfig", () => {
     expect(
       parseRuntimeConfig({ NODE_ENV: "production" }).session.cookieSecure,
     ).toBe(true);
+  });
+
+  it("accepts complete mailbox-scoped Outlook email sync configuration", () => {
+    expect(
+      parseRuntimeConfig(completeOutlookEnvironment).outlookEmailSync,
+    ).toEqual({
+      clientId: "22222222-2222-4222-8222-222222222222",
+      clientSecret: "private-client-secret",
+      folderPath: ["Inbox", "Jobs"],
+      mailbox: "jobs@example.com",
+      tenantId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(
+      parseRuntimeConfig({
+        ...completeOutlookEnvironment,
+        OUTLOOK_EMAIL_SYNC_FOLDER_PATH: "Inbox\\Recruiting\\Applications",
+      }).outlookEmailSync?.folderPath,
+    ).toEqual(["Inbox", "Recruiting", "Applications"]);
+  });
+
+  it("rejects partial, disabled, or unsafe Outlook email sync configuration", () => {
+    expect(() =>
+      parseRuntimeConfig({
+        OUTLOOK_EMAIL_SYNC_ENABLED: "true",
+        OUTLOOK_EMAIL_SYNC_MAILBOX: "jobs@example.com",
+      }),
+    ).toThrow("Outlook email sync requires complete Microsoft Graph settings");
+    expect(() =>
+      parseRuntimeConfig({
+        MICROSOFT_GRAPH_CLIENT_SECRET: "inert-secret",
+      }),
+    ).toThrow("OUTLOOK_EMAIL_SYNC_ENABLED must be true");
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeOutlookEnvironment,
+        OUTLOOK_EMAIL_SYNC_FOLDER_PATH: "Archive\\Jobs",
+      }),
+    ).toThrow("OUTLOOK_EMAIL_SYNC_FOLDER_PATH");
+    expect(() =>
+      parseRuntimeConfig({
+        ...completeOutlookEnvironment,
+        OUTLOOK_EMAIL_SYNC_FOLDER_PATH: "Inbox\\..",
+      }),
+    ).toThrow("OUTLOOK_EMAIL_SYNC_FOLDER_PATH");
   });
 
   it("rejects an absolute lifetime shorter than the idle lifetime", () => {

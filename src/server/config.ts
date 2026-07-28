@@ -89,6 +89,33 @@ function parseAllowedOrigins(value: string): readonly string[] {
   });
 }
 
+function parseOutlookFolderPath(value: string): string[] {
+  const segments = value
+    .split(/[\\/]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (
+    segments.length < 2 ||
+    segments.length > 5 ||
+    segments[0]?.toLocaleLowerCase("en") !== "inbox" ||
+    segments.some(
+      (segment) =>
+        segment.length > 128 ||
+        [...segment].some((character) => {
+          const code = character.charCodeAt(0);
+          return code <= 0x1f || code === 0x7f;
+        }) ||
+        segment === "." ||
+        segment === "..",
+    )
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: OUTLOOK_EMAIL_SYNC_FOLDER_PATH",
+    );
+  }
+  return ["Inbox", ...segments.slice(1)];
+}
+
 const runtimeEnvironmentSchema = z.object({
   BACKUP_DIRECTORY: z.string().trim().min(1).default("./backups"),
   DATABASE_PATH: z
@@ -333,9 +360,32 @@ const runtimeEnvironmentSchema = z.object({
     blankToUndefined,
     z.string().trim().min(1).max(2048).optional(),
   ),
+  MICROSOFT_GRAPH_CLIENT_ID: z.preprocess(
+    blankToUndefined,
+    z.uuid().optional(),
+  ),
+  MICROSOFT_GRAPH_CLIENT_SECRET: z.preprocess(
+    blankToUndefined,
+    z.string().min(1).max(4096).optional(),
+  ),
+  MICROSOFT_GRAPH_TENANT_ID: z.preprocess(
+    blankToUndefined,
+    z.uuid().optional(),
+  ),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  OUTLOOK_EMAIL_SYNC_ENABLED: z.enum(["true", "false"]).default("false"),
+  OUTLOOK_EMAIL_SYNC_FOLDER_PATH: z
+    .string()
+    .trim()
+    .min(1)
+    .max(649)
+    .default("Inbox\\Jobs"),
+  OUTLOOK_EMAIL_SYNC_MAILBOX: z.preprocess(
+    blankToUndefined,
+    z.string().trim().email().max(254).optional(),
+  ),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3333),
   SESSION_ABSOLUTE_SECONDS: z.coerce
     .number()
@@ -404,6 +454,13 @@ export interface RuntimeConfig {
     };
   };
   nodeEnv: "development" | "test" | "production";
+  outlookEmailSync?: {
+    clientId: string;
+    clientSecret: string;
+    folderPath: string[];
+    mailbox: string;
+    tenantId: string;
+  };
   port: number;
   session: {
     absoluteDurationMs: number;
@@ -551,6 +608,47 @@ export function parseRuntimeConfig(
     };
   }
 
+  const outlookCredentialFields = [
+    result.data.MICROSOFT_GRAPH_TENANT_ID,
+    result.data.MICROSOFT_GRAPH_CLIENT_ID,
+    result.data.MICROSOFT_GRAPH_CLIENT_SECRET,
+    result.data.OUTLOOK_EMAIL_SYNC_MAILBOX,
+  ];
+  const configuredOutlookCredentialFields =
+    outlookCredentialFields.filter(Boolean).length;
+  if (
+    result.data.OUTLOOK_EMAIL_SYNC_ENABLED === "false" &&
+    configuredOutlookCredentialFields > 0
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: OUTLOOK_EMAIL_SYNC_ENABLED must be true when Microsoft Graph settings are present",
+    );
+  }
+  if (
+    result.data.OUTLOOK_EMAIL_SYNC_ENABLED === "true" &&
+    configuredOutlookCredentialFields !== outlookCredentialFields.length
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: Outlook email sync requires complete Microsoft Graph settings",
+    );
+  }
+  const outlookEmailSync =
+    result.data.OUTLOOK_EMAIL_SYNC_ENABLED === "true" &&
+    result.data.MICROSOFT_GRAPH_TENANT_ID &&
+    result.data.MICROSOFT_GRAPH_CLIENT_ID &&
+    result.data.MICROSOFT_GRAPH_CLIENT_SECRET &&
+    result.data.OUTLOOK_EMAIL_SYNC_MAILBOX
+      ? {
+          clientId: result.data.MICROSOFT_GRAPH_CLIENT_ID,
+          clientSecret: result.data.MICROSOFT_GRAPH_CLIENT_SECRET,
+          folderPath: parseOutlookFolderPath(
+            result.data.OUTLOOK_EMAIL_SYNC_FOLDER_PATH,
+          ),
+          mailbox: result.data.OUTLOOK_EMAIL_SYNC_MAILBOX,
+          tenantId: result.data.MICROSOFT_GRAPH_TENANT_ID,
+        }
+      : undefined;
+
   if (
     result.data.SESSION_ABSOLUTE_SECONDS <= result.data.SESSION_IDLE_SECONDS
   ) {
@@ -678,6 +776,7 @@ export function parseRuntimeConfig(
       },
     },
     nodeEnv: result.data.NODE_ENV,
+    ...(outlookEmailSync ? { outlookEmailSync } : {}),
     port: result.data.PORT,
     session: {
       absoluteDurationMs: result.data.SESSION_ABSOLUTE_SECONDS * 1000,

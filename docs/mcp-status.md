@@ -5,7 +5,7 @@ Settings → MCP. The page reports what the current build can do while exposing
 only the canonical public MCP endpoint from its network configuration.
 
 The build includes local stdio and optional remote Streamable HTTP transports
-for 17 read-only tools and 13 mutation-capable tools. The page reports
+for 17 read-only tools and 14 mutation-capable tools. The page reports
 whether runtime configuration has enabled each transport and whether the
 individual connection permits mutations.
 
@@ -138,7 +138,7 @@ fixes the issuer to `MCP_OAUTH_ISSUER`; the browser never receives or selects it
 
 ## Per-connection write policy
 
-The 13 mutation-capable tools are always discoverable so connected clients
+The 14 mutation-capable tools are always discoverable so connected clients
 retain a stable tool registry. In `read_only` mode their write paths fail with
 `write_access_disabled` before changing application data; the explicit
 `merge_applications` preview mode remains read-only. In `read_write` mode active

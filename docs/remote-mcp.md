@@ -171,13 +171,19 @@ same not-found response as an unknown session, even if it belongs to the same
 user. Session admission, idle expiry, absolute expiry, and shutdown cleanup use
 the limits shown in the administrator MCP status view.
 
-The remote endpoint exposes the same 17 read-only tools and 13
+The remote endpoint exposes the same 17 read-only tools and 14
 mutation-capable tools as local stdio. Permission is selected for each OAuth
 authorization or bearer credential and is checked on every call, including
 existing sessions. OAuth tokens must also present the required
 `application-tracker:tools` scope. Every tool call records the actor, workspace,
 result, target type, and `remote_http` transport. Successful mutations and
 their audit rows commit atomically.
+
+For one known application, `sync_outlook_email_evidence` is the complete
+server-side Outlook workflow. Call it directly with the application ID; do not
+add `get_tracker_context`, `get_application`, or separate Microsoft 365 calls
+around it. The tool requires a read-and-write connection, and the Application
+Tracker host must have the optional Graph integration configured.
 
 ## Request controls
 

@@ -49,7 +49,7 @@ describe("McpStatusService", () => {
         auditEvents: true,
         clientCredentials: true,
         oauthVerification: false,
-        registeredTools: 30,
+        registeredTools: 31,
       },
       clients: { actors: [], clients: [], oauthClients: [] },
       recentAuditEvents: [

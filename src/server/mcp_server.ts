@@ -25,6 +25,7 @@ import {
   InvalidMcpDocumentExportError,
   LocalMcpActorUnavailableError,
   type McpApplicationTools,
+  type PreparedMcpWriteOperation,
 } from "../application/mcp.js";
 import { McpWriteAccessDisabledError } from "../application/mcp_access.js";
 import {
@@ -69,6 +70,11 @@ import {
   upsertApplicationFromEmailSchema,
 } from "../domain/job_email_reconciliation.js";
 import { jobBoardProviderSchema } from "../domain/job_board.js";
+import { syncOutlookEmailEvidenceSchema } from "../domain/outlook_email_sync.js";
+import {
+  OutlookEmailSyncOperationalError,
+  OutlookEmailSyncVerificationError,
+} from "../application/outlook_email_sync.js";
 import { noOpLogger, type ApplicationLogger } from "./logging.js";
 
 const readOnlyAnnotations = {
@@ -90,6 +96,10 @@ const writeAnnotations = {
 const idempotentWriteAnnotations = {
   ...writeAnnotations,
   idempotentHint: true,
+} as const;
+const openWorldIdempotentWriteAnnotations = {
+  ...idempotentWriteAnnotations,
+  openWorldHint: true,
 } as const;
 const deleteAnnotations = {
   ...writeAnnotations,
@@ -313,6 +323,84 @@ const applicationDetailSchema = z.strictObject({
   emailEvidence: z.array(applicationEmailEvidenceSchema),
   events: z.array(applicationEventSchema),
   jobPostings: z.array(applicationJobPostingSchema),
+});
+const outlookEmailClassificationSchema = z.enum([
+  "account_or_security",
+  "application_acknowledgement",
+  "interview_or_assessment",
+  "irrelevant",
+  "marketing_or_digest",
+  "offer",
+  "recruiter_conversation",
+  "status_or_rejection",
+]);
+const outlookEmailScoreReasonSchema = z.enum([
+  "canonical_url_match",
+  "company_match",
+  "contact_match",
+  "plausible_date",
+  "posting_id_match",
+  "role_match",
+  "transactional_message",
+]);
+const outlookEmailDisqualifierSchema = z.enum([
+  "below_threshold",
+  "detail_unavailable",
+  "existing_metadata_mismatch",
+  "inconsistent_message_id",
+  "insufficient_identity",
+  "marketing_or_account_message",
+  "missing_message_id",
+  "non_transactional_message",
+  "tracker_match_ambiguous",
+  "tracker_match_conflict",
+]);
+const outlookEmailCandidateAssessmentSchema = z.strictObject({
+  classification: outlookEmailClassificationSchema,
+  disqualifiers: z.array(outlookEmailDisqualifierSchema),
+  messageId: z.string().max(998).nullable(),
+  qualified: z.boolean(),
+  reasons: z.array(outlookEmailScoreReasonSchema),
+  receivedAt: z.iso.datetime(),
+  score: z.number().int().nonnegative(),
+  sender: z.string().email().max(254).nullable(),
+  subject: z.string().max(255),
+});
+const outlookExistingEvidenceValidationSchema = z.strictObject({
+  messageId: z.string().max(998),
+  status: z.enum(["metadata_mismatch", "not_found", "valid"]),
+});
+const outlookEmailSyncResultSchema = z.strictObject({
+  application: applicationRecordSchema,
+  candidateAssessments: z.array(outlookEmailCandidateAssessmentSchema).max(5),
+  emailEvidence: z.array(applicationEmailEvidenceSchema),
+  existingEvidenceValidation: z
+    .array(outlookExistingEvidenceValidationSchema)
+    .max(20),
+  link: z.strictObject({
+    attempted: z.boolean(),
+    created: z.boolean(),
+  }),
+  outcome: z.enum([
+    "already_linked",
+    "ambiguous",
+    "conflict",
+    "linked",
+    "no_match",
+  ]),
+  scoringVersion: z.number().int().positive(),
+  search: z.strictObject({
+    candidatesRetrieved: z.number().int().nonnegative().max(20),
+    detailsRead: z.number().int().nonnegative().max(5),
+    queriesRun: z.number().int().nonnegative().max(2),
+  }),
+  selectedEvidence: outlookEmailCandidateAssessmentSchema.nullable(),
+  threshold: z.number().int().positive(),
+  verification: z.strictObject({
+    applicationReread: z.literal(true),
+    evidenceStored: z.boolean(),
+    storedMessageId: z.string().max(998).nullable(),
+  }),
 });
 const jobEmailMatchCandidateSchema = z.strictObject({
   companyName: z.string(),
@@ -741,6 +829,51 @@ async function executeAsyncTool(
   }
 }
 
+async function executePreparedWriteTool<Result extends object>(
+  tool: McpAuditAction,
+  targetType: McpAuditTargetType,
+  logger: ApplicationLogger,
+  audit: McpServerAuditOptions | undefined,
+  prepare: () => Promise<PreparedMcpWriteOperation<Result>>,
+): Promise<CallToolResult> {
+  if (!audit) {
+    logger.error("mcp_write_audit_unavailable", { tool });
+    return failedToolResult("internal_error");
+  }
+  try {
+    const prepared = await prepare();
+    return executeWriteTool(tool, targetType, logger, audit, () =>
+      prepared.commit(),
+    );
+  } catch (error) {
+    if (
+      error instanceof LocalMcpActorUnavailableError ||
+      error instanceof McpWriteAccessDisabledError
+    ) {
+      return recordAuditEvent(audit, logger, tool, targetType, "denied")
+        ? failedToolResult(
+            error instanceof McpWriteAccessDisabledError
+              ? "write_access_disabled"
+              : "actor_unavailable",
+          )
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof OutlookEmailSyncOperationalError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
+    logger.error("mcp_tool_failed", { error, tool });
+    recordAuditEvent(audit, logger, tool, targetType, "error");
+    return failedToolResult("internal_error");
+  }
+}
+
 function executeWriteTool(
   tool: McpAuditAction,
   targetType: McpAuditTargetType,
@@ -805,6 +938,16 @@ function executeWriteTool(
     if (error instanceof ApplicationConflictError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("application_conflict")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof OutlookEmailSyncOperationalError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof OutlookEmailSyncVerificationError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("outlook_email_verification_failed")
         : failedToolResult("internal_error");
     }
     if (error instanceof ApplicationEventNoChangeError) {
@@ -1163,6 +1306,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.reconcileApplicationFromEvidence(input),
+      ),
+  );
+
+  server.registerTool(
+    "sync_outlook_email_evidence",
+    {
+      annotations: openWorldIdempotentWriteAnnotations,
+      description:
+        "Read one application, validate its existing Outlook evidence, search the server-configured Inbox Jobs folder through Microsoft Graph, inspect and deterministically score a bounded shortlist, link only a qualifying RFC Message-ID, then re-read and verify the stored evidence. The tool never changes mailbox state.",
+      inputSchema: syncOutlookEmailEvidenceSchema,
+      outputSchema: outlookEmailSyncResultSchema,
+      title: "Sync Outlook email evidence",
+    },
+    (input) =>
+      executePreparedWriteTool(
+        "sync_outlook_email_evidence",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.prepareSyncOutlookEmailEvidence(input),
       ),
   );
 
@@ -1526,7 +1689,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. Call get_tracker_context before using workspace data. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId; it performs all tracker and Microsoft Graph reads, linking, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector for that workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

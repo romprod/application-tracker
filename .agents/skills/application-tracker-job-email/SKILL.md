@@ -1,21 +1,36 @@
 ---
 name: application-tracker-job-email
-description: Reconcile job-search emails and supported attachments with Application Tracker through its MCP server and an already-connected @softeria/ms-365-mcp-server instance. Use when asked to inspect an Outlook Jobs folder or supplied job email, identify the corresponding tracked application, match by job-board posting identity or company plus title, create or update an application idempotently, persist source-email evidence, import a safe file attachment, or explain why an email cannot be matched safely.
+description: Synchronize Outlook evidence for one known Application Tracker record through the tracker's server-side Microsoft Graph tool, or use the legacy connector-orchestrated flow for broader Jobs-folder enrichment and supported attachment imports. Use when asked to find, verify, link, reconcile, or import job-search email evidence without guessing identity.
 ---
 
 # Application Tracker Job Email
 
-Reconcile each job email with the correct Application Tracker record. Use the
-email connector only to read the requested messages. Use Application Tracker's
-dedicated MCP match and reconciliation tools for authoritative identity,
-uniqueness, permissions, and persistence.
+For one known application, use Application Tracker's dedicated server-side
+Outlook synchronization tool. The tracker owns Microsoft Graph authentication,
+mailbox reads, deterministic scoring, persistence, audit, and verification.
+Make one tracker MCP call and do not invoke a separate email connector.
+
+Use the connector-orchestrated workflow only when the request is broader than
+one known application's evidence sync, such as processing the Jobs folder,
+creating worthwhile prospects, or importing an attachment.
 
 Never invent tool arguments, reference IDs, job identities, employer names, or
 application facts. Never store a full email body in Application Tracker.
 
 ## Preconditions
 
-Require these Application Tracker MCP tools:
+For one known application, require only:
+
+- `sync_outlook_email_evidence`.
+
+Do not require or call `get_tracker_context`, `get_reference_data`,
+`get_application`, an Outlook plugin, or a Microsoft 365 MCP before or after
+this tool. The Application Tracker server performs the complete read, Graph,
+write, and read-back sequence. The call itself enforces actor, workspace, and
+`read_write` permission.
+
+For broader folder enrichment or connector-based reconciliation, require these
+Application Tracker MCP tools:
 
 - `get_tracker_context`;
 - `get_reference_data`;
@@ -40,9 +55,9 @@ require:
 When the user asks for evidence-gap or data-quality review, also require
 `list_unlinked_applications` and `get_application_data_quality`.
 
-Require an already-connected `@softeria/ms-365-mcp-server` instance. Discover
-it from the current task's MCP tool inventory instead of assuming a server
-name, URL, or transport:
+For that broader or attachment workflow, require an already-connected
+`@softeria/ms-365-mcp-server` instance. Discover it from the current task's MCP
+tool inventory instead of assuming a server name, URL, or transport:
 
 1. Find one MCP namespace that exposes `list-mail-folder-messages` and
    `get-mail-message` (allow client-normalized hyphen or underscore forms).
@@ -110,7 +125,39 @@ Read
 before making tracker calls. Treat each live MCP schema as authoritative if it
 differs from the reference.
 
-## Workflow
+## Server-side one-application workflow
+
+Use this path when the user supplies or has already selected one existing
+Application Tracker application.
+
+1. Call `sync_outlook_email_evidence` exactly once with only `applicationId`.
+2. Do not add tracker context, application, matching, linking, verification, or
+   Microsoft 365 calls around it.
+3. Treat the returned `outcome` exactly:
+   - `linked`: one qualifying RFC Message-ID was newly stored and verified;
+   - `already_linked`: valid stored evidence was verified and no second row was
+     added;
+   - `no_match`: no candidate satisfied every deterministic requirement;
+   - `ambiguous`: high-confidence evidence did not identify only this record;
+   - `conflict`: evidence pointed to another application.
+4. Confirm success only from `verification.applicationReread`,
+   `verification.evidenceStored`, and `verification.storedMessageId`. Report the
+   scoring version, threshold, bounded candidate assessments, and link flags.
+5. Stop on `outlook_email_sync_unavailable`,
+   `outlook_folder_not_found`, `outlook_mailbox_unavailable`,
+   `outlook_graph_authentication_failed`, `outlook_graph_forbidden`,
+   `outlook_graph_throttled`, `outlook_graph_unavailable`,
+   `outlook_existing_evidence_limit`, or
+   `outlook_email_verification_failed`. Do not fall back to client-side mailbox
+   matching or a separate MS365 MCP.
+
+The server validates at most 20 existing evidence rows, searches the configured
+Inbox child folder, retains at most 20 candidates, reads at most five full
+messages, and applies a versioned deterministic confidence threshold. It never
+changes mailbox state or stores subjects, senders, bodies, tokens, or
+credentials in SQLite.
+
+## Connector-orchestrated broader workflow
 
 ### 1. Establish scope and access
 

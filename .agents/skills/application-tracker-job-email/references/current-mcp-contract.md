@@ -6,6 +6,7 @@ this reference.
 ## Contents
 
 - [Required sequence](#required-sequence)
+- [Server-side one-application Outlook sync](#server-side-one-application-outlook-sync)
 - [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
 - [Job-link resolution](#job-link-resolution)
@@ -21,6 +22,17 @@ this reference.
 - [Generic application schemas](#generic-application-schemas)
 
 ## Required sequence
+
+For one existing application's Outlook evidence, call only
+`sync_outlook_email_evidence` with its `applicationId`. Do not call
+`get_tracker_context`, `get_application`, a matching or linking tool, or a
+separate Outlook/MS365 MCP before or after it. The single tool performs its own
+application read, Graph work, evidence write, application re-read, and storage
+verification.
+
+Use the following sequence only for broader Jobs-folder enrichment, creation,
+updates, or attachment import that is outside the dedicated one-application
+tool:
 
 1. Call `get_tracker_context` to confirm the bound actor, workspace, and
    `read_only` or `read_write` access.
@@ -48,7 +60,59 @@ through an external managed distribution channel is separate from this
 contract and requires an explicit user request; schema drift alone is not
 authorization to register or submit a plugin.
 
+## Server-side one-application Outlook sync
+
+`sync_outlook_email_evidence` accepts one strict object:
+
+- `applicationId`, the existing Application Tracker UUID.
+
+It requires connection-bound `read_write` access and performs this sequence
+inside the Application Tracker server:
+
+1. read the application and at most 20 existing email-evidence rows;
+2. validate stored RFC Message-IDs and received timestamps through Graph;
+3. search the configured Inbox child folder with at most two bounded queries;
+4. retain at most 20 message summaries and read at most five full messages;
+5. classify and deterministically score each candidate;
+6. reject absent or inconsistent Message-IDs, marketing/account mail,
+   non-transactional mail, insufficient identity, ambiguity, and
+   cross-application conflicts;
+7. link only the highest deterministic candidate at or above the versioned
+   threshold, unless valid evidence is already linked;
+8. re-read the application and exact evidence row; and
+9. commit the optional evidence link and successful MCP audit event atomically.
+
+Graph reads occur before the SQLite transaction. A concurrent application
+change returns `application_conflict`. An audit or read-back failure rolls the
+evidence link back. The mailbox is read-only throughout.
+
+The structured result includes:
+
+- `outcome`: `linked`, `already_linked`, `no_match`, `ambiguous`, or `conflict`;
+- the re-read `application` and all `emailEvidence`;
+- `existingEvidenceValidation`;
+- at most five `candidateAssessments`, each with classification, score, reasons,
+  disqualifiers, qualification, bounded subject/sender metadata, Message-ID,
+  and received time;
+- `selectedEvidence`, `scoringVersion`, `threshold`, search counts, and link
+  flags; and
+- `verification.applicationReread`, `evidenceStored`, and `storedMessageId`.
+
+Stable integration errors are `outlook_email_sync_unavailable`,
+`outlook_existing_evidence_limit`, `outlook_folder_not_found`,
+`outlook_mailbox_unavailable`, `outlook_graph_authentication_failed`,
+`outlook_graph_forbidden`, `outlook_graph_throttled`,
+`outlook_graph_unavailable`, and `outlook_email_verification_failed`. Do not
+retry through a separate connector or lower-level tracker tools.
+
+The server persists only RFC Message-ID, received time, optional Outlook web
+URL, and evidence timestamps. It does not store Graph tokens or credentials,
+subjects, senders, headers, previews, or bodies.
+
 ## Microsoft 365 connector discovery
+
+This section applies only to broader folder enrichment and attachment workflows,
+not to `sync_outlook_email_evidence`.
 
 Discover an already-connected `@softeria/ms-365-mcp-server` instance from the
 current task's MCP inventory. Do not require a fixed server name, URL, or
@@ -263,6 +327,9 @@ Do not retry with guessed IDs, timestamps, or resolutions. Refresh the audit or
 preview and obtain user approval for any changed decision.
 
 ## Evidence linking and atomic reconciliation
+
+For one known application's automatic Outlook evidence search, use
+`sync_outlook_email_evidence` instead of the tools in this section.
 
 `link_email_evidence` requires an explicit existing `applicationId` and one
 bounded `email` object with `messageId`, `receivedAt`, and optional `webUrl`.

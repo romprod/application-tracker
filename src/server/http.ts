@@ -24,6 +24,7 @@ import { RemoteMcpAuthorizationService } from "../application/mcp_oauth.js";
 import { CompositeRemoteMcpAuthorizer } from "../application/mcp_remote_auth.js";
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
+import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
@@ -46,6 +47,10 @@ import { DocumentPreviewSupervisor } from "../infrastructure/documents/document_
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
+import {
+  AzureClientSecretGraphTokenProvider,
+  MicrosoftGraphOutlookMailReader,
+} from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
 import { createJsonLogger } from "./logging.js";
@@ -72,6 +77,24 @@ async function startApplication(): Promise<void> {
       applicationsService,
       (operation) => database.transaction(operation).immediate(),
     );
+    const outlookEmailSyncService = config.outlookEmailSync
+      ? new OutlookEmailSyncService(
+          applicationsService,
+          jobEmailReconciliationService,
+          new EmailLinkExtractionService(),
+          new MicrosoftGraphOutlookMailReader(
+            {
+              folderPath: config.outlookEmailSync.folderPath,
+              mailbox: config.outlookEmailSync.mailbox,
+            },
+            new AzureClientSecretGraphTokenProvider(
+              config.outlookEmailSync.tenantId,
+              config.outlookEmailSync.clientId,
+              config.outlookEmailSync.clientSecret,
+            ),
+          ),
+        )
+      : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
       database,
       config.documents,
@@ -175,6 +198,7 @@ async function startApplication(): Promise<void> {
                 mcpDocumentImports,
                 emailLinksService,
                 jobEmailReconciliationService,
+                outlookEmailSyncService,
               ),
               {
                 audit: {
@@ -186,7 +210,7 @@ async function startApplication(): Promise<void> {
                   workspaceId: actor.workspaceId,
                 },
                 instructions:
-                  "This authenticated remote server is bound to one actor, workspace, and connection permission. Call get_tracker_context before using workspace data. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
+                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId; it performs all tracker and Microsoft Graph reads, linking, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector for that workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
                 logger,
               },
             ),
