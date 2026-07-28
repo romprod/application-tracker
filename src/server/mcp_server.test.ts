@@ -77,6 +77,13 @@ function fakeTools(): McpApplicationTools {
       },
       workspace: { name: "Applications", slug: "default" },
     })),
+    inspectJobPosting: vi.fn(() =>
+      Promise.resolve({
+        canonicalUrl: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+        reason: "blocked" as const,
+        status: "unavailable" as const,
+      }),
+    ),
     listApplications: vi.fn(() => ({
       applications: [],
       nextOffset: null,
@@ -97,6 +104,21 @@ function fakeTools(): McpApplicationTools {
       outcome: "none" as const,
     })),
     mergeApplications: vi.fn(),
+    resolveJobLinks: vi.fn(() =>
+      Promise.resolve({
+        candidates: [
+          {
+            externalPostingId: "4405273020",
+            host: "www.linkedin.com",
+            provider: "linkedin" as const,
+            redirectsFollowed: 0,
+            resolution: "deterministic" as const,
+            url: "https://www.linkedin.com/jobs/view/4405273020",
+          },
+        ],
+        tracking: { attempted: 0, resolved: 0, unavailable: [] },
+      }),
+    ),
     updateApplication: vi.fn(),
     upsertApplicationFromEmail: vi.fn(),
   };
@@ -139,10 +161,16 @@ describe("local MCP server", () => {
       "audit_duplicate_applications",
       "match_job_application_email",
       "extract_job_links",
+      "resolve_job_links",
+      "inspect_job_posting",
       "get_reference_data",
       "get_document_import_capabilities",
       "list_documents",
       "export_document_chunk",
+    ]);
+    const openWorldReadOnlyTools = new Set([
+      "resolve_job_links",
+      "inspect_job_posting",
     ]);
     const nonIdempotentWriteTools = new Set([
       "create_application",
@@ -155,7 +183,7 @@ describe("local MCP server", () => {
         expect(tool.annotations).toMatchObject({
           destructiveHint: false,
           idempotentHint: true,
-          openWorldHint: false,
+          openWorldHint: openWorldReadOnlyTools.has(tool.name),
           readOnlyHint: true,
         });
       } else {
@@ -296,6 +324,38 @@ describe("local MCP server", () => {
       ],
     });
 
+    const resolved = await client.callTool({
+      arguments: {
+        content:
+          "Apply at https://www.linkedin.com/jobs/view/4405273020?trackingId=email",
+      },
+      name: "resolve_job_links",
+    });
+    expect(resolved.isError).not.toBe(true);
+    expect(resolved.structuredContent).toMatchObject({
+      candidates: [
+        {
+          redirectsFollowed: 0,
+          resolution: "deterministic",
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+      ],
+      tracking: { attempted: 0, resolved: 0, unavailable: [] },
+    });
+
+    const inspected = await client.callTool({
+      arguments: {
+        url: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+      },
+      name: "inspect_job_posting",
+    });
+    expect(inspected.isError).not.toBe(true);
+    expect(inspected.structuredContent).toEqual({
+      canonicalUrl: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+      reason: "blocked",
+      status: "unavailable",
+    });
+
     const missing = await client.callTool({
       arguments: {
         applicationId: "11111111-1111-4111-8111-111111111111",
@@ -309,7 +369,7 @@ describe("local MCP server", () => {
         type: "text",
       },
     ]);
-    expect(record).toHaveBeenCalledTimes(7);
+    expect(record).toHaveBeenCalledTimes(9);
     expect(record).toHaveBeenNthCalledWith(1, {
       action: "get_tracker_context",
       actorUserId: "actor-user-1",
@@ -335,6 +395,22 @@ describe("local MCP server", () => {
       workspaceId: "workspace-1",
     });
     expect(record).toHaveBeenNthCalledWith(7, {
+      action: "resolve_job_links",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(8, {
+      action: "inspect_job_posting",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(9, {
       action: "get_application",
       actorUserId: "actor-user-1",
       result: "not_found",

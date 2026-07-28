@@ -18,6 +18,14 @@ import {
   type EmailLinkExtractionService,
 } from "./email_links.js";
 import {
+  type JobLinkResolutionResult,
+  JobLinkResolutionService,
+} from "./job_links.js";
+import {
+  type JobPostingInspectionResult,
+  JobPostingInspectionService,
+} from "./job_posting_inspection.js";
+import {
   type BeginMcpDocumentImportInput,
   type McpDocumentImportManager,
   type McpDocumentImportProgress,
@@ -43,12 +51,13 @@ import type {
   UpsertApplicationFromEmailInput,
 } from "../domain/job_email_reconciliation.js";
 import type { EmailLinkExtractionInput } from "../domain/email_links.js";
+import type { JobPostingInspectionInput } from "../domain/job_postings.js";
 import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
 import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 6;
+export const applicationMcpSchemaVersion = 7;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -62,6 +71,8 @@ export const applicationMcpToolNames = [
   "merge_applications",
   "match_job_application_email",
   "extract_job_links",
+  "resolve_job_links",
+  "inspect_job_posting",
   "get_reference_data",
   "get_document_import_capabilities",
   "list_documents",
@@ -344,12 +355,18 @@ export interface McpApplicationTools {
   getJobSearchSummary(): McpJobSearchSummary;
   getReferenceData(): McpReferenceData;
   getTrackerContext(): LocalMcpTrackerContext;
+  inspectJobPosting(
+    input: JobPostingInspectionInput,
+  ): Promise<JobPostingInspectionResult>;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
   listDocuments(input: { limit: number; offset: number }): McpDocumentList;
   matchJobApplicationEmail(
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult;
   mergeApplications(input: MergeApplicationsInput): ApplicationMergeResult;
+  resolveJobLinks(
+    input: EmailLinkExtractionInput,
+  ): Promise<JobLinkResolutionResult>;
   updateApplication(
     applicationId: string,
     input: UpdateApplicationInput,
@@ -423,6 +440,8 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly emailLinks: EmailLinkExtractionService,
     private readonly jobEmails?: JobEmailReconciliationService,
     private readonly clock: () => Date = () => new Date(),
+    private readonly jobLinkResolver = new JobLinkResolutionService(emailLinks),
+    private readonly jobPostingInspector = new JobPostingInspectionService(),
   ) {}
 
   public getTrackerContext(): LocalMcpTrackerContext {
@@ -555,6 +574,20 @@ export class ApplicationMcpService implements McpApplicationTools {
   ): McpEmailLinkCandidates {
     this.actorProvider.getActor();
     return { candidates: this.emailLinks.extract(input) };
+  }
+
+  public resolveJobLinks(
+    input: EmailLinkExtractionInput,
+  ): Promise<JobLinkResolutionResult> {
+    this.actorProvider.getActor();
+    return this.jobLinkResolver.resolve(input);
+  }
+
+  public inspectJobPosting(
+    input: JobPostingInspectionInput,
+  ): Promise<JobPostingInspectionResult> {
+    this.actorProvider.getActor();
+    return this.jobPostingInspector.inspect(input);
   }
 
   public getReferenceData(): McpReferenceData {

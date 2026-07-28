@@ -58,6 +58,7 @@ import {
 } from "../domain/applications.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
 import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
+import { jobPostingInspectionInputSchema } from "../domain/job_postings.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import {
   matchJobApplicationEmailSchema,
@@ -71,6 +72,10 @@ const readOnlyAnnotations = {
   idempotentHint: true,
   openWorldHint: false,
   readOnlyHint: true,
+} as const;
+const openWorldReadOnlyAnnotations = {
+  ...readOnlyAnnotations,
+  openWorldHint: true,
 } as const;
 const writeAnnotations = {
   destructiveHint: false,
@@ -274,6 +279,53 @@ const emailLinkCandidateSchema = z.strictObject({
 });
 const emailLinkCandidatesSchema = z.strictObject({
   candidates: z.array(emailLinkCandidateSchema).max(20),
+});
+const resolvedJobLinkCandidateSchema = emailLinkCandidateSchema.extend({
+  redirectsFollowed: z.number().int().min(0).max(3),
+  resolution: z.enum(["deterministic", "tracking_redirect"]),
+});
+const unavailableJobLinkSchema = z.strictObject({
+  host: z.string(),
+  reason: z.enum([
+    "fetch_failed",
+    "invalid_redirect",
+    "redirect_limit",
+    "redirect_not_allowed",
+    "unrecognized_destination",
+  ]),
+});
+const jobLinkResolutionResultSchema = z.strictObject({
+  candidates: z.array(resolvedJobLinkCandidateSchema).max(20),
+  tracking: z.strictObject({
+    attempted: z.number().int().min(0).max(5),
+    resolved: z.number().int().min(0).max(5),
+    unavailable: z.array(unavailableJobLinkSchema).max(5),
+  }),
+});
+const jobPostingUnavailableReasonSchema = z.enum([
+  "ambiguous_metadata",
+  "blocked",
+  "expired",
+  "fetch_failed",
+  "missing_structured_data",
+  "redirect_limit",
+  "unrecognized_url",
+]);
+const jobPostingInspectionResultSchema = z.strictObject({
+  applyUrl: z
+    .url({ protocol: /^https$/ })
+    .nullable()
+    .optional(),
+  canonicalUrl: z.url({ protocol: /^https$/ }).nullable(),
+  closingDate: z.iso.date().nullable().optional(),
+  description: z.string().max(20_000).nullable().optional(),
+  employer: z.string().max(160).nullable().optional(),
+  location: z.string().max(160).nullable().optional(),
+  reason: jobPostingUnavailableReasonSchema.optional(),
+  salary: z.string().max(160).nullable().optional(),
+  status: z.enum(["available", "unavailable"]),
+  title: z.string().max(160).nullable().optional(),
+  workArrangement: z.enum(["hybrid", "office", "remote"]).nullable().optional(),
 });
 const upsertApplicationFromEmailResultSchema = z.strictObject({
   action: z.enum(["created", "matched", "updated"]),
@@ -591,6 +643,30 @@ function executeTool(
     if (error instanceof InvalidJobPostingEvidenceError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("invalid_job_posting_evidence")
+        : failedToolResult("internal_error");
+    }
+    logger.error("mcp_tool_failed", { error, tool });
+    recordAuditEvent(audit, logger, tool, targetType, "error");
+    return failedToolResult("internal_error");
+  }
+}
+
+async function executeAsyncTool(
+  tool: McpAuditAction,
+  targetType: McpAuditTargetType,
+  logger: ApplicationLogger,
+  audit: McpServerAuditOptions | undefined,
+  operation: () => Promise<object>,
+): Promise<CallToolResult> {
+  try {
+    const value = await operation();
+    return recordAuditEvent(audit, logger, tool, targetType, "success")
+      ? successfulToolResult(value)
+      : failedToolResult("internal_error");
+  } catch (error) {
+    if (error instanceof LocalMcpActorUnavailableError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "denied")
+        ? failedToolResult("actor_unavailable")
         : failedToolResult("internal_error");
     }
     logger.error("mcp_tool_failed", { error, tool });
@@ -926,6 +1002,46 @@ export function createApplicationMcpServer(
     (input) =>
       executeTool("extract_job_links", "job_email", logger, options.audit, () =>
         tools.extractJobLinks(input),
+      ),
+  );
+
+  server.registerTool(
+    "resolve_job_links",
+    {
+      annotations: openWorldReadOnlyAnnotations,
+      description:
+        "Run the unchanged deterministic job-link extraction, then resolve only allowlisted HTTPS tracking hosts through public pinned IPs and bounded redirects. Return a candidate only when the final URL is recognized and canonicalized by the job-board provider registry.",
+      inputSchema: emailLinkExtractionInputSchema,
+      outputSchema: jobLinkResolutionResultSchema,
+      title: "Resolve job links",
+    },
+    (input) =>
+      executeAsyncTool(
+        "resolve_job_links",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.resolveJobLinks(input),
+      ),
+  );
+
+  server.registerTool(
+    "inspect_job_posting",
+    {
+      annotations: openWorldReadOnlyAnnotations,
+      description:
+        "Fetch one provider-registry-validated canonical HTTPS job posting through public pinned IPs and bounded redirects, then return only structured JobPosting metadata. Blocked, expired, missing, or ambiguous postings return unavailable instead of inferred details.",
+      inputSchema: jobPostingInspectionInputSchema,
+      outputSchema: jobPostingInspectionResultSchema,
+      title: "Inspect job posting",
+    },
+    (input) =>
+      executeAsyncTool(
+        "inspect_job_posting",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.inspectJobPosting(input),
       ),
   );
 

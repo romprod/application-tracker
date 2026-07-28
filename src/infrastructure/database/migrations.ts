@@ -28,6 +28,7 @@ import { mcpBulkApplicationUpdateAuditMigration } from "./migrations/023_mcp_bul
 import { mcpSchemaStatusAuditMigration } from "./migrations/024_mcp_schema_status_audit.js";
 import { applicationDetailsMigration } from "./migrations/025_application_details.js";
 import { applicationMergesMigration } from "./migrations/026_application_merges.js";
+import { mcpJobPostingToolsAuditMigration } from "./migrations/027_mcp_job_posting_tools_audit.js";
 
 export interface Migration {
   name: string;
@@ -75,6 +76,7 @@ export const applicationMigrations: readonly Migration[] = [
   mcpSchemaStatusAuditMigration,
   applicationDetailsMigration,
   applicationMergesMigration,
+  mcpJobPostingToolsAuditMigration,
 ];
 
 const createMigrationTable = `

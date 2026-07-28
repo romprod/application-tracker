@@ -8,6 +8,8 @@ this reference.
 - [Required sequence](#required-sequence)
 - [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
+- [Job-link resolution](#job-link-resolution)
+- [Job-posting inspection](#job-posting-inspection)
 - [Match input and result](#match-input-and-result)
 - [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
 - [Upsert input and idempotency](#upsert-input-and-idempotency)
@@ -23,9 +25,14 @@ this reference.
 2. Call `get_reference_data` and use only active, category-correct reference
    IDs from this workspace.
 3. Call `extract_job_links` when bounded email content contains posting links.
-4. Call `match_job_application_email` before a write.
-5. Call `upsert_application_from_email` for an authorized reconciliation.
-6. Call `get_application` for read-back verification.
+4. Call `resolve_job_links` with the same content to resolve supported tracking
+   links.
+5. Call `inspect_job_posting` for each canonical candidate under suitability
+   review.
+6. Assess suitability from structured fields only.
+7. Call `match_job_application_email` before a write.
+8. Call `upsert_application_from_email` for an authorized reconciliation.
+9. Call `get_application` for read-back verification.
 
 When duplicate consolidation is explicitly in scope, call
 `audit_duplicate_applications`, then call `merge_applications` in preview mode
@@ -81,9 +88,67 @@ deterministic targets such as supported Outlook Safe Links, Google redirects,
 Cord links, hackajob links, and Totaljobs return URLs.
 
 Opaque campaign, recruiter, account, search-result, and unsubscribe links are
-not candidates. Pass a trustworthy returned candidate to
-`match_job_application_email` as `posting.url`; do not decode rejected links or
-follow their redirects independently.
+not candidates. Do not decode rejected links or follow their redirects
+independently.
+
+## Job-link resolution
+
+`resolve_job_links` accepts the same bounded `content` as
+`extract_job_links`. It runs the existing deterministic extractor unchanged,
+then identifies at most five unresolved links whose exact host is on the
+server's tracking-domain allowlist. The initial allowlist contains
+`cts.indeed.com`.
+
+The resolver:
+
+- permits HTTPS on port 443 only;
+- rejects embedded URL credentials;
+- sends no authorization or cookie headers and keeps no cookie jar;
+- resolves DNS before each request, rejects any private, loopback, link-local,
+  documentation, multicast, reserved, or mixed public/private answer, and pins
+  the request to one validated public address;
+- follows at most three redirects and makes requests only to allowlisted
+  tracking hosts;
+- downloads no response body;
+- enforces a five-second resolution deadline and process-wide outbound
+  concurrency admission; and
+- accepts a destination only when `JobBoardProviderRegistry` recognizes and
+  canonicalizes it.
+
+The result contains up to 20 deduplicated `candidates`. Each includes the normal
+provider fields plus `resolution` (`deterministic` or `tracking_redirect`) and
+`redirectsFollowed`. `tracking` reports attempted and resolved counts plus
+bounded unavailable host and reason entries. It never returns tracking query
+tokens. Pass a trustworthy candidate to `inspect_job_posting` and then to
+`match_job_application_email` as `posting.url`.
+
+## Job-posting inspection
+
+`inspect_job_posting` accepts one HTTPS `url` up to 2,048 characters. The server
+first requires `JobBoardProviderRegistry` to recognize it, then fetches the
+registry's canonical URL. It applies the same credential-free, cookie-free,
+public-IP-pinned HTTPS boundary, a five-second total deadline, at most three
+redirects, and a 1 MiB response limit. Every redirect must also be recognized
+by the provider registry. Only HTML and XHTML responses are parsed.
+
+The inspector reads JSON-LD objects whose schema type is `JobPosting`. It
+returns `status: available`, the canonical URL, and nullable structured fields:
+
+- `employer`;
+- `title`;
+- `location`;
+- `salary`;
+- `workArrangement` (`remote`, `hybrid`, or `office`);
+- inert, whitespace-normalized `description` capped at 20,000 characters;
+- ISO `closingDate`; and
+- HTTPS `applyUrl`.
+
+Missing structured fields remain null. The inspector never fills them from
+visible page text or snippets. HTTP 404 or 410 and an elapsed `validThrough`
+return `status: unavailable` with `reason: expired`. Authentication,
+anti-bot, rate-limit, unsafe redirect, fetch, missing structured-data, and
+ambiguous-metadata outcomes also return `unavailable` with a stable reason
+instead of guessed metadata.
 
 ## Match input and result
 

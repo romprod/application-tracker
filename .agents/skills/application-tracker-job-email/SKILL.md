@@ -20,6 +20,8 @@ Require these Application Tracker MCP tools:
 - `get_tracker_context`;
 - `get_reference_data`;
 - `extract_job_links` when the email contains posting links;
+- `resolve_job_links` when email links may use supported tracking redirects;
+- `inspect_job_posting` before assessing or persisting a posting-only prospect;
 - `match_job_application_email`;
 - `get_application`; and
 - `upsert_application_from_email` for mutations.
@@ -83,6 +85,13 @@ this workflow. Do not treat a reconciliation request as authorization to merge
 records. Apply a duplicate merge only after the user explicitly approves the
 source, target, and every conflict resolution.
 
+Treat a general request to “process my Jobs folder” as authorization to run the
+bounded enrichment sequence for that folder and to create or update only
+worthwhile, inspected opportunities as `Prospect` records. It does not
+authorize marking messages read, moving or deleting mail, applying for a role,
+merging applications, deleting records, or changing an existing application
+to `Applied`.
+
 Read
 [references/current-mcp-contract.md](references/current-mcp-contract.md)
 before making tracker calls. Treat each live MCP schema as authoritative if it
@@ -119,32 +128,70 @@ opportunity, or irrelevant alert/marketing/account message.
 
 Do not create an application from a digest, recommendation, marketing message,
 security code, or account notification unless the user explicitly asks to
-track the opportunity. A job-board sender is not the employer. Do not infer an
+track the opportunity. “Process my Jobs folder” is that explicit instruction
+only for a specific posting that survives resolution, inspection, and
+suitability assessment. A job-board sender is not the employer. Do not infer an
 undisclosed employer from an agency or recruiter name.
 
-### 3. Extract identity without guessing
+### 3. Extract and resolve identity without guessing
 
 When the connector returns email text or HTML, call `extract_job_links` with
 that bounded content. The tool repairs narrowly recognized connector line
 wraps, unwraps only transparently encoded targets, and returns at most 20
-canonical candidates without making network requests. Pass a trustworthy
-candidate's `url` as `posting.url` to `match_job_application_email`; do not
-invent a provider or external posting ID from a rejected link.
+canonical candidates without making network requests.
+
+Next call `resolve_job_links` with the same bounded content. It preserves the
+existing deterministic extraction and may follow only its built-in allowlist
+of HTTPS tracking domains. It sends no cookies or credentials, pins public DNS
+results, and applies strict redirect, response-size, and timeout limits. Accept
+only the returned canonical candidates; the server rejects final destinations
+that `JobBoardProviderRegistry` does not recognize.
 
 Prefer a direct posting URL. Pass supported email click URLs only when their
 target is encoded transparently; the server owns provider-specific
 canonicalization. Supply `provider` plus `externalPostingId` without a URL only
 when both values are explicit and trustworthy.
 
-Do not fetch redirects, visit links, decode opaque tracking payloads, or use
-campaign, recruiter, account, search-result, or click IDs as posting IDs.
+Never fetch, browse, or decode a link independently. Do not use campaign,
+recruiter, account, search-result, or click IDs as posting IDs.
 
 Preserve the best explicit company and title for display. Normalize them only
 for comparison: Unicode-compatible case folding, collapsed whitespace, and
 standard apostrophes/dashes. Retain seniority, discipline, location qualifiers,
 and legal company suffixes.
 
-### 4. Match through the server
+### 4. Inspect and assess posting-only opportunities
+
+Call `inspect_job_posting` for each unique resolved canonical candidate that
+could become a prospect. Use only its structured `JobPosting` result:
+
+- employer and title;
+- location and working arrangement;
+- salary;
+- description;
+- closing date; and
+- apply URL.
+
+When the result is `unavailable`, make no prospect write and preserve the
+reported reason. Do not recover missing fields from visible page text, the
+email sender, snippets, or another URL. Require non-empty structured employer
+and title before creating a prospect.
+
+Assess suitability from explicit user criteria and the structured facts.
+Consider discipline and seniority, stated location or working arrangement,
+salary, role requirements, and closing date. Reject explicit mismatches and
+expired roles. When the available evidence is insufficient to decide, report
+the posting for review instead of persisting it. Never claim a role is suitable
+from unavailable or inferred metadata.
+
+For “process my Jobs folder,” continue automatically with each clearly
+worthwhile posting. Use `Prospect`, the active Job board source, the canonical
+posting URL, and only inspected location, salary, and working arrangement.
+Include the explicit apply URL as a related link when it differs from the
+canonical URL. Do not copy the full posting description into notes; retain at
+most a concise suitability rationale.
+
+### 5. Match through the server
 
 Call `match_job_application_email` with every trustworthy discriminator:
 
@@ -168,7 +215,7 @@ Handle the result exactly:
 Never choose between candidates using fuzzy title, recruiter, location, or
 date similarity.
 
-### 5. Handle duplicate consolidation as a separate action
+### 6. Handle duplicate consolidation as a separate action
 
 Keep duplicate handling separate from ordinary email reconciliation. For an
 `ambiguous` or `conflict` match, make no upsert. If the user asks to investigate
@@ -209,7 +256,7 @@ relationships, and retained source event count. Then rerun
 email upsert. Apply the upsert only if the original reconciliation request
 authorized it.
 
-### 6. Build the idempotent upsert
+### 7. Build the idempotent upsert
 
 Call `upsert_application_from_email` only after the intended create-or-update
 decision is clear. Supply:
@@ -227,7 +274,8 @@ after the user has explicitly verified the transition, and record a concrete
 reason; the server preserves that reason with immutable stage history.
 
 Use `Applied` only for clear submission or acknowledgement evidence. Use
-`Prospect` for a posting-only opportunity the user explicitly asked to track.
+`Prospect` for a worthwhile posting-only opportunity the user explicitly asked
+to track, including the bounded “process my Jobs folder” workflow.
 Set `appliedOn` only when the date is known. Select `sourceId` from active
 reference data, normally Job board or Recruiter, and set `sourceUrl` to the
 direct posting URL when appropriate.
@@ -251,7 +299,7 @@ tables. Workspace uniqueness on posting identity, canonical URL, and Message-ID
 prevents duplicate attribution. An exact retry is safe; do not fall back to
 generic create/update after an uncertain upsert result.
 
-### 7. Import a supported attachment
+### 8. Import a supported attachment
 
 Only import an attachment after the email has been matched to one intended
 application. List metadata first and retain the attachment ID, name, media
@@ -293,7 +341,7 @@ started, call `cancel_document_import` for its upload ID. Do not modify mailbox
 read state, move the message, or delete the source attachment. Remove the
 private temporary copy after successful verification.
 
-### 8. Verify and report
+### 9. Verify and report
 
 After a successful upsert, call `get_application` and verify:
 
@@ -305,6 +353,11 @@ After a successful upsert, call `get_application` and verify:
 Report matched, created, updated, skipped, ambiguous, conflicting, and failed
 counts. For each mutation, report the email subject or date, application ID,
 match level, and whether new posting or email evidence was linked.
+
+For automatic folder enrichment, also report resolved, inspected, suitable,
+unavailable, and not-suitable counts. Include each unavailable reason and a
+concise evidence-based rationale for each prospect persisted or held for
+review.
 
 For a duplicate merge, also report the source and target IDs, merge lineage ID,
 whether the call applied or returned an existing merge, every chosen field

@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26,
+        21, 22, 23, 24, 25, 26, 27,
       ]);
       expect(
         database
@@ -845,6 +845,24 @@ describe("migrateDatabase", () => {
           )
           .run("2026-07-19T12:06:00.000Z"),
       ).not.toThrow();
+      for (const [id, action, occurredAt] of [
+        ["audit-event-9", "resolve_job_links", "2026-07-19T12:07:00.000Z"],
+        ["audit-event-10", "inspect_job_posting", "2026-07-19T12:08:00.000Z"],
+      ]) {
+        expect(() =>
+          database
+            .prepare(
+              `INSERT INTO mcp_audit_events
+                 (id, workspace_id, actor_user_id, transport, action,
+                  target_type, result, occurred_at)
+               VALUES (
+                 ?, 'workspace-audit', 'user-audit',
+                 'remote_http', ?, 'job_email', 'success', ?
+               )`,
+            )
+            .run(id, action, occurredAt),
+        ).not.toThrow();
+      }
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();
@@ -1086,6 +1104,8 @@ describe("migrateDatabase", () => {
       expect(auditSql).toContain("match_job_application_email");
       expect(auditSql).toContain("upsert_application_from_email");
       expect(auditSql).toContain("extract_job_links");
+      expect(auditSql).toContain("resolve_job_links");
+      expect(auditSql).toContain("inspect_job_posting");
       expect(auditSql).toContain("job_email");
     } finally {
       database.close();
