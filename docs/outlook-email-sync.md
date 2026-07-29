@@ -110,6 +110,14 @@ connection for every call. A local stdio process must use the same SQLite
 database and receive the same `OUTLOOK_CONNECTION_ENCRYPTION_KEY` in its private
 process environment.
 
+Each connection also stores a nullable `lastReconciledAt` cursor. It is
+separate from connection verification: `verifiedAt` and `lastTestedAt`
+describe credential and route checks, while `lastReconciledAt` means every
+bounded message through that instant was processed successfully. Settings
+displays it as **Last reconciled**. Changing the tenant, application, mailbox,
+or folder resets the cursor; renaming the connection or rotating its secret
+for the same route preserves it.
+
 ## MCP behavior
 
 Once secure web storage is configured at the server, the tool remains
@@ -130,20 +138,40 @@ and exact stored Message-ID verification. A valid existing evidence row yields
 `already_linked`; the bounded folder search and scoring still run, but no second
 evidence row is added.
 
+For an incremental connection-wide pass, call only
+`reconcile_outlook_graph_connection` with `connection` set to the exact
+connection ID, name, or mailbox:
+
+```json
+{ "connection": "russ@sargeson.co.uk" }
+```
+
+The first run starts at the connection's creation time. Later runs start after
+the last successful cursor. The server reads at most 50 new messages, scores
+them against applications assigned to that connection, links only unique
+high-confidence Message-IDs, and stores the new cursor in the same transaction
+as the evidence and MCP audit event. Ambiguous, conflicting, marketing, and
+unmatched messages are reported without being linked. The mailbox remains
+read-only.
+
 Stable operational errors include:
 
-| Code                                  | Meaning                                        |
-| ------------------------------------- | ---------------------------------------------- |
-| `outlook_graph_connection_unassigned` | Application has no Graph origin                |
-| `outlook_email_sync_unavailable`      | Assigned connection is disabled                |
-| `outlook_folder_not_found`            | Configured child folder cannot be resolved     |
-| `outlook_mailbox_unavailable`         | Configured mailbox cannot be resolved          |
-| `outlook_graph_authentication_failed` | Tenant, client, or secret was rejected         |
-| `outlook_graph_forbidden`             | Graph or Exchange policy denied mail access    |
-| `outlook_graph_throttled`             | Bounded Graph retries exhausted after `429`    |
-| `outlook_graph_unavailable`           | Graph/network response was invalid or failed   |
-| `outlook_existing_evidence_limit`     | Application exceeds the validation bound       |
-| `outlook_email_verification_failed`   | Stored evidence failed transactional read-back |
+| Code                                    | Meaning                                        |
+| --------------------------------------- | ---------------------------------------------- |
+| `outlook_graph_connection_unassigned`   | Application has no Graph origin                |
+| `outlook_email_sync_unavailable`        | Assigned connection is disabled                |
+| `outlook_folder_not_found`              | Configured child folder cannot be resolved     |
+| `outlook_mailbox_unavailable`           | Configured mailbox cannot be resolved          |
+| `outlook_graph_authentication_failed`   | Tenant, client, or secret was rejected         |
+| `outlook_graph_forbidden`               | Graph or Exchange policy denied mail access    |
+| `outlook_graph_throttled`               | Bounded Graph retries exhausted after `429`    |
+| `outlook_graph_unavailable`             | Graph/network response was invalid or failed   |
+| `outlook_graph_connection_not_found`    | No exact ID, name, or mailbox matched          |
+| `outlook_graph_connection_ambiguous`    | Selector matched more than one connection      |
+| `outlook_graph_reconciliation_conflict` | Connection or cursor changed during the run    |
+| `outlook_reconcile_message_limit`       | More than 50 new messages were found           |
+| `outlook_existing_evidence_limit`       | Application exceeds the validation bound       |
+| `outlook_email_verification_failed`     | Stored evidence failed transactional read-back |
 
 `application_not_found`, `application_conflict`, `write_access_disabled`, and
 `actor_unavailable` retain their normal MCP meanings.
@@ -153,11 +181,13 @@ Stable operational errors include:
 The evidence tables store only the established bounded evidence fields: RFC
 Message-ID, received time, optional Outlook web URL, and persistence timestamps.
 The connection table stores names, tenant and application IDs, mailboxes,
-folders, lifecycle timestamps, enabled state, and client secrets encrypted with
-AES-256-GCM. Additional authenticated data binds each new ciphertext to its
+folders, lifecycle timestamps, the successful reconciliation cursor, enabled
+state, and client secrets encrypted with AES-256-GCM. Additional authenticated
+data binds each new ciphertext to its
 workspace, connection, tenant, and application IDs. The encryption key remains
 in the server environment. The server never stores Graph access tokens, message
-subjects, senders, headers, previews, or bodies. Candidate subject and sender
+subjects, senders, headers, previews, or bodies. The cursor is only an ISO
+timestamp, never a Graph token or message identifier. Candidate subject and sender
 values exist only in the tool result for the authorized invocation.
 
 Graph response bodies and credential failures are converted to stable error

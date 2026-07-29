@@ -72,6 +72,7 @@ import {
 } from "../domain/job_email_reconciliation.js";
 import { jobBoardProviderSchema } from "../domain/job_board.js";
 import { syncOutlookEmailEvidenceSchema } from "../domain/outlook_email_sync.js";
+import { reconcileOutlookGraphConnectionSchema } from "../domain/outlook_connection_reconciliation.js";
 import {
   OutlookEmailSyncOperationalError,
   OutlookEmailSyncVerificationError,
@@ -100,6 +101,10 @@ const idempotentWriteAnnotations = {
 } as const;
 const openWorldIdempotentWriteAnnotations = {
   ...idempotentWriteAnnotations,
+  openWorldHint: true,
+} as const;
+const openWorldWriteAnnotations = {
+  ...writeAnnotations,
   openWorldHint: true,
 } as const;
 const deleteAnnotations = {
@@ -403,6 +408,61 @@ const outlookEmailSyncResultSchema = z.strictObject({
     applicationReread: z.literal(true),
     evidenceStored: z.boolean(),
     storedMessageId: z.string().max(998).nullable(),
+  }),
+});
+const outlookConnectionReconciliationMessageSchema = z.strictObject({
+  application: z
+    .strictObject({
+      companyName: z.string(),
+      id: applicationIdSchema,
+      roleTitle: z.string(),
+    })
+    .nullable(),
+  candidateApplicationIds: z.array(applicationIdSchema).max(10),
+  classification: outlookEmailClassificationSchema.nullable(),
+  messageId: z.string().max(998).nullable(),
+  outcome: z.enum([
+    "already_linked",
+    "ambiguous",
+    "conflict",
+    "linked",
+    "no_match",
+  ]),
+  receivedAt: z.iso.datetime(),
+  score: z.number().int().nonnegative().nullable(),
+  sender: z.string().email().max(254).nullable(),
+  subject: z.string().max(255),
+});
+const outlookConnectionReconciliationResultSchema = z.strictObject({
+  connection: z.strictObject({
+    folderPath: z.string(),
+    id: z.uuid(),
+    mailbox: z.string().email().max(254),
+    name: z.string(),
+  }),
+  messages: z.array(outlookConnectionReconciliationMessageSchema).max(50),
+  reconciliation: z.strictObject({
+    alreadyLinked: z.number().int().nonnegative().max(50),
+    ambiguous: z.number().int().nonnegative().max(50),
+    assignedApplications: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative().max(50),
+    detailsRead: z.number().int().nonnegative().max(50),
+    linked: z.number().int().nonnegative().max(50),
+    messagesRetrieved: z.number().int().nonnegative().max(50),
+    noMatch: z.number().int().nonnegative().max(50),
+  }),
+  scoringVersion: z.number().int().positive(),
+  threshold: z.number().int().positive(),
+  verification: z.strictObject({
+    connectionReread: z.literal(true),
+    cursorStored: z.boolean(),
+    linkedMessageIds: z.array(z.string().max(998)).max(50),
+  }),
+  window: z.strictObject({
+    previousReconciledAt: z.iso.datetime().nullable(),
+    since: z.iso.datetime(),
+    storedLastReconciledAt: z.iso.datetime(),
+    through: z.iso.datetime(),
   }),
 });
 const jobEmailMatchCandidateSchema = z.strictObject({
@@ -1338,6 +1398,26 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "reconcile_outlook_graph_connection",
+    {
+      annotations: openWorldWriteAnnotations,
+      description:
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox; read only messages received after its last successful reconciliation; deterministically match them against applications assigned to that connection; link only unique high-confidence RFC Message-ID evidence; then atomically store and verify the new connection cursor. The tool never changes mailbox state.",
+      inputSchema: reconcileOutlookGraphConnectionSchema,
+      outputSchema: outlookConnectionReconciliationResultSchema,
+      title: "Reconcile Outlook Graph connection",
+    },
+    (input) =>
+      executePreparedWriteTool(
+        "reconcile_outlook_graph_connection",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.prepareReconcileOutlookGraphConnection(input),
+      ),
+  );
+
+  server.registerTool(
     "extract_job_links",
     {
       annotations: readOnlyAnnotations,
@@ -1697,7 +1777,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId; it performs all tracker and Microsoft Graph reads, linking, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector for that workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. Each tool performs all required tracker and Microsoft Graph reads, writes, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector around either workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

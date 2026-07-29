@@ -107,10 +107,11 @@ inspector are open-world because they make tightly constrained external HTTPS
 reads; every other read tool is closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
 destructive and requires `confirm=true`. Evidence linking, reconciliation,
-job-email upsert, Outlook synchronization, merging, and document-transfer
-mutations are non-read-only and idempotent. Outlook synchronization is also
-open-world because the server makes bounded Graph reads before its optional
-local write.
+job-email upsert, one-application Outlook synchronization, merging, and
+document-transfer mutations are non-read-only and idempotent. Connection-wide
+Outlook reconciliation is non-idempotent because every success advances its
+durable cursor. Both Outlook tools are open-world because the server makes
+bounded Graph reads before its optional local write.
 
 `resolve_job_links` issues requests only to its built-in tracking-host
 allowlist. `inspect_job_posting` accepts only URLs recognized by the provider
@@ -142,6 +143,13 @@ application read-back, existing-evidence validation, bounded candidate
 assessments, link outcome, and stored-evidence verification. The tool requires
 `read_write` because it may create an evidence link. See
 [`outlook-email-sync.md`](outlook-email-sync.md).
+
+To process new mail for one configured connection, call
+`reconcile_outlook_graph_connection` directly with `connection` set to its
+exact ID, name, or mailbox. Do not call `get_tracker_context`, a separate
+Microsoft 365 MCP, or the one-application tool around it. The result reports
+the previous and stored cursors, bounded per-message outcomes, link counts, and
+cursor verification.
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.

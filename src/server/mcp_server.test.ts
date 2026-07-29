@@ -133,6 +133,9 @@ function fakeTools(): McpApplicationTools {
     prepareSyncOutlookEmailEvidence: vi.fn(() =>
       Promise.reject(new Error("not configured")),
     ),
+    prepareReconcileOutlookGraphConnection: vi.fn(() =>
+      Promise.reject(new Error("not configured")),
+    ),
     reconcileApplicationFromEvidence: vi.fn(),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
@@ -201,6 +204,41 @@ function outlookSyncResult() {
   };
 }
 
+function outlookConnectionReconciliationResult() {
+  return {
+    connection: {
+      folderPath: "Inbox\\Jobs",
+      id: "22222222-2222-4222-8222-222222222222",
+      mailbox: "jobs@example.com",
+      name: "Work tenant",
+    },
+    messages: [],
+    reconciliation: {
+      alreadyLinked: 0,
+      ambiguous: 0,
+      assignedApplications: 12,
+      conflicts: 0,
+      detailsRead: 0,
+      linked: 0,
+      messagesRetrieved: 0,
+      noMatch: 0,
+    },
+    scoringVersion: 1,
+    threshold: 80,
+    verification: {
+      connectionReread: true as const,
+      cursorStored: true,
+      linkedMessageIds: [],
+    },
+    window: {
+      previousReconciledAt: "2026-07-29T10:00:00.000Z",
+      since: "2026-07-29T10:00:00.000Z",
+      storedLastReconciledAt: "2026-07-29T11:00:00.000Z",
+      through: "2026-07-29T11:00:00.000Z",
+    },
+  };
+}
+
 describe("local MCP server", () => {
   it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
@@ -252,13 +290,17 @@ describe("local MCP server", () => {
       "resolve_job_links",
       "inspect_job_posting",
     ]);
-    const openWorldWriteTools = new Set(["sync_outlook_email_evidence"]);
+    const openWorldWriteTools = new Set([
+      "sync_outlook_email_evidence",
+      "reconcile_outlook_graph_connection",
+    ]);
     const nonIdempotentWriteTools = new Set([
       "create_application",
       "update_application",
       "bulk_update_applications",
       "delete_application",
       "add_application_event",
+      "reconcile_outlook_graph_connection",
     ]);
     for (const tool of listed.tools) {
       if (readOnlyTools.has(tool.name)) {
@@ -539,6 +581,51 @@ describe("local MCP server", () => {
     expect(commit).toHaveBeenCalledOnce();
     expect(record).toHaveBeenCalledWith({
       action: "sync_outlook_email_evidence",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("reconciles one Graph connection by mailbox and audits its prepared commit", async () => {
+    const tools = fakeTools();
+    const commit = vi.fn(() => outlookConnectionReconciliationResult());
+    const prepare = vi.fn(() => Promise.resolve({ commit }));
+    tools.prepareReconcileOutlookGraphConnection = prepare;
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: { connection: "jobs@example.com" },
+      name: "reconcile_outlook_graph_connection",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(
+      outlookConnectionReconciliationResult(),
+    );
+    expect(prepare).toHaveBeenCalledWith({
+      connection: "jobs@example.com",
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(record).toHaveBeenCalledWith({
+      action: "reconcile_outlook_graph_connection",
       actorUserId: "actor-user-1",
       result: "success",
       targetType: "job_email",

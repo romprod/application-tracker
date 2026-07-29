@@ -7,6 +7,7 @@ this reference.
 
 - [Required sequence](#required-sequence)
 - [Server-side one-application Outlook sync](#server-side-one-application-outlook-sync)
+- [Server-side Graph connection reconciliation](#server-side-graph-connection-reconciliation)
 - [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
 - [Job-link resolution](#job-link-resolution)
@@ -29,6 +30,11 @@ For one existing application's Outlook evidence, call only
 separate Outlook/MS365 MCP before or after it. The single tool performs its own
 application read, Graph work, evidence write, application re-read, and storage
 verification.
+
+For new evidence across one configured Graph connection, call only
+`reconcile_outlook_graph_connection` with its exact ID, name, or mailbox. Do not
+call `get_tracker_context`, list applications, lower-level evidence tools, or a
+separate Outlook/MS365 MCP around it.
 
 Use the following sequence only for broader Jobs-folder enrichment, creation,
 updates, or attachment import that is outside the dedicated one-application
@@ -117,6 +123,33 @@ Outlook web URL, and evidence timestamps. Each workspace connection record
 contains its non-secret route metadata and an encrypted client secret. The
 server does not store Graph access tokens, plaintext secrets, subjects, senders,
 headers, previews, or bodies.
+
+## Server-side Graph connection reconciliation
+
+`reconcile_outlook_graph_connection` accepts one strict object:
+
+- `connection`, an exact configured connection ID, name, or mailbox.
+
+It requires connection-bound `read_write` access. The server resolves one
+enabled connection, starts after its last-successful cursor (or its creation
+timestamp on the first run), lists at most 50 messages through a fixed run
+timestamp, reads their full details, and deterministically scores each against
+applications assigned to that connection. Only one unique high-confidence
+application may receive a Message-ID. Existing, ambiguous, conflicting,
+marketing, and unmatched mail is reported without a new link.
+
+Evidence links, the new cursor, and the immutable MCP audit event commit
+atomically after Graph reads. The result contains the connection,
+previous/since/through/stored cursor window, per-message outcomes and bounded
+identity metadata, aggregate counts, scoring version and threshold, and
+connection/cursor/link verification. It never changes mailbox state, creates
+opportunities, or changes application fields or status.
+
+If more than 50 messages fall in the window, the tool returns
+`outlook_reconcile_message_limit` without advancing the cursor. Other stable
+connection-specific errors are `outlook_graph_connection_not_found`,
+`outlook_graph_connection_ambiguous`, and
+`outlook_graph_reconciliation_conflict`, in addition to normal Graph errors.
 
 ## Microsoft 365 connector discovery
 

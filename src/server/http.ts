@@ -25,6 +25,7 @@ import { CompositeRemoteMcpAuthorizer } from "../application/mcp_remote_auth.js"
 import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
+import { OutlookConnectionReconciliationService } from "../application/outlook_connection_reconciliation.js";
 import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -77,6 +78,7 @@ async function startApplication(): Promise<void> {
       applicationsService,
       (operation) => database.transaction(operation).immediate(),
     );
+    const emailLinksService = new EmailLinkExtractionService();
     const outlookGraphConnectionsService = config.outlookConnectionEncryptionKey
       ? new OutlookGraphConnectionsService(
           new SqliteOutlookGraphConnectionsRepository(database),
@@ -90,10 +92,19 @@ async function startApplication(): Promise<void> {
       ? new OutlookEmailSyncService(
           applicationsService,
           jobEmailReconciliationService,
-          new EmailLinkExtractionService(),
+          emailLinksService,
           outlookGraphConnectionsService,
         )
       : undefined;
+    const outlookConnectionReconciliationService =
+      outlookGraphConnectionsService && outlookEmailSyncService
+        ? new OutlookConnectionReconciliationService(
+            applicationsService,
+            jobEmailReconciliationService,
+            outlookEmailSyncService,
+            outlookGraphConnectionsService,
+          )
+        : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
       database,
       config.documents,
@@ -102,7 +113,6 @@ async function startApplication(): Promise<void> {
       documentsRepository,
       config.documents,
     );
-    const emailLinksService = new EmailLinkExtractionService();
     const documentPreviewService = new DocumentPreviewService(
       documentsRepository,
       new SqliteDocumentPreviewsRepository(database),
@@ -198,6 +208,7 @@ async function startApplication(): Promise<void> {
                 emailLinksService,
                 jobEmailReconciliationService,
                 outlookEmailSyncService,
+                outlookConnectionReconciliationService,
               ),
               {
                 audit: {
@@ -209,7 +220,7 @@ async function startApplication(): Promise<void> {
                   workspaceId: actor.workspaceId,
                 },
                 instructions:
-                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId; it performs all tracker and Microsoft Graph reads, linking, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector for that workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
+                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. Each tool performs all required tracker and Microsoft Graph reads, writes, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector around either workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
                 logger,
               },
             ),

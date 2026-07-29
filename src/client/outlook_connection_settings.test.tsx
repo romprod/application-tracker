@@ -16,6 +16,7 @@ const connection: OutlookGraphConnection = {
   folderPath: "Inbox\\Jobs",
   id: "33333333-3333-4333-8333-333333333333",
   lastErrorCode: null,
+  lastReconciledAt: null,
   lastTestedAt: "2026-07-28T10:00:00.000Z",
   mailbox: "jobs@example.com",
   name: "Work tenant",
@@ -165,6 +166,7 @@ describe("OutlookConnectionSettings", () => {
 
     expect(await screen.findByText("Work tenant")).toBeInTheDocument();
     expect(screen.getByText("2 applications")).toBeInTheDocument();
+    expect(screen.getByText("Not yet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Disable" }));
     await waitFor(() =>
       expect(graph.setEnabled).toHaveBeenCalledWith(connection.id, false),

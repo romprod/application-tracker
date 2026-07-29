@@ -96,7 +96,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
       ]);
       expect(
         database
@@ -123,6 +123,7 @@ describe("migrateDatabase", () => {
         "created_at",
         "updated_at",
         "updated_by_user_id",
+        "last_reconciled_at",
       ]);
       expect(
         database
@@ -980,6 +981,11 @@ describe("migrateDatabase", () => {
           "audit-event-11",
           "sync_outlook_email_evidence",
           "2026-07-19T12:09:00.000Z",
+        ],
+        [
+          "audit-event-12",
+          "reconcile_outlook_graph_connection",
+          "2026-07-19T12:10:00.000Z",
         ],
       ]) {
         expect(() =>

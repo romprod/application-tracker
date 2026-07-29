@@ -32,6 +32,7 @@ const selectConnection = `
     connections.verified_at AS verifiedAt,
     connections.last_tested_at AS lastTestedAt,
     connections.last_error_code AS lastErrorCode,
+    connections.last_reconciled_at AS lastReconciledAt,
     connections.created_at AS createdAt,
     connections.updated_at AS updatedAt,
     (
@@ -121,9 +122,9 @@ export class SqliteOutlookGraphConnectionsRepository implements OutlookGraphConn
         `INSERT INTO outlook_graph_connections
            (id, workspace_id, name, tenant_id, client_id,
             client_secret_encrypted, mailbox, folder_path, enabled,
-            verified_at, last_tested_at, last_error_code, created_at,
+            verified_at, last_tested_at, last_error_code, last_reconciled_at, created_at,
             updated_at, updated_by_user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            tenant_id = excluded.tenant_id,
@@ -135,6 +136,7 @@ export class SqliteOutlookGraphConnectionsRepository implements OutlookGraphConn
            verified_at = excluded.verified_at,
            last_tested_at = excluded.last_tested_at,
            last_error_code = excluded.last_error_code,
+           last_reconciled_at = excluded.last_reconciled_at,
            updated_at = excluded.updated_at,
            updated_by_user_id = excluded.updated_by_user_id
          WHERE outlook_graph_connections.workspace_id = excluded.workspace_id`,
@@ -152,6 +154,7 @@ export class SqliteOutlookGraphConnectionsRepository implements OutlookGraphConn
         input.verifiedAt,
         input.lastTestedAt,
         input.lastErrorCode,
+        input.lastReconciledAt,
         input.createdAt,
         input.updatedAt,
         input.updatedByUserId,
@@ -199,6 +202,34 @@ export class SqliteOutlookGraphConnectionsRepository implements OutlookGraphConn
         );
     }
     return this.find(input.workspaceId, input.connectionId);
+  }
+
+  public recordReconciliation(input: {
+    connectionId: string;
+    expectedLastReconciledAt: string | null;
+    expectedUpdatedAt: string;
+    reconciledAt: string;
+    workspaceId: string;
+  }): StoredOutlookGraphConnection | undefined {
+    const updated = this.database
+      .prepare(
+        `UPDATE outlook_graph_connections
+         SET last_reconciled_at = ?
+         WHERE workspace_id = ?
+           AND id = ?
+           AND updated_at = ?
+           AND last_reconciled_at IS ?`,
+      )
+      .run(
+        input.reconciledAt,
+        input.workspaceId,
+        input.connectionId,
+        input.expectedUpdatedAt,
+        input.expectedLastReconciledAt,
+      );
+    return updated.changes === 1
+      ? this.find(input.workspaceId, input.connectionId)
+      : undefined;
   }
 
   public setEnabled(input: {

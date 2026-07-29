@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   OutlookEmailSyncOperationalError,
+  maximumOutlookReconciliationMessages,
   maximumOutlookSearchCandidates,
   type OutlookEvidenceValidationInput,
   type OutlookExistingEvidenceValidation,
@@ -148,7 +149,7 @@ function mailAddress(
 
 function messageSummary(
   message: GraphMessage,
-  searchKind: OutlookSearchKind,
+  searchKind?: OutlookSearchKind,
 ): OutlookMailMessageSummary {
   return {
     bodyPreview: message.bodyPreview ?? "",
@@ -156,7 +157,7 @@ function messageSummary(
     id: message.id,
     internetMessageId: message.internetMessageId?.trim() || null,
     receivedAt: new Date(message.receivedDateTime).toISOString(),
-    searchKinds: [searchKind],
+    searchKinds: searchKind ? [searchKind] : [],
     subject: (message.subject ?? "").slice(0, 255),
     webUrl: normalizedWebUrl(message.webLink),
   };
@@ -408,6 +409,53 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
       })
       .slice(0, maximumOutlookSearchCandidates);
     return { messages, queriesRun: queries.length };
+  }
+
+  public async listMessagesReceivedBetween(input: {
+    after: string;
+    through: string;
+  }): Promise<{
+    messages: OutlookMailMessageSummary[];
+    truncated: boolean;
+  }> {
+    const folderId = await this.resolveFolderId();
+    const parameters = new URLSearchParams({
+      $filter: `receivedDateTime gt ${input.after} and receivedDateTime le ${input.through}`,
+      $orderby: "receivedDateTime asc",
+      $select:
+        "id,internetMessageId,subject,from,receivedDateTime,webLink,bodyPreview,parentFolderId",
+      $top: String(maximumOutlookReconciliationMessages + 1),
+    });
+    let page: z.infer<typeof graphMessagePageSchema>;
+    try {
+      page = await this.request(
+        `users/${encodeURIComponent(this.config.mailbox)}/mailFolders/${encodeURIComponent(folderId)}/messages?${parameters.toString()}`,
+        graphMessagePageSchema,
+        graphMetadataResponseBytes,
+      );
+    } catch (error) {
+      if (error instanceof GraphResourceNotFoundError) {
+        this.folderId = undefined;
+        throw new OutlookEmailSyncOperationalError("outlook_folder_not_found");
+      }
+      throw error;
+    }
+    const messages = page.value
+      .map((message) => messageSummary(message))
+      .sort((left, right) => {
+        const receivedDifference =
+          Date.parse(left.receivedAt) - Date.parse(right.receivedAt);
+        if (receivedDifference !== 0) return receivedDifference;
+        return (left.internetMessageId ?? left.id).localeCompare(
+          right.internetMessageId ?? right.id,
+        );
+      });
+    return {
+      messages: messages.slice(0, maximumOutlookReconciliationMessages),
+      truncated:
+        messages.length > maximumOutlookReconciliationMessages ||
+        page["@odata.nextLink"] !== undefined,
+    };
   }
 
   public async getMessages(ids: string[]): Promise<OutlookMailMessageDetail[]> {

@@ -35,6 +35,17 @@ this tool. The Application Tracker server performs the complete read, Graph,
 write, and read-back sequence. The call itself enforces actor, workspace, and
 `read_write` permission.
 
+For new-message evidence across one configured Graph connection, require only:
+
+- `reconcile_outlook_graph_connection`.
+
+Call it exactly once with `connection` set to the exact connection ID, name, or
+mailbox supplied by the user. Do not call `get_tracker_context`, list
+applications, lower-level matching or linking tools, an Outlook plugin, or a
+Microsoft 365 MCP around it. The server owns the last-successful cursor,
+bounded Graph reads, deterministic matching against assigned applications,
+evidence persistence, cursor update, audit, and verification.
+
 For broader folder enrichment or connector-based reconciliation, require these
 Application Tracker MCP tools:
 
@@ -163,6 +174,34 @@ Inbox child folder, retains at most 20 candidates, reads at most five full
 messages, and applies a versioned deterministic confidence threshold. It never
 changes mailbox state or stores subjects, senders, bodies, tokens, or
 credentials in SQLite.
+
+## Server-side connection reconciliation
+
+Use this path when the user asks to recheck one named Graph connection or
+mailbox for new evidence since its last successful pass.
+
+1. Call `reconcile_outlook_graph_connection` exactly once with only
+   `connection`.
+2. Treat every message outcome exactly: `linked`, `already_linked`, `no_match`,
+   `ambiguous`, or `conflict`.
+3. Confirm success only when `verification.connectionReread` and
+   `verification.cursorStored` are true and
+   `window.storedLastReconciledAt` equals `window.through`.
+4. Report the previous and stored cursors, assigned-application and bounded
+   message counts, linked Message-IDs, and every ambiguous or conflicting
+   message.
+5. Stop on the normal Graph errors plus
+   `outlook_graph_connection_not_found`,
+   `outlook_graph_connection_ambiguous`,
+   `outlook_graph_reconciliation_conflict`, or
+   `outlook_reconcile_message_limit`. Do not fall back to another connector.
+
+The first pass starts at the connection creation timestamp. Each successful
+pass reads and inspects at most 50 new messages and advances the cursor only in
+the same transaction as evidence links and the MCP audit event. It never
+changes mailbox state, creates opportunities, changes application fields or
+statuses, or stores subjects, senders, bodies, tokens, or credentials in
+SQLite.
 
 ## Connector-orchestrated broader workflow
 

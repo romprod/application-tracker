@@ -152,10 +152,19 @@ evidence. Use the single sync_outlook_email_evidence tool and do not call a
 separate Outlook or Microsoft 365 connector.
 ```
 
-That tool reads the application, validates existing evidence, searches the
-configured `Inbox\Jobs` folder, retrieves and scores a bounded shortlist, links
-only a sufficiently confident RFC Message-ID, and verifies the stored evidence
-before returning. See the
+To process only new mail since a connection's last successful pass:
+
+```text
+Recheck the russ@sargeson.co.uk Graph connection for new job-search emails
+since its last successful reconciliation. Use only
+reconcile_outlook_graph_connection and report every linked, ambiguous,
+conflicting, and unmatched message.
+```
+
+The one-application tool reads the application, validates existing evidence,
+searches the configured `Inbox\Jobs` folder, retrieves and scores a bounded
+shortlist, links only a sufficiently confident RFC Message-ID, and verifies the
+stored evidence before returning. See the
 [operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill

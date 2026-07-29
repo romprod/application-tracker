@@ -140,6 +140,52 @@ describe("MicrosoftGraphOutlookMailReader", () => {
     ).toHaveLength(2);
   });
 
+  it("lists a bounded chronological reconciliation window without reading bodies", async () => {
+    const requested: URL[] = [];
+    const fetcher = vi.fn((input: string | URL | Request) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input.toString(),
+      );
+      requested.push(url);
+      if (url.pathname.includes("/childFolders")) {
+        return resolvedJsonResponse({
+          value: [{ displayName: "Jobs", id: "jobs-folder" }],
+        });
+      }
+      return resolvedJsonResponse({
+        value: [
+          graphMessage({
+            id: "message-2",
+            internetMessageId: "<message-2@example.com>",
+            receivedDateTime: "2026-07-21T16:30:00.000Z",
+          }),
+          graphMessage(),
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await reader(fetcher).listMessagesReceivedBetween({
+      after: "2026-07-21T15:00:00.000Z",
+      through: "2026-07-21T17:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      messages: [
+        { id: "message-1", searchKinds: [] },
+        { id: "message-2", searchKinds: [] },
+      ],
+      truncated: false,
+    });
+    const request = requested.find(({ pathname }) =>
+      pathname.includes("/mailFolders/jobs-folder/messages"),
+    );
+    expect(request?.searchParams.get("$filter")).toBe(
+      "receivedDateTime gt 2026-07-21T15:00:00.000Z and receivedDateTime le 2026-07-21T17:00:00.000Z",
+    );
+    expect(request?.searchParams.get("$orderby")).toBe("receivedDateTime asc");
+    expect(request?.searchParams.get("$select")).not.toContain("body,");
+  });
+
   it("validates stored evidence by exact RFC Message-ID and received time", async () => {
     const filters: string[] = [];
     const fetcher = vi.fn((input: string | URL | Request) => {

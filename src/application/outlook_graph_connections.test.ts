@@ -52,6 +52,8 @@ function harness() {
   };
   const reader: OutlookMailReader = {
     getMessages: () => Promise.resolve([]),
+    listMessagesReceivedBetween: () =>
+      Promise.resolve({ messages: [], truncated: false }),
     searchMessages: () => Promise.resolve({ messages: [], queriesRun: 0 }),
     validateEvidence: () => Promise.resolve([]),
   };
@@ -295,6 +297,45 @@ describe("OutlookGraphConnectionsService", () => {
       await expect(
         service.setEnabled(member, connectionId, false),
       ).rejects.toBeInstanceOf(OutlookGraphConnectionForbiddenError);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves the reconciliation cursor for label edits and resets it when the mail route changes", async () => {
+    const { actor, database, repository, service } = harness();
+    try {
+      const created = await service.create(actor, input);
+      const connection = repository.find(
+        actor.workspaceId,
+        created.connections[0]!.id,
+      )!;
+      repository.recordReconciliation({
+        connectionId: connection.id,
+        expectedLastReconciledAt: null,
+        expectedUpdatedAt: connection.updatedAt,
+        reconciledAt: "2026-07-28T11:00:00.000Z",
+        workspaceId: actor.workspaceId,
+      });
+
+      await service.update(actor, connection.id, {
+        ...input,
+        clientSecret: undefined,
+        name: "Renamed tenant",
+      });
+      expect(repository.find(actor.workspaceId, connection.id)).toMatchObject({
+        lastReconciledAt: "2026-07-28T11:00:00.000Z",
+      });
+
+      await service.update(actor, connection.id, {
+        ...input,
+        clientSecret: undefined,
+        folderPath: "Inbox\\Recruiting",
+        name: "Renamed tenant",
+      });
+      expect(repository.find(actor.workspaceId, connection.id)).toMatchObject({
+        lastReconciledAt: null,
+      });
     } finally {
       database.close();
     }

@@ -51,6 +51,7 @@ describe("SqliteOutlookGraphConnectionsRepository", () => {
         folderPath: "Inbox\\Jobs",
         id: connectionId,
         lastErrorCode: null,
+        lastReconciledAt: null,
         lastTestedAt: createdAt,
         mailbox: "jobs@example.com",
         name: "Work tenant",
@@ -70,6 +71,7 @@ describe("SqliteOutlookGraphConnectionsRepository", () => {
         folderPath: "Inbox\\Jobs",
         id: connectionId,
         lastErrorCode: null,
+        lastReconciledAt: null,
         lastTestedAt: createdAt,
         mailbox: "jobs@example.com",
         name: "Work tenant",
@@ -94,6 +96,26 @@ describe("SqliteOutlookGraphConnectionsRepository", () => {
         lastTestedAt: "2026-07-28T11:05:00.000Z",
         verifiedAt: createdAt,
       });
+      expect(
+        repository.recordReconciliation({
+          connectionId,
+          expectedLastReconciledAt: null,
+          expectedUpdatedAt: createdAt,
+          reconciledAt: "2026-07-28T11:06:00.000Z",
+          workspaceId: alpha.workspaceId,
+        }),
+      ).toMatchObject({
+        lastReconciledAt: "2026-07-28T11:06:00.000Z",
+      });
+      expect(
+        repository.recordReconciliation({
+          connectionId,
+          expectedLastReconciledAt: null,
+          expectedUpdatedAt: createdAt,
+          reconciledAt: "2026-07-28T11:07:00.000Z",
+          workspaceId: alpha.workspaceId,
+        }),
+      ).toBeUndefined();
 
       repository.setEnabled({
         connectionId,

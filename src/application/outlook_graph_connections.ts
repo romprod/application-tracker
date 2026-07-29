@@ -20,6 +20,7 @@ export interface OutlookGraphConnection {
   folderPath: string;
   id: string;
   lastErrorCode: string | null;
+  lastReconciledAt: string | null;
   lastTestedAt: string;
   mailbox: string;
   name: string;
@@ -56,6 +57,7 @@ export interface SaveOutlookGraphConnectionRecord {
   folderPath: string;
   id: string;
   lastErrorCode: null;
+  lastReconciledAt: string | null;
   lastTestedAt: string;
   mailbox: string;
   name: string;
@@ -81,6 +83,13 @@ export interface OutlookGraphConnectionsRepository {
     name: string,
   ): StoredOutlookGraphConnection | undefined;
   list(workspaceId: string): StoredOutlookGraphConnection[];
+  recordReconciliation(input: {
+    connectionId: string;
+    expectedLastReconciledAt: string | null;
+    expectedUpdatedAt: string;
+    reconciledAt: string;
+    workspaceId: string;
+  }): StoredOutlookGraphConnection | undefined;
   recordVerification(input: {
     connectionId: string;
     errorCode: string | null;
@@ -125,6 +134,20 @@ export interface OutlookGraphRuntimeConnection {
   folderPath: string[];
   mailbox: string;
   tenantId: string;
+}
+
+export interface OutlookGraphReconciliationTarget {
+  connection: Pick<
+    StoredOutlookGraphConnection,
+    | "createdAt"
+    | "folderPath"
+    | "id"
+    | "lastReconciledAt"
+    | "mailbox"
+    | "name"
+    | "updatedAt"
+  >;
+  mail: OutlookMailReader;
 }
 
 export class OutlookGraphConnectionForbiddenError extends Error {
@@ -198,6 +221,7 @@ function publicConnection(
     folderPath: connection.folderPath,
     id: connection.id,
     lastErrorCode: connection.lastErrorCode,
+    lastReconciledAt: connection.lastReconciledAt,
     lastTestedAt: connection.lastTestedAt,
     mailbox: connection.mailbox,
     name: connection.name,
@@ -258,6 +282,7 @@ export class OutlookGraphConnectionsService implements OutlookMailReaderProvider
       folderPath: input.folderPath,
       id,
       lastErrorCode: null,
+      lastReconciledAt: null,
       lastTestedAt: now,
       mailbox: input.mailbox,
       name: input.name,
@@ -304,6 +329,14 @@ export class OutlookGraphConnectionsService implements OutlookMailReaderProvider
       folderPath: input.folderPath,
       id: existing.id,
       lastErrorCode: null,
+      lastReconciledAt:
+        existing.tenantId === input.tenantId &&
+        existing.clientId === input.clientId &&
+        existing.mailbox.toLocaleLowerCase("en") ===
+          input.mailbox.toLocaleLowerCase("en") &&
+        existing.folderPath === input.folderPath
+          ? existing.lastReconciledAt
+          : null,
       lastTestedAt: now,
       mailbox: input.mailbox,
       name: input.name,
@@ -434,6 +467,80 @@ export class OutlookGraphConnectionsService implements OutlookMailReaderProvider
         "outlook_email_sync_unavailable",
       );
     }
+  }
+
+  public forReconciliation(
+    workspaceId: string,
+    selector: string,
+  ): OutlookGraphReconciliationTarget {
+    const normalized = selector.trim().toLocaleLowerCase("en");
+    const matches = this.repository
+      .list(workspaceId)
+      .filter(
+        (connection) =>
+          connection.id.toLocaleLowerCase("en") === normalized ||
+          connection.name.toLocaleLowerCase("en") === normalized ||
+          connection.mailbox.toLocaleLowerCase("en") === normalized,
+      );
+    if (matches.length === 0) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_graph_connection_not_found",
+      );
+    }
+    if (matches.length !== 1) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_graph_connection_ambiguous",
+      );
+    }
+    const connection = matches[0]!;
+    if (!connection.enabled) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    let mail: OutlookMailReader;
+    try {
+      mail = this.adapter.createReader(
+        this.runtimeStoredConnection(workspaceId, connection),
+      );
+    } catch {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    if (!mail.listMessagesReceivedBetween) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    return {
+      connection: {
+        createdAt: connection.createdAt,
+        folderPath: connection.folderPath,
+        id: connection.id,
+        lastReconciledAt: connection.lastReconciledAt,
+        mailbox: connection.mailbox,
+        name: connection.name,
+        updatedAt: connection.updatedAt,
+      },
+      mail,
+    };
+  }
+
+  public recordSuccessfulReconciliation(input: {
+    connectionId: string;
+    expectedLastReconciledAt: string | null;
+    expectedUpdatedAt: string;
+    reconciledAt: string;
+    workspaceId: string;
+  }): StoredOutlookGraphConnection {
+    const connection = this.repository.recordReconciliation(input);
+    if (!connection) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_graph_reconciliation_conflict",
+      );
+    }
+    return connection;
   }
 
   private decrypt(

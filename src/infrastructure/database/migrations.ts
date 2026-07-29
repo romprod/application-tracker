@@ -33,6 +33,7 @@ import { mcpReconciliationToolsAuditMigration } from "./migrations/028_mcp_recon
 import { mcpOutlookEmailSyncAuditMigration } from "./migrations/029_mcp_outlook_email_sync_audit.js";
 import { outlookGraphConnectionsMigration } from "./migrations/030_outlook_graph_connections.js";
 import { multipleOutlookGraphConnectionsMigration } from "./migrations/031_multiple_outlook_graph_connections.js";
+import { outlookConnectionReconciliationMigration } from "./migrations/032_outlook_connection_reconciliation.js";
 
 export interface Migration {
   name: string;
@@ -85,6 +86,7 @@ export const applicationMigrations: readonly Migration[] = [
   mcpOutlookEmailSyncAuditMigration,
   outlookGraphConnectionsMigration,
   multipleOutlookGraphConnectionsMigration,
+  outlookConnectionReconciliationMigration,
 ];
 
 const createMigrationTable = `
