@@ -13,6 +13,7 @@ const connection = {
   folderPath: "Inbox\\Jobs",
   id: "33333333-3333-4333-8333-333333333333",
   lastErrorCode: null,
+  lastReconciledAt: null,
   lastTestedAt: "2026-07-28T10:00:00.000Z",
   mailbox: "jobs@example.com",
   name: "Work tenant",

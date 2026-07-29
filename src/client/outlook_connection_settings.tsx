@@ -545,6 +545,14 @@ export function OutlookConnectionSettings({
                   <dd>{formattedTime(connection.verifiedAt)}</dd>
                 </div>
                 <div>
+                  <dt>Last reconciled</dt>
+                  <dd>
+                    {connection.lastReconciledAt
+                      ? formattedTime(connection.lastReconciledAt)
+                      : "Not yet"}
+                  </dd>
+                </div>
+                <div>
                   <dt>Last test</dt>
                   <dd>
                     {connection.lastErrorCode

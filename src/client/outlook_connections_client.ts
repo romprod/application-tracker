@@ -8,6 +8,7 @@ export interface OutlookGraphConnection {
   folderPath: string;
   id: string;
   lastErrorCode: string | null;
+  lastReconciledAt: string | null;
   lastTestedAt: string;
   mailbox: string;
   name: string;
@@ -100,6 +101,8 @@ function parseConnection(value: unknown): OutlookGraphConnection {
     typeof value.folderPath !== "string" ||
     typeof value.id !== "string" ||
     (value.lastErrorCode !== null && typeof value.lastErrorCode !== "string") ||
+    (value.lastReconciledAt !== null &&
+      !validTimestamp(value.lastReconciledAt)) ||
     !validTimestamp(value.lastTestedAt) ||
     typeof value.mailbox !== "string" ||
     typeof value.name !== "string" ||
@@ -119,6 +122,7 @@ function parseConnection(value: unknown): OutlookGraphConnection {
     folderPath: value.folderPath,
     id: value.id,
     lastErrorCode: value.lastErrorCode,
+    lastReconciledAt: value.lastReconciledAt,
     lastTestedAt: value.lastTestedAt,
     mailbox: value.mailbox,
     name: value.name,

@@ -22,6 +22,7 @@ export const outlookEmailSyncThreshold = 80;
 export const maximumExistingOutlookEvidence = 20;
 export const maximumOutlookSearchCandidates = 20;
 export const maximumOutlookMessageDetails = 5;
+export const maximumOutlookReconciliationMessages = 50;
 
 export type OutlookEmailClassification =
   | "account_or_security"
@@ -113,8 +114,21 @@ export interface OutlookMailSearchResult {
   queriesRun: number;
 }
 
+export interface OutlookMailReconciliationWindow {
+  after: string;
+  through: string;
+}
+
+export interface OutlookMailReconciliationResult {
+  messages: OutlookMailMessageSummary[];
+  truncated: boolean;
+}
+
 export interface OutlookMailReader {
   getMessages(ids: string[]): Promise<OutlookMailMessageDetail[]>;
+  listMessagesReceivedBetween?(
+    input: OutlookMailReconciliationWindow,
+  ): Promise<OutlookMailReconciliationResult>;
   searchMessages(
     input: OutlookMailSearchInput,
   ): Promise<OutlookMailSearchResult>;
@@ -171,11 +185,15 @@ export type OutlookEmailSyncOperationalErrorCode =
   | "outlook_email_sync_unavailable"
   | "outlook_existing_evidence_limit"
   | "outlook_folder_not_found"
+  | "outlook_graph_connection_ambiguous"
+  | "outlook_graph_connection_not_found"
   | "outlook_graph_connection_unassigned"
   | "outlook_graph_authentication_failed"
   | "outlook_graph_forbidden"
   | "outlook_graph_throttled"
   | "outlook_graph_unavailable"
+  | "outlook_graph_reconciliation_conflict"
+  | "outlook_reconcile_message_limit"
   | "outlook_mailbox_unavailable";
 
 export class OutlookEmailSyncOperationalError extends Error {
@@ -578,6 +596,40 @@ export class OutlookEmailSyncService {
       searchCandidates: boundedMessages.length,
       selected: hasValidExisting ? null : selected,
     };
+  }
+
+  public assessMessage(
+    actor: AuthenticatedActor,
+    application: ApplicationRecord,
+    detail: OutlookMailMessageDetail,
+    summary?: OutlookMailMessageSummary,
+  ): OutlookEmailCandidateAssessment {
+    const evidence = this.jobEmails.getApplicationEvidence(
+      actor,
+      application.id,
+    );
+    const targetPostings = applicationSearchPostings(
+      application,
+      evidence.jobPostings,
+      this.emailLinks,
+    );
+    return this.assessCandidate(
+      actor,
+      application,
+      targetPostings,
+      summary ?? {
+        bodyPreview: detail.bodyPreview,
+        from: detail.from,
+        id: detail.id,
+        internetMessageId: detail.internetMessageId,
+        receivedAt: detail.receivedAt,
+        searchKinds: [],
+        subject: detail.subject,
+        webUrl: detail.webUrl,
+      },
+      detail,
+      [],
+    );
   }
 
   public commit(
