@@ -73,7 +73,10 @@ import {
 import { jobBoardProviderSchema } from "../domain/job_board.js";
 import { syncOutlookEmailEvidenceSchema } from "../domain/outlook_email_sync.js";
 import { reconcileOutlookGraphConnectionSchema } from "../domain/outlook_connection_reconciliation.js";
-import { processOutlookJobDigestSchema } from "../domain/outlook_job_digest.js";
+import {
+  processOutlookJobDigestSchema,
+  searchOutlookJobDigestsSchema,
+} from "../domain/outlook_job_digest.js";
 import {
   OutlookEmailSyncOperationalError,
   OutlookEmailSyncVerificationError,
@@ -576,6 +579,51 @@ const outlookJobDigestProcessingResultSchema = z.strictObject({
     exactMessageMatches: z.number().int().min(0).max(2),
     mailboxReadOnly: z.literal(true),
     messageBodyReturned: z.literal(false),
+  }),
+});
+const outlookJobDigestSearchMessageSchema = z.strictObject({
+  classification: outlookEmailClassificationSchema,
+  messageId: z.string().max(998).nullable(),
+  receivedAt: z.iso.datetime(),
+  sender: z.string().email().max(254).nullable(),
+  subject: z.string().max(255),
+});
+const outlookJobDigestSearchResultSchema = z.strictObject({
+  connection: z.strictObject({
+    folderPath: z.string(),
+    id: z.uuid(),
+    lastReconciledAt: z.iso.datetime().nullable(),
+    mailbox: z.string().email().max(254),
+    name: z.string(),
+  }),
+  messages: z.array(outlookJobDigestSearchMessageSchema).max(20),
+  page: z.strictObject({
+    detailsRead: z.number().int().min(0).max(20),
+    limit: z.number().int().min(1).max(20),
+    limitReached: z.boolean(),
+    nextOffset: z.number().int().min(1).max(499).nullable(),
+    offset: z.number().int().min(0).max(499),
+    scanned: z.number().int().min(0).max(20),
+  }),
+  unavailable: z
+    .array(
+      z.strictObject({
+        messageId: z.string().max(998).nullable(),
+        reason: z.literal("detail_unavailable"),
+        receivedAt: z.iso.datetime(),
+        subject: z.string().max(255),
+      }),
+    )
+    .max(20),
+  verification: z.strictObject({
+    applicationStateChanged: z.literal(false),
+    cursorChanged: z.literal(false),
+    mailboxReadOnly: z.literal(true),
+    messageBodyReturned: z.literal(false),
+  }),
+  window: z.strictObject({
+    after: z.iso.datetime(),
+    before: z.iso.datetime(),
   }),
 });
 const upsertApplicationFromEmailResultSchema = z.strictObject({
@@ -1460,6 +1508,26 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "search_outlook_job_digests",
+    {
+      annotations: openWorldReadOnlyAnnotations,
+      description:
+        "Resolve one enabled Graph connection and search a bounded fixed window backward through its configured folder. Classify at most 20 messages per page and return exact RFC Message-IDs and bounded metadata without returning bodies, changing mailbox state, advancing the reconciliation cursor, or changing tracker records.",
+      inputSchema: searchOutlookJobDigestsSchema,
+      outputSchema: outlookJobDigestSearchResultSchema,
+      title: "Search Outlook job digests",
+    },
+    (input) =>
+      executeAsyncTool(
+        "search_outlook_job_digests",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.searchOutlookJobDigests(input),
+      ),
+  );
+
+  server.registerTool(
     "process_outlook_job_digest",
     {
       annotations: openWorldReadOnlyAnnotations,
@@ -1839,7 +1907,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To inspect one exact digest without exposing its body, call process_outlook_job_digest with the same connection and its RFC Message-ID. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

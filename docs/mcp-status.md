@@ -5,7 +5,7 @@ Settings → Connections. The page reports what the current build can do while
 exposing only the canonical public MCP endpoint from its network configuration.
 
 The build includes local stdio and optional remote Streamable HTTP transports
-for 18 read-only tools and 15 mutation-capable tools. The page reports
+for 19 read-only tools and 15 mutation-capable tools. The page reports
 whether runtime configuration has enabled each transport and whether the
 individual connection permits mutations.
 

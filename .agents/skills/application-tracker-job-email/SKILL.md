@@ -57,6 +57,17 @@ lookup, digest classification, bounded link resolution, structured posting
 inspection, deterministic tracker matching, and privacy verification. This
 tool is read-only and never creates prospects.
 
+For a bounded historical search for digest Message-IDs, require only:
+
+- `search_outlook_job_digests`.
+
+Call it with the exact `connection`, fixed `after` and `before` timestamps, and
+the returned pagination offset. Do not call `get_tracker_context`, retrieve
+mail through Outlook or Microsoft 365, or move the fixed search window while
+paging. The server owns the Graph folder search, detail reads, classification,
+and privacy verification. It returns no message body, changes no mailbox,
+application, or evidence state, and never advances the reconciliation cursor.
+
 For broader folder enrichment or connector-based reconciliation, require these
 Application Tracker MCP tools:
 
@@ -238,6 +249,32 @@ The tool does not advance the reconciliation cursor, store digest content, link
 email evidence, create prospects, update applications, or change mailbox
 state. Any later mutation requires separate user authorization and the normal
 tracker context, reference, duplicate, and reconciliation checks.
+
+## Server-side historical digest search
+
+Use this path when the user asks Application Tracker to search backward for
+older job-alert or digest messages.
+
+1. Call `search_outlook_job_digests` with `connection`, fixed ISO `after` and
+   `before` timestamps, `offset: 0`, and a limit from 1 through 20.
+2. Treat only messages whose returned `classification` is
+   `marketing_or_digest` and whose exact returned `messageId` is non-null as
+   digest-processing candidates.
+3. When `page.nextOffset` is non-null, repeat with the same connection, fixed
+   window, limit, and that exact offset.
+4. Stop if `page.limitReached` is true; do not widen the 31-day or 500-message
+   boundary or guess around unavailable details.
+5. Confirm `verification.mailboxReadOnly`,
+   `verification.messageBodyReturned`, `verification.cursorChanged`, and
+   `verification.applicationStateChanged`.
+
+The search reads and classifies at most 20 messages per page in a caller-fixed
+window of at most 31 days and scans at most 500 messages. It returns bounded
+subject, sender, received time, classification, and exact RFC Message-ID only.
+It does not return bodies, change mailbox state, store digest content, advance
+the reconciliation cursor, or change applications. Process each qualifying
+Message-ID with `process_outlook_job_digest` before assessing or tracking any
+posting.
 
 ## Connector-orchestrated broader workflow
 

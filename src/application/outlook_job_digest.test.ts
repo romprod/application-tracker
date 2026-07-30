@@ -6,6 +6,7 @@ import type { ResolvedJobLinkCandidate } from "./job_links.js";
 import { OutlookJobDigestProcessingService } from "./outlook_job_digest.js";
 import type {
   OutlookMailMessageDetail,
+  OutlookMailMessageSummary,
   OutlookMailReader,
 } from "./outlook_email_sync.js";
 
@@ -52,13 +53,34 @@ function candidate(index: number): ResolvedJobLinkCandidate {
   };
 }
 
+function summary(value: OutlookMailMessageDetail): OutlookMailMessageSummary {
+  return {
+    bodyPreview: value.bodyPreview,
+    from: value.from,
+    id: value.id,
+    internetMessageId: value.internetMessageId,
+    receivedAt: value.receivedAt,
+    searchKinds: [],
+    subject: value.subject,
+    webUrl: value.webUrl,
+  };
+}
+
 function harness(messages: OutlookMailMessageDetail[]) {
   const findMessagesByInternetMessageId = vi.fn(() =>
     Promise.resolve(messages),
   );
+  const getMessages = vi.fn(() => Promise.resolve(messages));
+  const listMessagesReceivedBackward = vi.fn(() =>
+    Promise.resolve({
+      messages: messages.map((value) => summary(value)),
+      truncated: false,
+    }),
+  );
   const reader: OutlookMailReader = {
     findMessagesByInternetMessageId,
-    getMessages: () => Promise.resolve([]),
+    getMessages,
+    listMessagesReceivedBackward,
     listMessagesReceivedBetween: () =>
       Promise.resolve({ messages: [], truncated: false }),
     searchMessages: () => Promise.resolve({ messages: [], queriesRun: 0 }),
@@ -117,7 +139,9 @@ function harness(messages: OutlookMailMessageDetail[]) {
   return {
     connections,
     findMessagesByInternetMessageId,
+    getMessages,
     inspect,
+    listMessagesReceivedBackward,
     match,
     resolve,
     service,
@@ -254,4 +278,133 @@ describe("OutlookJobDigestProcessingService", () => {
       expect(value.resolve).not.toHaveBeenCalled();
     },
   );
+
+  it("searches a fixed window backward and returns classifications without bodies", async () => {
+    const digest = message();
+    const acknowledgement = message({
+      body: {
+        content:
+          "Thank you for applying for Platform Engineer at Example Company.",
+        contentType: "text",
+      },
+      headers: [],
+      id: "graph-message-2",
+      internetMessageId: "<application-1@example.com>",
+      receivedAt: "2026-07-29T08:00:00.000Z",
+      subject: "Application received",
+    });
+    const value = harness([digest, acknowledgement]);
+
+    const result = await value.service.search(actor, {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "jobs@example.com",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result).toMatchObject({
+      connection: {
+        lastReconciledAt: null,
+        mailbox: "jobs@example.com",
+      },
+      messages: [
+        {
+          classification: "marketing_or_digest",
+          messageId: "<digest-1@example.com>",
+        },
+        {
+          classification: "application_acknowledgement",
+          messageId: "<application-1@example.com>",
+        },
+      ],
+      page: {
+        detailsRead: 2,
+        limit: 20,
+        limitReached: false,
+        nextOffset: null,
+        offset: 0,
+        scanned: 2,
+      },
+      unavailable: [],
+      verification: {
+        applicationStateChanged: false,
+        cursorChanged: false,
+        mailboxReadOnly: true,
+        messageBodyReturned: false,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("Platform role");
+    expect(value.listMessagesReceivedBackward).toHaveBeenCalledWith({
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      limit: 20,
+      offset: 0,
+    });
+    expect(value.getMessages).toHaveBeenCalledWith([
+      "graph-message-1",
+      "graph-message-2",
+    ]);
+    expect(value.resolve).not.toHaveBeenCalled();
+    expect(value.inspect).not.toHaveBeenCalled();
+    expect(value.match).not.toHaveBeenCalled();
+  });
+
+  it("reports backward-search pagination and messages unavailable after listing", async () => {
+    const value = harness([message()]);
+    value.listMessagesReceivedBackward.mockResolvedValue({
+      messages: [summary(message())],
+      truncated: true,
+    });
+    value.getMessages.mockResolvedValue([]);
+
+    const result = await value.service.search(actor, {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "Work tenant",
+      limit: 1,
+      offset: 4,
+    });
+
+    expect(result.messages).toEqual([]);
+    expect(result.page).toEqual({
+      detailsRead: 0,
+      limit: 1,
+      limitReached: false,
+      nextOffset: 5,
+      offset: 4,
+      scanned: 1,
+    });
+    expect(result.unavailable).toEqual([
+      {
+        messageId: "<digest-1@example.com>",
+        reason: "detail_unavailable",
+        receivedAt: "2026-07-30T08:00:00.000Z",
+        subject: "Daily job alert",
+      },
+    ]);
+  });
+
+  it("stops instead of returning an offset beyond the 500-message ceiling", async () => {
+    const value = harness([message()]);
+    value.listMessagesReceivedBackward.mockResolvedValue({
+      messages: [summary(message())],
+      truncated: true,
+    });
+
+    const result = await value.service.search(actor, {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "Work tenant",
+      limit: 1,
+      offset: 499,
+    });
+
+    expect(result.page).toMatchObject({
+      limitReached: true,
+      nextOffset: null,
+      offset: 499,
+      scanned: 1,
+    });
+  });
 });

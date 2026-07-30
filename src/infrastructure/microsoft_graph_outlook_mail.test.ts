@@ -186,6 +186,56 @@ describe("MicrosoftGraphOutlookMailReader", () => {
     expect(request?.searchParams.get("$select")).not.toContain("body,");
   });
 
+  it("lists a bounded historical window newest-first without reading bodies", async () => {
+    const requested: URL[] = [];
+    const fetcher = vi.fn((input: string | URL | Request) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input.toString(),
+      );
+      requested.push(url);
+      if (url.pathname.includes("/childFolders")) {
+        return resolvedJsonResponse({
+          value: [{ displayName: "Jobs", id: "jobs-folder" }],
+        });
+      }
+      return resolvedJsonResponse({
+        value: [
+          graphMessage(),
+          graphMessage({
+            id: "message-2",
+            internetMessageId: "<message-2@example.com>",
+            receivedDateTime: "2026-07-21T16:30:00.000Z",
+          }),
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await reader(fetcher).listMessagesReceivedBackward({
+      after: "2026-07-14T17:00:00.000Z",
+      before: "2026-07-21T17:00:00.000Z",
+      limit: 2,
+      offset: 20,
+    });
+
+    expect(result).toMatchObject({
+      messages: [
+        { id: "message-2", searchKinds: [] },
+        { id: "message-1", searchKinds: [] },
+      ],
+      truncated: false,
+    });
+    const request = requested.find(({ pathname }) =>
+      pathname.includes("/mailFolders/jobs-folder/messages"),
+    );
+    expect(request?.searchParams.get("$filter")).toBe(
+      "receivedDateTime ge 2026-07-14T17:00:00.000Z and receivedDateTime lt 2026-07-21T17:00:00.000Z",
+    );
+    expect(request?.searchParams.get("$orderby")).toBe("receivedDateTime desc");
+    expect(request?.searchParams.get("$skip")).toBe("20");
+    expect(request?.searchParams.get("$top")).toBe("3");
+    expect(request?.searchParams.get("$select")).not.toContain("body,");
+  });
+
   it("validates stored evidence by exact RFC Message-ID and received time", async () => {
     const filters: string[] = [];
     const fetcher = vi.fn((input: string | URL | Request) => {

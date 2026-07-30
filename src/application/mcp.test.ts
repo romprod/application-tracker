@@ -15,6 +15,7 @@ import { McpDocumentImportManager } from "./mcp_document_imports.js";
 import type {
   OutlookJobDigestProcessingResult,
   OutlookJobDigestProcessingService,
+  OutlookJobDigestSearchResult,
 } from "./outlook_job_digest.js";
 import type { ReferenceValue } from "./reference_values.js";
 
@@ -92,7 +93,7 @@ function documentDependencies() {
 }
 
 describe("ApplicationMcpService", () => {
-  it("allows read-only connector access to the digest processor", async () => {
+  it("allows read-only connector access to digest search and processing", async () => {
     const requireWriteAccess = vi.fn(() => {
       throw new McpWriteAccessDisabledError();
     });
@@ -116,8 +117,39 @@ describe("ApplicationMcpService", () => {
       },
     };
     const process = vi.fn(() => Promise.resolve(result));
+    const searchResult: OutlookJobDigestSearchResult = {
+      connection: {
+        folderPath: "Inbox\\Jobs",
+        id: "11111111-1111-4111-8111-111111111111",
+        lastReconciledAt: "2026-07-30T09:00:00.000Z",
+        mailbox: "jobs@example.com",
+        name: "Work tenant",
+      },
+      messages: [],
+      page: {
+        detailsRead: 0,
+        limit: 20,
+        limitReached: false,
+        nextOffset: null,
+        offset: 0,
+        scanned: 0,
+      },
+      unavailable: [],
+      verification: {
+        applicationStateChanged: false,
+        cursorChanged: false,
+        mailboxReadOnly: true,
+        messageBodyReturned: false,
+      },
+      window: {
+        after: "2026-07-23T00:00:00.000Z",
+        before: "2026-07-30T09:00:00.000Z",
+      },
+    };
+    const search = vi.fn(() => Promise.resolve(searchResult));
     const digestService = {
       process,
+      search,
     } as unknown as OutlookJobDigestProcessingService;
     const { documents, imports } = documentDependencies();
     const service = new ApplicationMcpService(
@@ -156,7 +188,18 @@ describe("ApplicationMcpService", () => {
     await expect(service.processOutlookJobDigest(input)).resolves.toEqual(
       result,
     );
+    const searchInput = {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "jobs@example.com",
+      limit: 20,
+      offset: 0,
+    };
+    await expect(service.searchOutlookJobDigests(searchInput)).resolves.toEqual(
+      searchResult,
+    );
     expect(process).toHaveBeenCalledWith(actor, input);
+    expect(search).toHaveBeenCalledWith(actor, searchInput);
     expect(requireWriteAccess).not.toHaveBeenCalled();
   });
 

@@ -42,6 +42,11 @@ For one exact digest RFC Message-ID, call only
 optional result-page offset. Do not fetch or pass the message body through
 another connector. The tool is read-only and does not create prospects.
 
+For a bounded historical digest search, call only
+`search_outlook_job_digests` with an exact connection selector, fixed `after`
+and `before` timestamps, and result-page offset. Do not fetch mail through
+another connector or move the fixed window while paging.
+
 Use the following sequence only for broader Jobs-folder enrichment, creation,
 updates, or attachment import that is outside the dedicated one-application
 tool:
@@ -183,6 +188,37 @@ cursor, persist the digest, link evidence, create a prospect, update an
 application, or change mailbox state. Use the returned structured postings for
 explicit suitability assessment. Treat any later tracker mutation as a
 separate authorized workflow.
+
+## Server-side historical Outlook digest search
+
+`search_outlook_job_digests` accepts one strict object:
+
+- `connection`, an exact configured connection ID, name, or mailbox;
+- `after` and `before`, ISO timestamps defining a fixed window no longer than
+  31 days;
+- optional `limit`, 1 through 20 and defaulting to 20; and
+- optional `offset`, 0 through 499 and defaulting to 0, with offset plus limit
+  bounded to 500.
+
+It accepts connection-bound `read_only` or `read_write` access. The server
+queries only the configured Graph folder in descending received-time order,
+reads details inside Application Tracker, classifies each bounded message, and
+returns bounded metadata plus the exact RFC Message-ID when present. It never
+returns a message body.
+
+Follow `page.nextOffset` with the identical connection, window, and limit.
+Stop when it is null. If `page.limitReached` is true, the fixed 500-message
+ceiling was reached and callers must not widen or shift the window silently.
+Use only messages explicitly returned with classification
+`marketing_or_digest` and a non-null exact Message-ID as inputs to
+`process_outlook_job_digest`.
+
+The verification object reports `mailboxReadOnly: true`,
+`messageBodyReturned: false`, `cursorChanged: false`, and
+`applicationStateChanged: false`. The tool does not mark, move, categorize,
+send, or delete mail; advance the reconciliation cursor; persist digest
+content; or create or update applications. The normal immutable MCP audit event
+is still recorded.
 
 ## Microsoft 365 connector discovery
 

@@ -209,6 +209,7 @@ describe("browserMcpStatusClient", () => {
   it.each([
     "sync_outlook_email_evidence",
     "reconcile_outlook_graph_connection",
+    "search_outlook_job_digests",
     "process_outlook_job_digest",
   ] as const)("accepts the %s audit action", async (action) => {
     const reconciled = {

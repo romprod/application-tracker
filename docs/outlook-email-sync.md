@@ -154,6 +154,17 @@ as the evidence and MCP audit event. Ambiguous, conflicting, marketing, and
 unmatched messages are reported without being linked. The mailbox remains
 read-only.
 
+For a bounded historical search before processing older digests, call
+`search_outlook_job_digests` with the same exact connection selector, a fixed
+`after` / `before` window no longer than 31 days, `offset: 0`, and a limit no
+greater than 20. Follow `page.nextOffset` without changing the window. The
+server scans at most 500 messages, classifies each message inside Application
+Tracker, and returns bounded metadata and exact RFC Message-IDs without
+returning bodies. It does not change mailbox, application, or evidence state,
+or the reconciliation cursor. Only messages returned as
+`marketing_or_digest` with a non-null Message-ID may be sent to
+`process_outlook_job_digest`.
+
 For one exact job-alert or digest message, call
 `process_outlook_job_digest` with the same exact connection selector and the
 RFC Message-ID:

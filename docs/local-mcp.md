@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 33 tools:
+The local server registers 34 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -76,6 +76,7 @@ The local server registers 33 tools:
 | `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
 | `sync_outlook_email_evidence`         | Server-side Outlook search, score, link, and verification  |
 | `reconcile_outlook_graph_connection`  | Incremental Graph connection evidence reconciliation       |
+| `search_outlook_job_digests`          | Read-only bounded backward Graph digest search             |
 | `process_outlook_job_digest`          | Read-only exact digest resolution and posting inspection   |
 | `extract_job_links`                   | Offline canonical job-link candidates                      |
 | `resolve_job_links`                   | Allowlisted tracking-link resolution                       |
@@ -153,6 +154,14 @@ exact ID, name, or mailbox. Do not call `get_tracker_context`, a separate
 Microsoft 365 MCP, or the one-application tool around it. The result reports
 the previous and stored cursors, bounded per-message outcomes, link counts, and
 cursor verification.
+
+To find older digests without a separate mailbox connector, call
+`search_outlook_job_digests` with the exact connection and a fixed `after` /
+`before` window of at most 31 days. Page with the returned exact offset. The
+server classifies at most 20 messages per page and scans at most 500 messages,
+returns no body, leaves the mailbox and reconciliation cursor unchanged, and
+does not modify application or evidence records. Only exact Message-IDs returned with
+`marketing_or_digest` classification may be passed to the digest processor.
 
 To inspect one exact digest returned by a prior pass or otherwise identified by
 its RFC Message-ID, call `process_outlook_job_digest` with `connection`,

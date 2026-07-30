@@ -59,7 +59,10 @@ import type { EmailLinkExtractionInput } from "../domain/email_links.js";
 import type { JobPostingInspectionInput } from "../domain/job_postings.js";
 import type { SyncOutlookEmailEvidenceInput } from "../domain/outlook_email_sync.js";
 import type { ReconcileOutlookGraphConnectionInput } from "../domain/outlook_connection_reconciliation.js";
-import type { ProcessOutlookJobDigestInput } from "../domain/outlook_job_digest.js";
+import type {
+  ProcessOutlookJobDigestInput,
+  SearchOutlookJobDigestsInput,
+} from "../domain/outlook_job_digest.js";
 import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
 import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 import {
@@ -74,11 +77,12 @@ import type {
 import type {
   OutlookJobDigestProcessingResult,
   OutlookJobDigestProcessingService,
+  OutlookJobDigestSearchResult,
 } from "./outlook_job_digest.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 12;
+export const applicationMcpSchemaVersion = 14;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -98,6 +102,7 @@ export const applicationMcpToolNames = [
   "reconcile_application_from_evidence",
   "sync_outlook_email_evidence",
   "reconcile_outlook_graph_connection",
+  "search_outlook_job_digests",
   "process_outlook_job_digest",
   "extract_job_links",
   "resolve_job_links",
@@ -479,6 +484,9 @@ export interface McpApplicationTools {
   processOutlookJobDigest(
     input: ProcessOutlookJobDigestInput,
   ): Promise<OutlookJobDigestProcessingResult>;
+  searchOutlookJobDigests(
+    input: SearchOutlookJobDigestsInput,
+  ): Promise<OutlookJobDigestSearchResult>;
   resolveJobLinks(
     input: EmailLinkExtractionInput,
   ): Promise<JobLinkResolutionResult>;
@@ -887,6 +895,13 @@ export class ApplicationMcpService implements McpApplicationTools {
   ): Promise<OutlookJobDigestProcessingResult> {
     const actor = this.actorProvider.getActor();
     return this.outlookJobDigestProcessingService().process(actor, input);
+  }
+
+  public searchOutlookJobDigests(
+    input: SearchOutlookJobDigestsInput,
+  ): Promise<OutlookJobDigestSearchResult> {
+    const actor = this.actorProvider.getActor();
+    return this.outlookJobDigestProcessingService().search(actor, input);
   }
 
   public extractJobLinks(
