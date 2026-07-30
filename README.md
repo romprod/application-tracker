@@ -171,13 +171,22 @@ Use process_outlook_job_digest, inspect every result page, and do not create or
 update opportunities.
 ```
 
+To search backward without exposing mailbox content to another connector:
+
+```text
+Using only Application Tracker, call search_outlook_job_digests for the
+russ@sargeson.co.uk Graph connection over a fixed seven-day window. Follow its
+exact offsets, then process only messages classified marketing_or_digest using
+their exact returned RFC Message-IDs.
+```
+
 The one-application tool reads the application, validates existing evidence,
 searches the configured `Inbox\Jobs` folder, retrieves and scores a bounded
 shortlist, links only a sufficiently confident RFC Message-ID, and verifies the
 stored evidence before returning. The digest tool retrieves one exact message
 inside Application Tracker, resolves its job links, inspects structured posting
 metadata in pages of five, and reports deterministic tracker matches. It returns
-no email body and changes neither Outlook nor tracker records. See the
+no email body and changes neither Outlook nor application records. See the
 [operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill
@@ -189,8 +198,9 @@ skill. For a known application, it teaches compatible AI clients to use only
 reads, scoring, evidence link, and read-back verification. No separate
 Microsoft 365 MCP is required for that path.
 
-The skill uses `process_outlook_job_digest` when one exact digest RFC
-Message-ID is known. It retains its connector-orchestrated flow for broader
+The skill uses `search_outlook_job_digests` for bounded historical discovery
+and `process_outlook_job_digest` when one exact digest RFC Message-ID is known.
+It retains its connector-orchestrated flow for broader
 Jobs-folder discovery and attachment import. Those workflows still discover an
 already-connected Softeria-compatible Microsoft 365 surface and never install
 or launch one silently.

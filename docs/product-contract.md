@@ -90,6 +90,13 @@ job links, inspects at most five structured postings per requested page, and
 reports deterministic tracker matches. It returns no email body, does not
 change mailbox state, and does not create or update application records.
 
+For historical digest discovery, the MCP client calls
+`search_outlook_job_digests` with one exact connection and a caller-fixed
+window. Application Tracker searches backward through the configured Graph
+folder, classifies bounded pages server-side, and returns exact RFC Message-IDs
+without email bodies. The search is read-only, never advances the
+reconciliation cursor, and never changes application or evidence records.
+
 An administrator manages one or more named Graph connections under **Settings
 → Connections**. Application Tracker verifies each tenant, application, client
 secret, mailbox, and Inbox child folder before saving or enabling it. The

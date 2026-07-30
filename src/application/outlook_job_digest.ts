@@ -18,7 +18,10 @@ import {
   type OutlookMailMessageDetail,
 } from "./outlook_email_sync.js";
 import type { OutlookGraphConnectionsService } from "./outlook_graph_connections.js";
-import type { ProcessOutlookJobDigestInput } from "../domain/outlook_job_digest.js";
+import type {
+  ProcessOutlookJobDigestInput,
+  SearchOutlookJobDigestsInput,
+} from "../domain/outlook_job_digest.js";
 import type { EmailLinkExtractionService } from "./email_links.js";
 
 export const maximumOutlookDigestPostingsPerPage = 5;
@@ -61,6 +64,47 @@ export interface OutlookJobDigestProcessingResult {
     exactMessageMatches: number;
     mailboxReadOnly: true;
     messageBodyReturned: false;
+  };
+}
+
+export interface OutlookJobDigestSearchMessage {
+  classification: ReturnType<typeof classifyOutlookMailMessage>;
+  messageId: string | null;
+  receivedAt: string;
+  sender: string | null;
+  subject: string;
+}
+
+export interface OutlookJobDigestSearchUnavailableMessage {
+  messageId: string | null;
+  reason: "detail_unavailable";
+  receivedAt: string;
+  subject: string;
+}
+
+export interface OutlookJobDigestSearchResult {
+  connection: OutlookJobDigestProcessingResult["connection"] & {
+    lastReconciledAt: string | null;
+  };
+  messages: OutlookJobDigestSearchMessage[];
+  page: {
+    detailsRead: number;
+    limit: number;
+    limitReached: boolean;
+    nextOffset: number | null;
+    offset: number;
+    scanned: number;
+  };
+  unavailable: OutlookJobDigestSearchUnavailableMessage[];
+  verification: {
+    applicationStateChanged: false;
+    cursorChanged: false;
+    mailboxReadOnly: true;
+    messageBodyReturned: false;
+  };
+  window: {
+    after: string;
+    before: string;
   };
 }
 
@@ -256,6 +300,84 @@ export class OutlookJobDigestProcessingService {
         exactMessageMatches: 1,
         mailboxReadOnly: true,
         messageBodyReturned: false,
+      },
+    };
+  }
+
+  public async search(
+    actor: AuthenticatedActor,
+    input: SearchOutlookJobDigestsInput,
+  ): Promise<OutlookJobDigestSearchResult> {
+    const target = this.connections.forReconciliation(
+      actor.workspaceId,
+      input.connection,
+    );
+    if (!target.mail.listMessagesReceivedBackward) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    const listed = await target.mail.listMessagesReceivedBackward({
+      after: input.after,
+      before: input.before,
+      limit: input.limit,
+      offset: input.offset,
+    });
+    const details = await target.mail.getMessages(
+      listed.messages.map(({ id }) => id),
+    );
+    const detailsById = new Map(
+      details.map((message) => [message.id, message]),
+    );
+    const messages: OutlookJobDigestSearchMessage[] = [];
+    const unavailable: OutlookJobDigestSearchUnavailableMessage[] = [];
+    for (const summary of listed.messages) {
+      const detail = detailsById.get(summary.id);
+      if (!detail) {
+        unavailable.push({
+          messageId: summary.internetMessageId?.trim() || null,
+          reason: "detail_unavailable",
+          receivedAt: summary.receivedAt,
+          subject: summary.subject.slice(0, 255),
+        });
+        continue;
+      }
+      messages.push({
+        classification: classifyOutlookMailMessage(detail),
+        messageId: detail.internetMessageId?.trim() || null,
+        receivedAt: detail.receivedAt,
+        sender: detail.from?.address ?? null,
+        subject: detail.subject.slice(0, 255),
+      });
+    }
+    const candidateNextOffset = input.offset + listed.messages.length;
+    return {
+      connection: {
+        ...connectionResult(target.connection),
+        lastReconciledAt: target.connection.lastReconciledAt,
+      },
+      messages,
+      page: {
+        detailsRead: details.length,
+        limit: input.limit,
+        limitReached: listed.truncated && candidateNextOffset >= 500,
+        nextOffset:
+          listed.truncated && candidateNextOffset < 500
+            ? candidateNextOffset
+            : null,
+        offset: input.offset,
+        scanned: listed.messages.length,
+      },
+      unavailable,
+      verification: {
+        applicationStateChanged: false,
+        cursorChanged: false,
+        mailboxReadOnly: true,
+        messageBodyReturned: false,
+      },
+      window: {
+        after: input.after,
+        before: input.before,
       },
     };
   }

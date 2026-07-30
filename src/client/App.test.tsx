@@ -1637,6 +1637,7 @@ describe("application shell", () => {
     render(
       <App
         applicationsClient={applicationsClient}
+        outlookConnectionsClient={createOutlookConnectionsClient()}
         referenceValuesClient={createReferenceValuesClient()}
         authClient={createAuthClient(authenticatedSession)}
         setupClient={createSetupClient({

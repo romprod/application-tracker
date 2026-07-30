@@ -496,6 +496,56 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
     };
   }
 
+  public async listMessagesReceivedBackward(input: {
+    after: string;
+    before: string;
+    limit: number;
+    offset: number;
+  }): Promise<{
+    messages: OutlookMailMessageSummary[];
+    truncated: boolean;
+  }> {
+    const folderId = await this.resolveFolderId();
+    const parameters = new URLSearchParams({
+      $filter: `receivedDateTime ge ${input.after} and receivedDateTime lt ${input.before}`,
+      $orderby: "receivedDateTime desc",
+      $select:
+        "id,internetMessageId,subject,from,receivedDateTime,webLink,bodyPreview,parentFolderId",
+      $skip: String(input.offset),
+      $top: String(input.limit + 1),
+    });
+    let page: z.infer<typeof graphMessagePageSchema>;
+    try {
+      page = await this.request(
+        `users/${encodeURIComponent(this.config.mailbox)}/mailFolders/${encodeURIComponent(folderId)}/messages?${parameters.toString()}`,
+        graphMessagePageSchema,
+        graphMetadataResponseBytes,
+      );
+    } catch (error) {
+      if (error instanceof GraphResourceNotFoundError) {
+        this.folderId = undefined;
+        throw new OutlookEmailSyncOperationalError("outlook_folder_not_found");
+      }
+      throw error;
+    }
+    const messages = page.value
+      .filter((message) => message.parentFolderId === folderId)
+      .map((message) => messageSummary(message))
+      .sort((left, right) => {
+        const receivedDifference =
+          Date.parse(right.receivedAt) - Date.parse(left.receivedAt);
+        if (receivedDifference !== 0) return receivedDifference;
+        return (left.internetMessageId ?? left.id).localeCompare(
+          right.internetMessageId ?? right.id,
+        );
+      });
+    return {
+      messages: messages.slice(0, input.limit),
+      truncated:
+        messages.length > input.limit || page["@odata.nextLink"] !== undefined,
+    };
+  }
+
   public async getMessages(ids: string[]): Promise<OutlookMailMessageDetail[]> {
     const folderId = await this.resolveFolderId();
     const messages: OutlookMailMessageDetail[] = [];

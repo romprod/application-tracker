@@ -139,6 +139,9 @@ function fakeTools(): McpApplicationTools {
     processOutlookJobDigest: vi.fn(() =>
       Promise.resolve(outlookJobDigestResult()),
     ),
+    searchOutlookJobDigests: vi.fn(() =>
+      Promise.resolve(outlookJobDigestSearchResult()),
+    ),
     reconcileApplicationFromEvidence: vi.fn(),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
@@ -269,6 +272,46 @@ function outlookJobDigestResult() {
   };
 }
 
+function outlookJobDigestSearchResult() {
+  return {
+    connection: {
+      folderPath: "Inbox\\Jobs",
+      id: "22222222-2222-4222-8222-222222222222",
+      lastReconciledAt: "2026-07-30T09:00:00.000Z",
+      mailbox: "jobs@example.com",
+      name: "Work tenant",
+    },
+    messages: [
+      {
+        classification: "marketing_or_digest" as const,
+        messageId: "<digest-1@example.com>",
+        receivedAt: "2026-07-29T08:00:00.000Z",
+        sender: "alerts@example.com",
+        subject: "Daily job alert",
+      },
+    ],
+    page: {
+      detailsRead: 1,
+      limit: 20,
+      limitReached: false,
+      nextOffset: null,
+      offset: 0,
+      scanned: 1,
+    },
+    unavailable: [],
+    verification: {
+      applicationStateChanged: false as const,
+      cursorChanged: false as const,
+      mailboxReadOnly: true as const,
+      messageBodyReturned: false as const,
+    },
+    window: {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+    },
+  };
+}
+
 describe("local MCP server", () => {
   it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
@@ -308,6 +351,7 @@ describe("local MCP server", () => {
       "audit_duplicate_applications",
       "find_duplicate_applications",
       "match_job_application_email",
+      "search_outlook_job_digests",
       "process_outlook_job_digest",
       "extract_job_links",
       "resolve_job_links",
@@ -320,6 +364,7 @@ describe("local MCP server", () => {
     const openWorldReadOnlyTools = new Set([
       "resolve_job_links",
       "inspect_job_posting",
+      "search_outlook_job_digests",
       "process_outlook_job_digest",
     ]);
     const openWorldWriteTools = new Set([
@@ -710,6 +755,77 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
+  });
+
+  it("searches historical Outlook digests as a read-only audited call", async () => {
+    const tools = fakeTools();
+    const search = vi.fn(() => Promise.resolve(outlookJobDigestSearchResult()));
+    tools.searchOutlookJobDigests = search;
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {
+        after: "2026-07-23T00:00:00.000Z",
+        before: "2026-07-30T09:00:00.000Z",
+        connection: "jobs@example.com",
+      },
+      name: "search_outlook_job_digests",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(outlookJobDigestSearchResult());
+    expect(search).toHaveBeenCalledWith({
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "jobs@example.com",
+      limit: 20,
+      offset: 0,
+    });
+    expect(record).toHaveBeenCalledWith({
+      action: "search_outlook_job_digests",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+
+    for (const argumentsValue of [
+      {
+        after: "2026-06-01T00:00:00.000Z",
+        before: "2026-07-30T09:00:00.000Z",
+        connection: "jobs@example.com",
+      },
+      {
+        after: "2026-07-23T00:00:00.000Z",
+        before: "2026-07-30T09:00:00.000Z",
+        connection: "jobs@example.com",
+        limit: 20,
+        offset: 490,
+      },
+    ]) {
+      const invalid = await client.callTool({
+        arguments: argumentsValue,
+        name: "search_outlook_job_digests",
+      });
+      expect(invalid.isError).toBe(true);
+    }
+    expect(search).toHaveBeenCalledOnce();
   });
 
   it("returns a stable error when server-side Outlook sync is unconfigured", async () => {

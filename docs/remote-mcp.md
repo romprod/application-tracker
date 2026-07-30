@@ -171,7 +171,7 @@ same not-found response as an unknown session, even if it belongs to the same
 user. Session admission, idle expiry, absolute expiry, and shutdown cleanup use
 the limits shown in the administrator MCP status view.
 
-The remote endpoint exposes the same 18 read-only tools and 15
+The remote endpoint exposes the same 19 read-only tools and 15
 mutation-capable tools as local stdio. Permission is selected for each OAuth
 authorization or bearer credential and is checked on every call, including
 existing sessions. OAuth tokens must also present the required
@@ -189,6 +189,12 @@ For one known digest RFC Message-ID, `process_outlook_job_digest` is the
 read-only server-side workflow. It resolves the named Graph connection,
 retrieves the exact message from its configured folder, resolves and inspects a
 bounded page of postings, and returns no message body.
+
+For older digest discovery, `search_outlook_job_digests` performs the bounded
+backward Graph search inside Application Tracker. It accepts a fixed window of
+at most 31 days, pages across at most 500 messages, returns exact RFC
+Message-IDs and classifications without bodies, and changes neither mailbox,
+cursor, application, nor evidence state.
 
 ## Request controls
 

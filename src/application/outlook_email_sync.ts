@@ -124,11 +124,21 @@ export interface OutlookMailReconciliationResult {
   truncated: boolean;
 }
 
+export interface OutlookMailBackwardSearchWindow {
+  after: string;
+  before: string;
+  limit: number;
+  offset: number;
+}
+
 export interface OutlookMailReader {
   findMessagesByInternetMessageId?(
     messageId: string,
   ): Promise<OutlookMailMessageDetail[]>;
   getMessages(ids: string[]): Promise<OutlookMailMessageDetail[]>;
+  listMessagesReceivedBackward?(
+    input: OutlookMailBackwardSearchWindow,
+  ): Promise<OutlookMailReconciliationResult>;
   listMessagesReceivedBetween?(
     input: OutlookMailReconciliationWindow,
   ): Promise<OutlookMailReconciliationResult>;
