@@ -328,6 +328,53 @@ describe("JobEmailReconciliationService", () => {
     }
   });
 
+  it("treats posting-ID reuse with a different inspected identity as a conflict", () => {
+    const { actor, applications, database, reconciliation, statusId } =
+      fixture();
+    try {
+      const existing = applications.createApplication(actor, {
+        companyName: "Original Company",
+        roleTitle: "Original Engineer",
+        sourceUrl: "https://www.linkedin.com/jobs/view/4405273020",
+        statusId,
+      });
+
+      const result = reconciliation.match(actor, {
+        companyName: "Different Company",
+        posting: {
+          url: "https://www.linkedin.com/jobs/view/4405273020?from=digest",
+        },
+        roleTitle: "Different Engineer",
+      });
+
+      expect(result).toEqual({
+        level: "posting_id",
+        matches: [
+          expect.objectContaining({
+            companyName: "Original Company",
+            id: existing.id,
+            roleTitle: "Original Engineer",
+          }),
+        ],
+        outcome: "conflict",
+      });
+      expect(
+        reconciliation.match(actor, {
+          posting: {
+            url: "https://www.linkedin.com/jobs/view/4405273020?from=digest",
+          },
+          roleTitle: "Different Engineer",
+        }),
+      ).toMatchObject({
+        level: "posting_id",
+        outcome: "conflict",
+      });
+      expect(applications.listApplications(actor)).toHaveLength(1);
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects inconsistent posting claims and parameterizes email identities", () => {
     const { actor, applications, database, reconciliation, statusId } =
       fixture();

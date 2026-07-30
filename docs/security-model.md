@@ -68,6 +68,17 @@
 - Indeed posting inspection serializes and spaces requests, deduplicates
   in-flight and recent canonical URLs, and opens a no-fetch cooldown after a
   provider challenge
+- The optional provider-challenge browser fallback is disabled by default and
+  runs in a read-only, capability-free, resource-limited sidecar with no direct
+  Internet route; a separate HTTPS/443 CONNECT proxy enforces provider suffixes,
+  rejects every private or reserved DNS answer, and pins one validated address
+- The browser fallback accepts only an exact canonical provider identity,
+  destroys its context after one request, returns only one bounded
+  `JobPosting`, and never returns HTML, screenshots, cookies, storage, selectors,
+  or page bodies
+- Successful posting inspection reruns deterministic matching with the inspected
+  employer and title; posting-ID reuse or identity disagreement returns a
+  conflict and cannot mutate tracker state
 - Digest fallback is internal and requires one bounded card to pair one exact
   supported posting link with one explicit employer and title; the body is
   neither returned nor persisted

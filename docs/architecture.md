@@ -48,6 +48,9 @@ flowchart LR
   GraphMail -->|"HTTPS + app token"| Graph["Microsoft Graph"]
   UseCases --> PreviewQueue["Preview supervisor"]
   PreviewQueue --> Worker["Disposable resource-limited parser process"]
+  UseCases --> PostingWorker["Optional Camoufox posting worker"]
+  PostingWorker --> Egress["Constrained HTTPS egress proxy"]
+  Egress --> Provider["Approved job provider"]
 ```
 
 An administrator manages named workspace Outlook connections under **Settings
@@ -66,6 +69,12 @@ concurrent application change or audit failure rolls the evidence write back.
 The server never writes to the mailbox and does not persist access tokens,
 message bodies, subjects, or senders. See
 [`outlook-email-sync.md`](outlook-email-sync.md).
+
+The optional posting-browser fallback runs outside the application container and
+is disabled by default. Its worker has no direct Internet route; a separate
+allowlisted CONNECT proxy validates public DNS and pins provider connections.
+The public MCP contract remains unchanged. See
+[`camoufox-posting-fallback.md`](camoufox-posting-fallback.md).
 
 ## Database contract
 

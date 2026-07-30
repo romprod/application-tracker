@@ -5,6 +5,7 @@ import {
   type McpOAuthConfig,
   type RemoteMcpNetworkConfig,
 } from "../application/mcp_oauth.js";
+import type { JobPostingBrowserFallbackConfig } from "../application/job_posting_browser_fallback.js";
 import type { RemoteMcpRequestPolicy } from "./mcp_http_limits.js";
 
 function blankToUndefined(value: unknown): unknown {
@@ -89,8 +90,71 @@ function parseAllowedOrigins(value: string): readonly string[] {
   });
 }
 
+function parseCamoufoxProviders(value: string): readonly ["indeed"] {
+  const providers = configurationList(
+    value,
+    "CAMOUFOX_FALLBACK_PROVIDERS",
+    (entry) => entry.toLowerCase(),
+  );
+  if (providers.length !== 1 || providers[0] !== "indeed") {
+    throw new Error(
+      "Invalid runtime configuration: CAMOUFOX_FALLBACK_PROVIDERS",
+    );
+  }
+  return ["indeed"];
+}
+
+function parseCamoufoxWorkerUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Invalid runtime configuration: CAMOUFOX_WORKER_URL");
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    parsed.hostname !== "camoufox-worker" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port !== "8080" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error("Invalid runtime configuration: CAMOUFOX_WORKER_URL");
+  }
+  return parsed.href;
+}
+
 const runtimeEnvironmentSchema = z.object({
   BACKUP_DIRECTORY: z.string().trim().min(1).default("./backups"),
+  CAMOUFOX_FALLBACK_ENABLED: z.enum(["true", "false"]).default("false"),
+  CAMOUFOX_FALLBACK_PROVIDERS: z.preprocess(
+    blankToUndefined,
+    z.string().trim().min(1).max(256).optional(),
+  ),
+  CAMOUFOX_NAVIGATION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(30_000)
+    .default(12_000),
+  CAMOUFOX_RESPONSE_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(4_096)
+    .max(262_144)
+    .default(131_072),
+  CAMOUFOX_WORKER_TOKEN: z.preprocess(
+    blankToUndefined,
+    z.string().min(32).max(512).optional(),
+  ),
+  CAMOUFOX_WORKER_URL: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2048)
+    .default("http://camoufox-worker:8080"),
   DATABASE_PATH: z
     .string()
     .trim()
@@ -411,6 +475,7 @@ export interface RuntimeConfig {
       perActorLimit: number;
     };
   };
+  jobPostingBrowserFallback: JobPostingBrowserFallbackConfig;
   nodeEnv: "development" | "test" | "production";
   outlookConnectionEncryptionKey?: string;
   port: number;
@@ -631,6 +696,21 @@ export function parseRuntimeConfig(
     );
   }
 
+  const camoufoxProviders = result.data.CAMOUFOX_FALLBACK_PROVIDERS
+    ? parseCamoufoxProviders(result.data.CAMOUFOX_FALLBACK_PROVIDERS)
+    : [];
+  if (
+    result.data.CAMOUFOX_FALLBACK_ENABLED === "true" &&
+    (camoufoxProviders.length === 0 || !result.data.CAMOUFOX_WORKER_TOKEN)
+  ) {
+    throw new Error(
+      "Invalid runtime configuration: enabled Camoufox fallback requires CAMOUFOX_FALLBACK_PROVIDERS and CAMOUFOX_WORKER_TOKEN",
+    );
+  }
+  const camoufoxWorkerUrl = parseCamoufoxWorkerUrl(
+    result.data.CAMOUFOX_WORKER_URL,
+  );
+
   return {
     backupDirectory: result.data.BACKUP_DIRECTORY,
     databasePath: result.data.DATABASE_PATH,
@@ -656,6 +736,16 @@ export function parseRuntimeConfig(
       rateLimitRequests: result.data.HTTP_RATE_LIMIT_REQUESTS,
       rateLimitWindowMs: result.data.HTTP_RATE_LIMIT_WINDOW_SECONDS * 1000,
       trustProxyHops: result.data.HTTP_TRUST_PROXY_HOPS,
+    },
+    jobPostingBrowserFallback: {
+      enabled: result.data.CAMOUFOX_FALLBACK_ENABLED === "true",
+      navigationTimeoutMs: result.data.CAMOUFOX_NAVIGATION_TIMEOUT_MS,
+      providers: camoufoxProviders,
+      responseMaxBytes: result.data.CAMOUFOX_RESPONSE_MAX_BYTES,
+      ...(result.data.CAMOUFOX_WORKER_TOKEN
+        ? { token: result.data.CAMOUFOX_WORKER_TOKEN }
+        : {}),
+      workerUrl: camoufoxWorkerUrl,
     },
     mcp: {
       ...(result.data.MCP_LOCAL_ACTOR_USERNAME &&

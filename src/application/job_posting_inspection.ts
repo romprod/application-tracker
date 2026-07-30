@@ -7,6 +7,12 @@ import {
   JobBoardProviderRegistry,
 } from "./job_board_provider_registry.js";
 import {
+  DisabledJobPostingBrowserFallback,
+  exactBrowserCanaryMatch,
+  type BrowserFallbackUnavailableReason,
+  type JobPostingBrowserFallback,
+} from "./job_posting_browser_fallback.js";
+import {
   maximumPublicHttpsResponseBytes,
   publicHttpsRequestTimeoutMs,
   type PublicHttpsReader,
@@ -170,6 +176,20 @@ function matchingPosting(
     return match?.url.href === canonicalUrl.href;
   });
   return exact.length === 1 ? exact[0] : null;
+}
+
+function postingIdentityAgrees(
+  posting: JsonRecord,
+  canonicalUrl: URL,
+  providers: JobBoardProviderRegistry,
+): boolean {
+  const value = postingUrl(posting, canonicalUrl);
+  if (!value) return true;
+  try {
+    return providers.match(new URL(value))?.url.href === canonicalUrl.href;
+  } catch {
+    return false;
+  }
 }
 
 function organizationName(value: unknown): string | null {
@@ -452,6 +472,7 @@ export class JobPostingInspectionService {
     private readonly reader: PublicHttpsReader = new SecurePublicHttpsReader(),
     private readonly clock: () => Date = () => new Date(),
     delay: InspectionDelay = defaultInspectionDelay,
+    private readonly browserFallback: JobPostingBrowserFallback = new DisabledJobPostingBrowserFallback(),
   ) {
     this.coordinator = new JobPostingInspectionCoordinator(
       () => this.clock().getTime(),
@@ -485,10 +506,32 @@ export class JobPostingInspectionService {
     );
   }
 
+  public async inspectBrowserCanary(
+    input: JobPostingInspectionInput,
+  ): Promise<JobPostingInspectionResult> {
+    const match = exactBrowserCanaryMatch(this.providers, input.url);
+    if (!match) {
+      return {
+        canonicalUrl: null,
+        reason: "unrecognized_url",
+        status: "unavailable",
+      };
+    }
+    if (!this.browserFallback.supports(match.provider)) {
+      return {
+        canonicalUrl: match.url.href,
+        reason: "provider_challenge",
+        status: "unavailable",
+      };
+    }
+    return this.inspectWithBrowser(match);
+  }
+
   private async inspectCanonical(
     initial: JobBoardMatch,
   ): Promise<JobPostingInspectionResult> {
-    let canonicalUrl = initial.url;
+    let current = initial;
+    let canonicalUrl = current.url;
     const deadline = this.clock().getTime() + publicHttpsRequestTimeoutMs;
     for (let redirectsFollowed = 0; ; redirectsFollowed += 1) {
       let response;
@@ -535,13 +578,18 @@ export class JobPostingInspectionService {
           };
         }
         const next = this.providers.match(redirected);
-        if (!next) {
+        if (
+          !next ||
+          next.provider !== initial.provider ||
+          next.externalPostingId !== initial.externalPostingId
+        ) {
           return {
             canonicalUrl: canonicalUrl.href,
             reason: "blocked",
             status: "unavailable",
           };
         }
+        current = next;
         canonicalUrl = next.url;
         continue;
       }
@@ -552,12 +600,15 @@ export class JobPostingInspectionService {
           status: "unavailable",
         };
       }
-      if (isProviderChallenge(initial.provider, response)) {
-        return {
-          canonicalUrl: canonicalUrl.href,
-          reason: "provider_challenge",
-          status: "unavailable",
-        };
+      if (isProviderChallenge(current.provider, response)) {
+        if (!this.browserFallback.supports(current.provider)) {
+          return {
+            canonicalUrl: canonicalUrl.href,
+            reason: "provider_challenge",
+            status: "unavailable",
+          };
+        }
+        return this.inspectWithBrowser(current);
       }
       if (
         response.status < 200 ||
@@ -597,18 +648,80 @@ export class JobPostingInspectionService {
           status: "unavailable",
         };
       }
+      return this.availableInspection(posting, canonicalUrl);
+    }
+  }
+
+  private async inspectWithBrowser(
+    match: JobBoardMatch,
+  ): Promise<JobPostingInspectionResult> {
+    const result = await this.browserFallback.inspect(match);
+    if (result.status === "unavailable") {
+      const reason = this.browserUnavailableReason(result.reason);
       return {
-        applyUrl: postingUrl(posting, canonicalUrl),
-        canonicalUrl: canonicalUrl.href,
-        closingDate: closingDate(posting.validThrough),
-        description: plainDescription(posting.description),
-        employer: organizationName(posting.hiringOrganization),
-        location: jobLocation(posting),
-        salary: salaryText(posting.baseSalary),
-        status: "available",
-        title: boundedText(posting.title, 160),
-        workArrangement: workArrangement(posting.jobLocationType),
+        canonicalUrl: match.url.href,
+        reason,
+        ...(reason === "provider_challenge" && result.retryAfter
+          ? { retryAfter: result.retryAfter }
+          : {}),
+        status: "unavailable",
       };
     }
+    if (
+      !jobPostingType(result.posting["@type"]) ||
+      !postingIdentityAgrees(result.posting, match.url, this.providers)
+    ) {
+      return {
+        canonicalUrl: match.url.href,
+        reason: "ambiguous_metadata",
+        status: "unavailable",
+      };
+    }
+    if (isExpired(result.posting.validThrough, this.clock())) {
+      return {
+        canonicalUrl: match.url.href,
+        reason: "expired",
+        status: "unavailable",
+      };
+    }
+    return this.availableInspection(result.posting, match.url);
+  }
+
+  private browserUnavailableReason(
+    reason: BrowserFallbackUnavailableReason,
+  ): JobPostingUnavailableReason {
+    switch (reason) {
+      case "ambiguous_metadata":
+      case "blocked":
+      case "expired":
+      case "provider_challenge":
+        return reason;
+      case "malformed_structured_data":
+      case "missing_structured_data":
+        return "missing_structured_data";
+      case "navigation_timeout":
+      case "resource_exhausted":
+      case "worker_disabled":
+      case "worker_failure":
+        return "fetch_failed";
+    }
+  }
+
+  private availableInspection(
+    posting: JsonRecord,
+    canonicalUrl: URL,
+  ): AvailableJobPostingInspection {
+    return {
+      applyUrl: postingUrl(posting, canonicalUrl),
+      canonicalUrl: canonicalUrl.href,
+      closingDate: closingDate(posting.validThrough),
+      description: plainDescription(posting.description),
+      employer: organizationName(posting.hiringOrganization),
+      location: jobLocation(posting),
+      salary: salaryText(posting.baseSalary),
+      status: "available",
+      title: boundedText(posting.title, 160),
+      workArrangement: workArrangement(posting.jobLocationType),
+    };
   }
 }

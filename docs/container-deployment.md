@@ -39,14 +39,22 @@ reverse proxy running on the Docker host and avoids unintended LAN exposure.
 ## Build and start
 
 ```sh
-docker compose -f deploy/compose.yml up --detach --build
-docker compose -f deploy/compose.yml ps
+docker compose --env-file .env -f deploy/compose.yml up --detach --build
+docker compose --env-file .env -f deploy/compose.yml ps
 ```
+
+The Compose topology also builds an optional Camoufox worker and its constrained
+egress proxy. Both remain idle while `CAMOUFOX_FALLBACK_ENABLED=false`; the main
+application neither depends on them for health nor relaxes its existing
+hardening. Review the feature flag, provider allowlist, pinned versions, canary,
+monitoring, and rollback procedure in
+[`camoufox-posting-fallback.md`](camoufox-posting-fallback.md) before enabling
+the fallback.
 
 The image health check calls `GET /api/health`. Inspect sanitized JSON logs with:
 
 ```sh
-docker compose -f deploy/compose.yml logs --follow application-tracker
+docker compose --env-file .env -f deploy/compose.yml logs --follow application-tracker
 ```
 
 Open `http://127.0.0.1:3333` on the Docker host or use the configured HTTPS
@@ -57,7 +65,7 @@ After creating the administrator, remove `SETUP_TOKEN` from `.env` and recreate
 the container so the process no longer receives it:
 
 ```sh
-docker compose -f deploy/compose.yml up --detach --force-recreate
+docker compose --env-file .env -f deploy/compose.yml up --detach --force-recreate
 ```
 
 ## Network exposure
@@ -74,7 +82,7 @@ interface explicitly:
 
 ```sh
 APPLICATION_TRACKER_BIND_ADDRESS=0.0.0.0 \
-  docker compose -f deploy/compose.yml up --detach
+  docker compose --env-file .env -f deploy/compose.yml up --detach
 ```
 
 Restrict port 3333 with the host firewall. Direct cleartext access is unsuitable
@@ -111,7 +119,7 @@ off-host storage.
 Run the compiled maintenance commands inside the container:
 
 ```sh
-docker compose -f deploy/compose.yml exec application-tracker npm run db:backup
+docker compose --env-file .env -f deploy/compose.yml exec application-tracker npm run db:backup
 ```
 
 List or copy the resulting artifact through an operator-controlled process that
@@ -125,9 +133,9 @@ Create and verify an online backup before an upgrade. Then update the checkout
 to the chosen release and rebuild:
 
 ```sh
-docker compose -f deploy/compose.yml build --pull
-docker compose -f deploy/compose.yml up --detach
-docker compose -f deploy/compose.yml ps
+docker compose --env-file .env -f deploy/compose.yml build --pull
+docker compose --env-file .env -f deploy/compose.yml up --detach
+docker compose --env-file .env -f deploy/compose.yml ps
 ```
 
 Direct MCP deployment depends on a current generated schema manifest, which is
@@ -153,7 +161,7 @@ before relying on it in production.
 Stop the service without deleting data:
 
 ```sh
-docker compose -f deploy/compose.yml down
+docker compose --env-file .env -f deploy/compose.yml down
 ```
 
 Do not add `--volumes` unless you intend to delete the database and backup
