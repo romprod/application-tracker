@@ -98,7 +98,8 @@ function fakeTools(): McpApplicationTools {
     inspectJobPosting: vi.fn(() =>
       Promise.resolve({
         canonicalUrl: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
-        reason: "blocked" as const,
+        reason: "provider_challenge" as const,
+        retryAfter: "2026-07-30T08:15:00.000Z",
         status: "unavailable" as const,
       }),
     ),
@@ -553,7 +554,8 @@ describe("local MCP server", () => {
     expect(inspected.isError).not.toBe(true);
     expect(inspected.structuredContent).toEqual({
       canonicalUrl: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
-      reason: "blocked",
+      reason: "provider_challenge",
+      retryAfter: "2026-07-30T08:15:00.000Z",
       status: "unavailable",
     });
 

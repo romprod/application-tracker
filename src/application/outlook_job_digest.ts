@@ -23,6 +23,7 @@ import type {
   SearchOutlookJobDigestsInput,
 } from "../domain/outlook_job_digest.js";
 import type { EmailLinkExtractionService } from "./email_links.js";
+import { digestEmailJobCardInspections } from "./digest_email_job_cards.js";
 
 export const maximumOutlookDigestPostingsPerPage = 5;
 export const maximumOutlookDigestDescriptionCharacters = 4_000;
@@ -34,6 +35,7 @@ export interface OutlookJobDigestPosting {
   candidate: ResolvedJobLinkCandidate;
   descriptionTruncated: boolean;
   inspection: JobPostingInspectionResult;
+  inspectionSource: "digest_email" | "provider_page";
   match: JobEmailMatchResult;
 }
 
@@ -261,19 +263,46 @@ export class OutlookJobDigestProcessingService {
     const resolution = await this.jobLinkResolver.resolve({
       content: message.body.content.slice(0, 200_000),
     });
+    const digestInspections = digestEmailJobCardInspections(
+      message.body.content.slice(0, 200_000),
+      message.body.contentType,
+    );
     const selected = resolution.candidates.slice(
       input.offset,
       input.offset + maximumOutlookDigestPostingsPerPage,
     );
     const postings = await Promise.all(
       selected.map(async (candidate): Promise<OutlookJobDigestPosting> => {
+        const providerInspection = await this.jobPostingInspector.inspect({
+          url: candidate.url,
+        });
+        const digestInspection =
+          providerInspection.status === "unavailable" &&
+          providerInspection.reason === "provider_challenge"
+            ? digestInspections.get(candidate.url)
+            : undefined;
+        const inspectionSource = digestInspection
+          ? ("digest_email" as const)
+          : ("provider_page" as const);
         const inspection = boundedInspection(
-          await this.jobPostingInspector.inspect({ url: candidate.url }),
+          digestInspection ?? providerInspection,
         );
+        const fallbackIdentity =
+          inspectionSource === "digest_email" &&
+          inspection.inspection.status === "available" &&
+          inspection.inspection.employer &&
+          inspection.inspection.title
+            ? {
+                companyName: inspection.inspection.employer,
+                roleTitle: inspection.inspection.title,
+              }
+            : {};
         return {
           candidate,
           ...inspection,
+          inspectionSource,
           match: this.jobEmails.match(actor, {
+            ...fallbackIdentity,
             posting: {
               url: inspection.inspection.canonicalUrl ?? candidate.url,
             },

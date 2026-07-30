@@ -185,9 +185,11 @@ searches the configured `Inbox\Jobs` folder, retrieves and scores a bounded
 shortlist, links only a sufficiently confident RFC Message-ID, and verifies the
 stored evidence before returning. The digest tool retrieves one exact message
 inside Application Tracker, resolves its job links, inspects structured posting
-metadata in pages of five, and reports deterministic tracker matches. It returns
-no email body and changes neither Outlook nor application records. See the
-[operator setup guide](docs/outlook-email-sync.md).
+metadata in pages of five, and reports deterministic tracker matches. Provider
+JSON-LD is preferred; a provider challenge can use only an explicitly paired,
+unambiguous employer/title from the same bounded digest card and reports that
+provenance. It returns no email body and changes neither Outlook nor application
+records. See the [operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill
 

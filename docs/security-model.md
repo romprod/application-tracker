@@ -65,6 +65,12 @@
   both use HTTPS-only credential-free requests, public DNS validation and
   address pinning, bounded redirects, response sizes, timeouts, and outbound
   concurrency
+- Indeed posting inspection serializes and spaces requests, deduplicates
+  in-flight and recent canonical URLs, and opens a no-fetch cooldown after a
+  provider challenge
+- Digest fallback is internal and requires one bounded card to pair one exact
+  supported posting link with one explicit employer and title; the body is
+  neither returned nor persisted
 - Local stdio permissions are fixed per process by `MCP_LOCAL_ACCESS_MODE`
 - Every mutation rechecks the connection-bound policy
 - Deletion requires explicit tool confirmation and uses the ledger's audited

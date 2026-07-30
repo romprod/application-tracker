@@ -178,10 +178,13 @@ classify as `marketing_or_digest`; any other classification returns
 
 For a digest, the server resolves at most 20 canonical candidates and inspects
 at most five from the requested offset. Every returned posting includes the
-resolved candidate, structured inspection, a deterministic tracker match, and
-whether its description was clipped to the digest-result limit of 4,000
-characters. Follow `page.nextOffset` with otherwise identical input to read
-another page.
+resolved candidate, structured inspection, `inspectionSource`, a deterministic
+tracker match, and whether its description was clipped to the digest-result
+limit of 4,000 characters. `provider_page` identifies provider JSON-LD.
+`digest_email` is used only when a provider challenge blocked inspection and
+one bounded card contained one exact supported posting link plus one explicit,
+unambiguous employer/title pair. Follow `page.nextOffset` with otherwise
+identical input to read another page.
 
 The result never contains the message body. It does not advance a connection
 cursor, persist the digest, link evidence, create a prospect, update an
@@ -310,6 +313,12 @@ public-IP-pinned HTTPS boundary, a five-second total deadline, at most three
 redirects, and a 1 MiB response limit. Every redirect must also be recognized
 by the provider registry. Only HTML and XHTML responses are parsed.
 
+Indeed inspections are serialized with a conservative interval, deduplicated
+while in flight and for a short bounded cache window, and placed in a bounded
+cooldown after a provider challenge. A challenge returns
+`reason: provider_challenge` plus an ISO `retryAfter`; requests during cooldown
+make no provider fetch.
+
 The inspector reads JSON-LD objects whose schema type is `JobPosting`. It
 returns `status: available`, the canonical URL, and nullable structured fields:
 
@@ -327,7 +336,8 @@ visible page text or snippets. HTTP 404 or 410 and an elapsed `validThrough`
 return `status: unavailable` with `reason: expired`. Authentication,
 anti-bot, rate-limit, unsafe redirect, fetch, missing structured-data, and
 ambiguous-metadata outcomes also return `unavailable` with a stable reason
-instead of guessed metadata.
+instead of guessed metadata. Digest processing may use the narrow same-card
+fallback above after `provider_challenge`; standalone inspection never does.
 
 ## Match input and result
 

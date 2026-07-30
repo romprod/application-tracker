@@ -87,8 +87,11 @@ For one exact Outlook job-alert or digest RFC Message-ID, the MCP client calls
 `process_outlook_job_digest`. Application Tracker reads the configured Graph
 folder, confirms the exact message and digest classification, resolves bounded
 job links, inspects at most five structured postings per requested page, and
-reports deterministic tracker matches. It returns no email body, does not
-change mailbox state, and does not create or update application records.
+reports deterministic tracker matches. Provider challenges activate a strict
+same-card fallback only when one supported posting link, employer, and title
+are explicitly paired; the result reports whether inspection came from the
+provider page or digest email. It returns no email body, does not change
+mailbox state, and does not create or update application records.
 
 For historical digest discovery, the MCP client calls
 `search_outlook_job_digests` with one exact connection and a caller-fixed
