@@ -71,6 +71,31 @@ const events = [
   },
 ] as const;
 
+const evidence = {
+  emailEvidence: [
+    {
+      applicationId: application.id,
+      createdAt: "2026-07-18T12:16:00.000Z",
+      id: "77777777-7777-4777-8777-777777777777",
+      messageId: "<application@example.com>",
+      receivedAt: "2026-07-18T11:45:00.000Z",
+      updatedAt: "2026-07-18T12:16:00.000Z",
+      webUrl: "https://outlook.office.com/mail/inbox/id/example",
+    },
+  ],
+  jobPostings: [
+    {
+      applicationId: application.id,
+      canonicalUrl: "https://www.indeed.com/viewjob?jk=example",
+      createdAt: "2026-07-18T12:16:00.000Z",
+      externalPostingId: "example",
+      id: "88888888-8888-4888-8888-888888888888",
+      provider: "indeed",
+      updatedAt: "2026-07-18T12:16:00.000Z",
+    },
+  ],
+} as const;
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -219,6 +244,27 @@ describe("browserApplicationsClient", () => {
     ).resolves.toEqual(events);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/applications/${application.id}/events`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+  });
+
+  it("gets linked application evidence without caching the response", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(evidence), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.getApplicationEvidence(application.id),
+    ).resolves.toEqual(evidence);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${application.id}/evidence`,
       {
         cache: "no-store",
         credentials: "same-origin",
@@ -581,6 +627,30 @@ describe("browserApplicationsClient", () => {
 
     await expect(
       browserApplicationsClient.listApplicationEvents(application.id),
+    ).rejects.toEqual(new ApplicationsClientError("invalid_response"));
+  });
+
+  it("rejects malformed application evidence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...evidence,
+            jobPostings: [
+              {
+                ...evidence.jobPostings[0],
+                provider: "unknown_board",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(
+      browserApplicationsClient.getApplicationEvidence(application.id),
     ).rejects.toEqual(new ApplicationsClientError("invalid_response"));
   });
 });
