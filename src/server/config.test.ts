@@ -41,6 +41,13 @@ describe("parseRuntimeConfig", () => {
         rateLimitWindowMs: 60_000,
         trustProxyHops: 0,
       },
+      jobPostingBrowserFallback: {
+        enabled: false,
+        navigationTimeoutMs: 12_000,
+        providers: [],
+        responseMaxBytes: 131_072,
+        workerUrl: "http://camoufox-worker:8080/",
+      },
       mcp: {
         request: {
           maxConcurrentRequests: 64,
@@ -136,6 +143,64 @@ describe("parseRuntimeConfig", () => {
     ).toThrow(
       "Invalid runtime configuration: DOCUMENT_PREVIEW_MAX_INPUT_BYTES",
     );
+  });
+
+  it("keeps Camoufox disabled by default and requires an explicit provider and token", () => {
+    const token = "A".repeat(64);
+    expect(
+      parseRuntimeConfig({
+        CAMOUFOX_FALLBACK_ENABLED: "true",
+        CAMOUFOX_FALLBACK_PROVIDERS: "indeed",
+        CAMOUFOX_NAVIGATION_TIMEOUT_MS: "10000",
+        CAMOUFOX_RESPONSE_MAX_BYTES: "65536",
+        CAMOUFOX_WORKER_TOKEN: token,
+        CAMOUFOX_WORKER_URL: "http://camoufox-worker:8080",
+      }).jobPostingBrowserFallback,
+    ).toEqual({
+      enabled: true,
+      navigationTimeoutMs: 10_000,
+      providers: ["indeed"],
+      responseMaxBytes: 65_536,
+      token,
+      workerUrl: "http://camoufox-worker:8080/",
+    });
+    expect(() =>
+      parseRuntimeConfig({
+        CAMOUFOX_FALLBACK_ENABLED: "true",
+        CAMOUFOX_FALLBACK_PROVIDERS: "indeed",
+      }),
+    ).toThrow("enabled Camoufox fallback requires");
+    expect(() =>
+      parseRuntimeConfig({
+        CAMOUFOX_FALLBACK_ENABLED: "true",
+        CAMOUFOX_FALLBACK_PROVIDERS: "linkedin",
+        CAMOUFOX_WORKER_TOKEN: token,
+      }),
+    ).toThrow("CAMOUFOX_FALLBACK_PROVIDERS");
+  });
+
+  it("rejects malformed Camoufox worker and resource settings", () => {
+    expect(() =>
+      parseRuntimeConfig({
+        CAMOUFOX_WORKER_URL: "https://camoufox-worker:8080",
+      }),
+    ).toThrow("CAMOUFOX_WORKER_URL");
+    expect(() =>
+      parseRuntimeConfig({
+        CAMOUFOX_WORKER_URL: "http://user:secret@camoufox-worker:8080",
+      }),
+    ).toThrow("CAMOUFOX_WORKER_URL");
+    expect(() =>
+      parseRuntimeConfig({
+        CAMOUFOX_WORKER_URL: "http://169.254.169.254:8080",
+      }),
+    ).toThrow("CAMOUFOX_WORKER_URL");
+    expect(() =>
+      parseRuntimeConfig({ CAMOUFOX_NAVIGATION_TIMEOUT_MS: "999" }),
+    ).toThrow("CAMOUFOX_NAVIGATION_TIMEOUT_MS");
+    expect(() =>
+      parseRuntimeConfig({ CAMOUFOX_RESPONSE_MAX_BYTES: "4095" }),
+    ).toThrow("CAMOUFOX_RESPONSE_MAX_BYTES");
   });
 
   it("accepts ordered document storage quotas", () => {

@@ -205,6 +205,11 @@ describe("OutlookJobDigestProcessingService", () => {
     );
     expect(value.inspect).toHaveBeenCalledTimes(5);
     expect(value.match).toHaveBeenCalledTimes(5);
+    expect(value.match).toHaveBeenNthCalledWith(1, actor, {
+      companyName: "Example Company",
+      posting: { url: candidate(0).url },
+      roleTitle: "Platform Engineer",
+    });
   });
 
   it("uses an explicitly paired digest card when a provider challenge blocks inspection", async () => {

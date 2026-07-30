@@ -23,6 +23,7 @@ Useful commands:
 | `npm run check`                        | Run formatting, lint, type, test, build, and MCP gates |
 | `npm test`                             | Run the test suite once                                |
 | `npm run test:e2e`                     | Run Chromium browser acceptance tests                  |
+| `npm run test:camoufox-worker`         | Run worker and egress policy tests                     |
 | `npm run test:watch`                   | Run tests while editing                                |
 | `npm run build`                        | Compile the client and server                          |
 | `npm run mcp:schema:generate`          | Regenerate the reviewed MCP contract manifest          |
@@ -32,6 +33,7 @@ Useful commands:
 | `npm run db:verify`                    | Verify a standalone SQLite backup                      |
 | `npm run db:restore`                   | Restore a backup into a new database path              |
 | `node dist/server/server/mcp_stdio.js` | Start configured local MCP over stdio                  |
+| `npm run job-posting:camoufox:canary`  | Inspect approved canonical URLs through the worker     |
 | `NODE_ENV=production npm start`        | Serve a completed production build                     |
 
 The database commands and live replacement procedure are documented in

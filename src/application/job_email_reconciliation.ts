@@ -454,6 +454,33 @@ export class JobEmailReconciliationService {
     if (!primaryApplication) {
       return { level: primary.level, matches: [], outcome: "conflict" };
     }
+    const inspectedCompanyDisagrees =
+      input.companyName !== undefined &&
+      normalizeJobEmailIdentityText(primaryApplication.companyName) !==
+        normalizeJobEmailIdentityText(input.companyName);
+    const inspectedRoleDisagrees =
+      input.roleTitle !== undefined &&
+      normalizeJobEmailIdentityText(primaryApplication.roleTitle) !==
+        normalizeJobEmailIdentityText(input.roleTitle);
+    if (
+      (primary.level === "posting_id" || primary.level === "canonical_url") &&
+      (inspectedCompanyDisagrees || inspectedRoleDisagrees)
+    ) {
+      const conflictingIds = new Set([primaryApplication.id]);
+      for (const criterion of criteria.slice(primaryIndex + 1)) {
+        for (const id of criterion.applicationIds) conflictingIds.add(id);
+      }
+      return {
+        level: primary.level,
+        matches: [...conflictingIds]
+          .map((id) => applicationById.get(id))
+          .filter(
+            (application): application is ApplicationRecord => !!application,
+          )
+          .map(candidate),
+        outcome: "conflict",
+      };
+    }
     const conflictingIds = new Set<string>();
     for (const criterion of criteria.slice(primaryIndex + 1)) {
       if (

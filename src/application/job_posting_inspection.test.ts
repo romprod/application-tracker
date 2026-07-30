@@ -5,6 +5,10 @@ import {
   JobPostingInspectionService,
 } from "./job_posting_inspection.js";
 import type {
+  BrowserFallbackInspection,
+  JobPostingBrowserFallback,
+} from "./job_posting_browser_fallback.js";
+import type {
   PublicHttpsReader,
   PublicHttpsResponse,
 } from "../infrastructure/network/public_https_reader.js";
@@ -25,11 +29,19 @@ function response(
 
 function inspectionService(
   read: PublicHttpsReader["read"],
+  browserResult?: BrowserFallbackInspection,
 ): JobPostingInspectionService {
   return new JobPostingInspectionService(
     undefined,
     { read },
     () => new Date("2026-07-27T12:00:00.000Z"),
+    undefined,
+    browserResult
+      ? {
+          inspect: vi.fn(() => Promise.resolve(browserResult)),
+          supports: () => true,
+        }
+      : undefined,
   );
 }
 
@@ -352,5 +364,167 @@ describe("JobPostingInspectionService", () => {
       status: "unavailable",
     });
     expect(JSON.stringify(result)).not.toContain("secret-value");
+  });
+
+  it("uses the bounded browser fallback only after a provider challenge", async () => {
+    const read = vi.fn(() => Promise.resolve(response({ status: 403 })));
+    const inspect = vi.fn(() =>
+      Promise.resolve({
+        blockedRequests: 3,
+        canonicalUrl,
+        posting: {
+          "@type": "JobPosting",
+          description: "<p>Recovered metadata only</p>",
+          hiringOrganization: { name: "Example Ltd" },
+          title: "Senior Platform Engineer",
+          url: canonicalUrl,
+          validThrough: "2026-08-31",
+        },
+        status: "available" as const,
+      }),
+    );
+    const browser: JobPostingBrowserFallback = {
+      inspect,
+      supports: () => true,
+    };
+    const service = new JobPostingInspectionService(
+      undefined,
+      { read },
+      () => new Date("2026-07-27T12:00:00.000Z"),
+      undefined,
+      browser,
+    );
+
+    await expect(service.inspect({ url: canonicalUrl })).resolves.toEqual({
+      applyUrl: canonicalUrl,
+      canonicalUrl,
+      closingDate: "2026-08-31",
+      description: "Recovered metadata only",
+      employer: "Example Ltd",
+      location: null,
+      salary: null,
+      status: "available",
+      title: "Senior Platform Engineer",
+      workArrangement: null,
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(inspect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalPostingId: "96550901704ee48a",
+        provider: "indeed",
+        url: new URL(canonicalUrl),
+      }),
+    );
+  });
+
+  it("fails closed on browser timeout, challenge, expiry, and identity disagreement", async () => {
+    const challengedRead = vi.fn(() =>
+      Promise.resolve(response({ status: 403 })),
+    );
+    const cases: Array<{
+      browser: BrowserFallbackInspection;
+      expected: object;
+    }> = [
+      {
+        browser: {
+          blockedRequests: 0,
+          canonicalUrl,
+          reason: "navigation_timeout",
+          status: "unavailable",
+        },
+        expected: { reason: "fetch_failed" },
+      },
+      {
+        browser: {
+          blockedRequests: 0,
+          canonicalUrl,
+          reason: "provider_challenge",
+          retryAfter: "2026-07-27T12:15:00.000Z",
+          status: "unavailable",
+        },
+        expected: {
+          reason: "provider_challenge",
+          retryAfter: "2026-07-27T12:15:00.000Z",
+        },
+      },
+      {
+        browser: {
+          blockedRequests: 0,
+          canonicalUrl,
+          posting: {
+            "@type": "JobPosting",
+            title: "Expired",
+            validThrough: "2026-07-26",
+          },
+          status: "available",
+        },
+        expected: { reason: "expired" },
+      },
+      {
+        browser: {
+          blockedRequests: 0,
+          canonicalUrl,
+          posting: {
+            "@type": "JobPosting",
+            title: "Reused identity",
+            url: "https://uk.indeed.com/viewjob?jk=e56772bb8f333a4d",
+          },
+          status: "available",
+        },
+        expected: { reason: "ambiguous_metadata" },
+      },
+    ];
+    for (const testCase of cases) {
+      const service = inspectionService(challengedRead, testCase.browser);
+      await expect(
+        service.inspect({ url: canonicalUrl }),
+      ).resolves.toMatchObject({
+        canonicalUrl,
+        status: "unavailable",
+        ...testCase.expected,
+      });
+    }
+  });
+
+  it("runs the explicit browser canary only for an exact canonical URL", async () => {
+    const inspect = vi.fn(() =>
+      Promise.resolve({
+        blockedRequests: 0,
+        canonicalUrl,
+        posting: {
+          "@type": "JobPosting",
+          title: "Canary",
+          url: canonicalUrl,
+        },
+        status: "available" as const,
+      }),
+    );
+    const browser: JobPostingBrowserFallback = {
+      inspect,
+      supports: () => true,
+    };
+    const service = new JobPostingInspectionService(
+      undefined,
+      { read: vi.fn() },
+      () => new Date("2026-07-27T12:00:00.000Z"),
+      undefined,
+      browser,
+    );
+
+    await expect(
+      service.inspectBrowserCanary({ url: `${canonicalUrl}&from=email` }),
+    ).resolves.toEqual({
+      canonicalUrl: null,
+      reason: "unrecognized_url",
+      status: "unavailable",
+    });
+    await expect(
+      service.inspectBrowserCanary({ url: canonicalUrl }),
+    ).resolves.toMatchObject({
+      canonicalUrl,
+      status: "available",
+      title: "Canary",
+    });
+    expect(inspect).toHaveBeenCalledTimes(1);
   });
 });

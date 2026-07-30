@@ -8,6 +8,7 @@ import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
+import { CamoufoxJobPostingBrowserFallback } from "../application/job_posting_browser_fallback.js";
 import { JobPostingInspectionService } from "../application/job_posting_inspection.js";
 import { ApplicationMcpService } from "../application/mcp.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
@@ -81,7 +82,19 @@ async function startApplication(): Promise<void> {
       (operation) => database.transaction(operation).immediate(),
     );
     const emailLinksService = new EmailLinkExtractionService();
-    const jobPostingInspectionService = new JobPostingInspectionService();
+    const jobPostingBrowserFallback = new CamoufoxJobPostingBrowserFallback(
+      config.jobPostingBrowserFallback,
+      fetch,
+      Date.now,
+      (event) => logger.info("job_posting_browser_fallback", { ...event }),
+    );
+    const jobPostingInspectionService = new JobPostingInspectionService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      jobPostingBrowserFallback,
+    );
     const outlookGraphConnectionsService = config.outlookConnectionEncryptionKey
       ? new OutlookGraphConnectionsService(
           new SqliteOutlookGraphConnectionsRepository(database),

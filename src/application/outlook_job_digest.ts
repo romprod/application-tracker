@@ -295,8 +295,7 @@ export class OutlookJobDigestProcessingService {
         const inspection = boundedInspection(
           digestInspection ?? providerInspection,
         );
-        const fallbackIdentity =
-          inspectionSource === "digest_email" &&
+        const inspectedIdentity =
           inspection.inspection.status === "available" &&
           inspection.inspection.employer &&
           inspection.inspection.title
@@ -318,7 +317,7 @@ export class OutlookJobDigestProcessingService {
           },
           inspectionSource,
           match: this.jobEmails.match(actor, {
-            ...fallbackIdentity,
+            ...inspectedIdentity,
             posting: {
               url: inspection.inspection.canonicalUrl ?? candidate.url,
             },
