@@ -89,6 +89,30 @@ async def resolve_public_addresses(hostname: str) -> list[tuple[int, str]]:
     return addresses
 
 
+async def open_validated_connection(
+    addresses: list[tuple[int, str]],
+    port: int,
+    timeout_seconds: float,
+) -> tuple[int, asyncio.StreamReader, asyncio.StreamWriter]:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    last_error: BaseException | None = None
+    for index, (family, address) in enumerate(addresses):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        attempt_timeout = remaining / (len(addresses) - index)
+        try:
+            remote_reader, remote_writer = await asyncio.wait_for(
+                asyncio.open_connection(address, port, family=family),
+                timeout=attempt_timeout,
+            )
+            return family, remote_reader, remote_writer
+        except (OSError, asyncio.TimeoutError) as error:
+            last_error = error
+    raise ConnectionError("No validated address was reachable") from last_error
+
+
 async def relay(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -142,12 +166,12 @@ async def handle_connection(
             await write_response(writer, "403 Forbidden")
             return
         addresses = await asyncio.wait_for(resolve_public_addresses(hostname), 5)
-        family, address = addresses[0]
-        family_name = "ipv4" if family == socket.AF_INET else "ipv6"
-        remote_reader, remote_writer = await asyncio.wait_for(
-            asyncio.open_connection(address, port, family=family),
-            timeout=5,
+        family, remote_reader, remote_writer = await open_validated_connection(
+            addresses,
+            port,
+            5,
         )
+        family_name = "ipv4" if family == socket.AF_INET else "ipv6"
         await write_response(writer, "200 Connection Established")
         outcome = "connected"
         await asyncio.wait_for(

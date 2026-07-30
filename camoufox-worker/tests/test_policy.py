@@ -1,9 +1,14 @@
 import asyncio
 import socket
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, call, patch
 
-from egress_proxy import ProxyConfig, parse_connect_target, resolve_public_addresses
+from egress_proxy import (
+    ProxyConfig,
+    open_validated_connection,
+    parse_connect_target,
+    resolve_public_addresses,
+)
 from policy import (
     allowed_request_url,
     canonicalize_posting_url,
@@ -102,3 +107,33 @@ class ResolutionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(loop, "getaddrinfo", return_value=answers):
             with self.assertRaisesRegex(ValueError, "non_public_address"):
                 await resolve_public_addresses("uk.indeed.com")
+
+    async def test_connect_tries_later_validated_address_after_failure(self) -> None:
+        remote_reader = AsyncMock()
+        remote_writer = AsyncMock()
+        connect = AsyncMock(
+            side_effect=[
+                OSError("IPv6 route unavailable"),
+                (remote_reader, remote_writer),
+            ]
+        )
+        addresses = [
+            (socket.AF_INET6, "2606:4700:4700::1111"),
+            (socket.AF_INET, "1.1.1.1"),
+        ]
+        with patch("egress_proxy.asyncio.open_connection", connect):
+            family, reader, writer = await open_validated_connection(
+                addresses,
+                443,
+                1,
+            )
+        self.assertEqual(family, socket.AF_INET)
+        self.assertIs(reader, remote_reader)
+        self.assertIs(writer, remote_writer)
+        self.assertEqual(
+            connect.await_args_list,
+            [
+                call("2606:4700:4700::1111", 443, family=socket.AF_INET6),
+                call("1.1.1.1", 443, family=socket.AF_INET),
+            ],
+        )
