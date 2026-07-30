@@ -161,10 +161,23 @@ reconcile_outlook_graph_connection and report every linked, ambiguous,
 conflicting, and unmatched message.
 ```
 
+To inspect a digest reported by that pass without exposing its body to the MCP
+client:
+
+```text
+Using only Application Tracker, process the Outlook job digest with RFC
+Message-ID <digest-message-id> from the russ@sargeson.co.uk Graph connection.
+Use process_outlook_job_digest, inspect every result page, and do not create or
+update opportunities.
+```
+
 The one-application tool reads the application, validates existing evidence,
 searches the configured `Inbox\Jobs` folder, retrieves and scores a bounded
 shortlist, links only a sufficiently confident RFC Message-ID, and verifies the
-stored evidence before returning. See the
+stored evidence before returning. The digest tool retrieves one exact message
+inside Application Tracker, resolves its job links, inspects structured posting
+metadata in pages of five, and reports deterministic tracker matches. It returns
+no email body and changes neither Outlook nor tracker records. See the
 [operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill
@@ -176,11 +189,11 @@ skill. For a known application, it teaches compatible AI clients to use only
 reads, scoring, evidence link, and read-back verification. No separate
 Microsoft 365 MCP is required for that path.
 
-The skill retains its connector-orchestrated flow for broader Jobs-folder
-enrichment and attachment import, which are outside the one-application
-evidence-sync tool. Those workflows still discover an already-connected
-Softeria-compatible Microsoft 365 surface and never install or launch one
-silently.
+The skill uses `process_outlook_job_digest` when one exact digest RFC
+Message-ID is known. It retains its connector-orchestrated flow for broader
+Jobs-folder discovery and attachment import. Those workflows still discover an
+already-connected Softeria-compatible Microsoft 365 surface and never install
+or launch one silently.
 
 Codex discovers the skill from `.agents/skills` while working in this checkout.
 Other clients that support `SKILL.md` skills can install the

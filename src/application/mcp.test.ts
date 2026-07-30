@@ -12,6 +12,10 @@ import {
 } from "./mcp.js";
 import { McpWriteAccessDisabledError } from "./mcp_access.js";
 import { McpDocumentImportManager } from "./mcp_document_imports.js";
+import type {
+  OutlookJobDigestProcessingResult,
+  OutlookJobDigestProcessingService,
+} from "./outlook_job_digest.js";
 import type { ReferenceValue } from "./reference_values.js";
 
 const actor: AuthenticatedActor = {
@@ -88,6 +92,74 @@ function documentDependencies() {
 }
 
 describe("ApplicationMcpService", () => {
+  it("allows read-only connector access to the digest processor", async () => {
+    const requireWriteAccess = vi.fn(() => {
+      throw new McpWriteAccessDisabledError();
+    });
+    const result: OutlookJobDigestProcessingResult = {
+      classification: null,
+      connection: {
+        folderPath: "Inbox\\Jobs",
+        id: "11111111-1111-4111-8111-111111111111",
+        mailbox: "jobs@example.com",
+        name: "Work tenant",
+      },
+      digest: null,
+      outcome: "not_found",
+      page: { nextOffset: null, offset: 0, returned: 0, total: 0 },
+      postings: [],
+      tracking: { attempted: 0, resolved: 0, unavailable: [] },
+      verification: {
+        exactMessageMatches: 0,
+        mailboxReadOnly: true,
+        messageBodyReturned: false,
+      },
+    };
+    const process = vi.fn(() => Promise.resolve(result));
+    const digestService = {
+      process,
+    } as unknown as OutlookJobDigestProcessingService;
+    const { documents, imports } = documentDependencies();
+    const service = new ApplicationMcpService(
+      new LocalMcpActorProvider(
+        { findActiveActor: vi.fn(() => actor) },
+        { username: "alex", workspaceSlug: "default" },
+      ),
+      {
+        auditDuplicateApplications: vi.fn(),
+        createApplication: vi.fn(),
+        deleteApplication: vi.fn(),
+        listApplicationEvents: vi.fn(),
+        listApplications: vi.fn(() => []),
+        mergeApplications: vi.fn(),
+        updateApplication: vi.fn(),
+      },
+      { listReferenceValues: vi.fn(() => []) },
+      {
+        getAccessMode: vi.fn(() => "read_only"),
+        requireWriteAccess,
+      },
+      documents,
+      imports,
+      new EmailLinkExtractionService(),
+      undefined,
+      undefined,
+      undefined,
+      digestService,
+    );
+    const input = {
+      connection: "jobs@example.com",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    };
+
+    await expect(service.processOutlookJobDigest(input)).resolves.toEqual(
+      result,
+    );
+    expect(process).toHaveBeenCalledWith(actor, input);
+    expect(requireWriteAccess).not.toHaveBeenCalled();
+  });
+
   it("binds every call to the configured active actor and workspace", () => {
     const repository = {
       findActiveActor: vi.fn().mockReturnValue(actor),
@@ -160,6 +232,7 @@ describe("ApplicationMcpService", () => {
       documents,
       imports,
       new EmailLinkExtractionService(),
+      undefined,
       undefined,
       undefined,
       undefined,

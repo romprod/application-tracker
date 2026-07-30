@@ -8,6 +8,7 @@ this reference.
 - [Required sequence](#required-sequence)
 - [Server-side one-application Outlook sync](#server-side-one-application-outlook-sync)
 - [Server-side Graph connection reconciliation](#server-side-graph-connection-reconciliation)
+- [Server-side Outlook digest processing](#server-side-outlook-digest-processing)
 - [Microsoft 365 connector discovery](#microsoft-365-connector-discovery)
 - [Job-link extraction](#job-link-extraction)
 - [Job-link resolution](#job-link-resolution)
@@ -35,6 +36,11 @@ For new evidence across one configured Graph connection, call only
 `reconcile_outlook_graph_connection` with its exact ID, name, or mailbox. Do not
 call `get_tracker_context`, list applications, lower-level evidence tools, or a
 separate Outlook/MS365 MCP around it.
+
+For one exact digest RFC Message-ID, call only
+`process_outlook_job_digest` with its exact connection selector, Message-ID, and
+optional result-page offset. Do not fetch or pass the message body through
+another connector. The tool is read-only and does not create prospects.
 
 Use the following sequence only for broader Jobs-folder enrichment, creation,
 updates, or attachment import that is outside the dedicated one-application
@@ -151,10 +157,37 @@ connection-specific errors are `outlook_graph_connection_not_found`,
 `outlook_graph_connection_ambiguous`, and
 `outlook_graph_reconciliation_conflict`, in addition to normal Graph errors.
 
+## Server-side Outlook digest processing
+
+`process_outlook_job_digest` accepts one strict object:
+
+- `connection`, an exact configured connection ID, name, or mailbox;
+- `messageId`, the exact RFC Message-ID, up to 998 characters; and
+- optional `offset`, from 0 through 19 and defaulting to 0.
+
+It accepts connection-bound `read_only` or `read_write` access. The server
+retrieves at most two exact matches from the configured Graph folder and
+returns `not_found` or `ambiguous` instead of guessing. One exact message must
+classify as `marketing_or_digest`; any other classification returns
+`not_digest` without resolving links.
+
+For a digest, the server resolves at most 20 canonical candidates and inspects
+at most five from the requested offset. Every returned posting includes the
+resolved candidate, structured inspection, a deterministic tracker match, and
+whether its description was clipped to the digest-result limit of 4,000
+characters. Follow `page.nextOffset` with otherwise identical input to read
+another page.
+
+The result never contains the message body. It does not advance a connection
+cursor, persist the digest, link evidence, create a prospect, update an
+application, or change mailbox state. Use the returned structured postings for
+explicit suitability assessment. Treat any later tracker mutation as a
+separate authorized workflow.
+
 ## Microsoft 365 connector discovery
 
 This section applies only to broader folder enrichment and attachment workflows,
-not to `sync_outlook_email_evidence`.
+not to `sync_outlook_email_evidence` or `process_outlook_job_digest`.
 
 Discover an already-connected `@softeria/ms-365-mcp-server` instance from the
 current task's MCP inventory. Do not require a fixed server name, URL, or

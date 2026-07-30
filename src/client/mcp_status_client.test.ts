@@ -206,6 +206,35 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
+  it.each([
+    "sync_outlook_email_evidence",
+    "reconcile_outlook_graph_connection",
+    "process_outlook_job_digest",
+  ] as const)("accepts the %s audit action", async (action) => {
+    const reconciled = {
+      ...status,
+      recentAuditEvents: [
+        {
+          ...status.recentAuditEvents[0],
+          action,
+          targetType: "job_email",
+        },
+      ],
+    } as const;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ status: reconciled }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+      reconciled,
+    );
+  });
+
   it("rejects a malformed status instead of guessing", async () => {
     vi.stubGlobal(
       "fetch",

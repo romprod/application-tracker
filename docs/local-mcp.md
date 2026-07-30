@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 31 tools:
+The local server registers 33 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -75,6 +75,8 @@ The local server registers 31 tools:
 | `link_email_evidence`                 | Idempotently link one Message-ID to an existing record     |
 | `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
 | `sync_outlook_email_evidence`         | Server-side Outlook search, score, link, and verification  |
+| `reconcile_outlook_graph_connection`  | Incremental Graph connection evidence reconciliation       |
+| `process_outlook_job_digest`          | Read-only exact digest resolution and posting inspection   |
 | `extract_job_links`                   | Offline canonical job-link candidates                      |
 | `resolve_job_links`                   | Allowlisted tracking-link resolution                       |
 | `inspect_job_posting`                 | Structured canonical posting metadata                      |
@@ -102,16 +104,17 @@ record rolls back the entire batch. A concurrent change returns the stable
 expected failures use stable codes such as `actor_unavailable` and
 `application_not_found`; unexpected
 failures return `internal_error` without exception details. Read tools are
-annotated as read-only, non-destructive, and idempotent. The resolver and
-inspector are open-world because they make tightly constrained external HTTPS
-reads; every other read tool is closed-world.
+annotated as read-only, non-destructive, and idempotent. The resolver,
+inspector, and digest processor are open-world because they make tightly
+constrained external HTTPS or Graph reads; every other read tool is
+closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
 destructive and requires `confirm=true`. Evidence linking, reconciliation,
 job-email upsert, one-application Outlook synchronization, merging, and
 document-transfer mutations are non-read-only and idempotent. Connection-wide
 Outlook reconciliation is non-idempotent because every success advances its
-durable cursor. Both Outlook tools are open-world because the server makes
-bounded Graph reads before its optional local write.
+durable cursor. All three server-side Outlook tools are open-world because the
+server makes bounded Graph reads; the digest processor remains read-only.
 
 `resolve_job_links` issues requests only to its built-in tracking-host
 allowlist. `inspect_job_posting` accepts only URLs recognized by the provider
@@ -150,6 +153,13 @@ exact ID, name, or mailbox. Do not call `get_tracker_context`, a separate
 Microsoft 365 MCP, or the one-application tool around it. The result reports
 the previous and stored cursors, bounded per-message outcomes, link counts, and
 cursor verification.
+
+To inspect one exact digest returned by a prior pass or otherwise identified by
+its RFC Message-ID, call `process_outlook_job_digest` with `connection`,
+`messageId`, and optional `offset`. The server retrieves the message from the
+configured folder, returns at most five posting inspections, and supplies
+`page.nextOffset` until all of the digest's at most 20 candidates are covered.
+It returns no message body and never creates or updates applications.
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.

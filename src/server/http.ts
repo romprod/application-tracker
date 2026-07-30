@@ -26,6 +26,7 @@ import { RemoteMcpSessionRegistry } from "../application/mcp_sessions.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { OutlookConnectionReconciliationService } from "../application/outlook_connection_reconciliation.js";
+import { OutlookJobDigestProcessingService } from "../application/outlook_job_digest.js";
 import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -105,6 +106,13 @@ async function startApplication(): Promise<void> {
             outlookGraphConnectionsService,
           )
         : undefined;
+    const outlookJobDigestProcessingService = outlookGraphConnectionsService
+      ? new OutlookJobDigestProcessingService(
+          outlookGraphConnectionsService,
+          jobEmailReconciliationService,
+          emailLinksService,
+        )
+      : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
       database,
       config.documents,
@@ -209,6 +217,7 @@ async function startApplication(): Promise<void> {
                 jobEmailReconciliationService,
                 outlookEmailSyncService,
                 outlookConnectionReconciliationService,
+                outlookJobDigestProcessingService,
               ),
               {
                 audit: {
@@ -220,7 +229,7 @@ async function startApplication(): Promise<void> {
                   workspaceId: actor.workspaceId,
                 },
                 instructions:
-                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. Each tool performs all required tracker and Microsoft Graph reads, writes, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector around either workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
+                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To inspect one exact digest without exposing its body, call process_outlook_job_digest with the same connection and its RFC Message-ID. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires explicit confirmation.",
                 logger,
               },
             ),

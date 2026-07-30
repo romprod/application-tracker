@@ -103,8 +103,11 @@ export interface McpAuditEvent {
     | "list_unlinked_applications"
     | "match_job_application_email"
     | "merge_applications"
+    | "process_outlook_job_digest"
     | "reconcile_application_from_evidence"
+    | "reconcile_outlook_graph_connection"
     | "resolve_job_links"
+    | "sync_outlook_email_evidence"
     | "update_application"
     | "upsert_application_from_email";
   actor: {
@@ -205,8 +208,11 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "list_unlinked_applications" &&
       value.action !== "match_job_application_email" &&
       value.action !== "merge_applications" &&
+      value.action !== "process_outlook_job_digest" &&
       value.action !== "reconcile_application_from_evidence" &&
+      value.action !== "reconcile_outlook_graph_connection" &&
       value.action !== "resolve_job_links" &&
+      value.action !== "sync_outlook_email_evidence" &&
       value.action !== "update_application" &&
       value.action !== "upsert_application_from_email") ||
     !isRecord(value.actor) ||

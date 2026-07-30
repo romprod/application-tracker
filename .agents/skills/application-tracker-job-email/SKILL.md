@@ -46,6 +46,17 @@ Microsoft 365 MCP around it. The server owns the last-successful cursor,
 bounded Graph reads, deterministic matching against assigned applications,
 evidence persistence, cursor update, audit, and verification.
 
+For one exact job-alert or digest RFC Message-ID, require only:
+
+- `process_outlook_job_digest`.
+
+Call it with `connection`, `messageId`, and optional `offset`. Do not call
+`get_tracker_context`, retrieve the body through Outlook or Microsoft 365, or
+pass body content to lower-level link tools. The server owns the exact Graph
+lookup, digest classification, bounded link resolution, structured posting
+inspection, deterministic tracker matching, and privacy verification. This
+tool is read-only and never creates prospects.
+
 For broader folder enrichment or connector-based reconciliation, require these
 Application Tracker MCP tools:
 
@@ -202,6 +213,31 @@ the same transaction as evidence links and the MCP audit event. It never
 changes mailbox state, creates opportunities, changes application fields or
 statuses, or stores subjects, senders, bodies, tokens, or credentials in
 SQLite.
+
+## Server-side digest processing
+
+Use this path when one exact digest RFC Message-ID and configured Graph
+connection are known.
+
+1. Call `process_outlook_job_digest` with `connection`, `messageId`, and
+   `offset: 0`.
+2. Treat `processed`, `not_digest`, `not_found`, and `ambiguous` exactly. Do not
+   guess around a non-processed result.
+3. For `processed`, assess only the returned structured inspections and
+   deterministic tracker matches. Never infer missing employer, title,
+   location, salary, or working arrangement from the digest metadata.
+4. If `page.nextOffset` is non-null, repeat with the same connection and
+   Message-ID and that exact offset.
+5. Confirm the privacy boundary from `verification.mailboxReadOnly` and
+   `verification.messageBodyReturned`. Do not claim the source body was
+   returned or persisted.
+
+The server resolves at most 20 candidates and inspects at most five per page.
+Descriptions are capped at 4,000 characters and report truncation explicitly.
+The tool does not advance the reconciliation cursor, store digest content, link
+email evidence, create prospects, update applications, or change mailbox
+state. Any later mutation requires separate user authorization and the normal
+tracker context, reference, duplicate, and reconciliation checks.
 
 ## Connector-orchestrated broader workflow
 

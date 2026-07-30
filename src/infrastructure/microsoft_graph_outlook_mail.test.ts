@@ -228,6 +228,84 @@ describe("MicrosoftGraphOutlookMailReader", () => {
     expect(filters).toContain("internetMessageId eq '<o''hare@example.com>'");
   });
 
+  it("retrieves an exact RFC Message-ID with its body only from the configured folder", async () => {
+    const requested: URL[] = [];
+    const fetcher = vi.fn((input: string | URL | Request) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input.toString(),
+      );
+      requested.push(url);
+      if (url.pathname.includes("/childFolders")) {
+        return resolvedJsonResponse({
+          value: [{ displayName: "Jobs", id: "jobs-folder" }],
+        });
+      }
+      return resolvedJsonResponse({
+        value: [
+          graphMessage({
+            body: { content: "<p>Digest body</p>", contentType: "html" },
+            internetMessageHeaders: [
+              { name: "List-Unsubscribe", value: "<https://example.com>" },
+            ],
+            internetMessageId: "<o'hare@example.com>",
+          }),
+          graphMessage({
+            id: "outside",
+            internetMessageId: "<o'hare@example.com>",
+            parentFolderId: "archive-folder",
+          }),
+          graphMessage({
+            id: "different",
+            internetMessageId: "<different@example.com>",
+          }),
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await reader(fetcher).findMessagesByInternetMessageId(
+      "<o'hare@example.com>",
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        body: { content: "<p>Digest body</p>", contentType: "html" },
+        id: "message-1",
+        internetMessageId: "<o'hare@example.com>",
+      }),
+    ]);
+    const request = requested.find(({ pathname }) =>
+      pathname.includes("/mailFolders/jobs-folder/messages"),
+    );
+    expect(request?.searchParams.get("$filter")).toBe(
+      "internetMessageId eq '<o''hare@example.com>'",
+    );
+    expect(request?.searchParams.get("$select")).toContain("body,");
+    expect(request?.searchParams.get("$top")).toBe("2");
+  });
+
+  it("fails closed when an exact Message-ID result is unexpectedly paginated", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          value: [{ displayName: "Jobs", id: "jobs-folder" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          "@odata.nextLink":
+            "https://graph.microsoft.com/v1.0/users/jobs@example.com/messages?$skiptoken=opaque",
+          value: [graphMessage()],
+        }),
+      ) as unknown as typeof fetch;
+
+    await expect(
+      reader(fetcher).findMessagesByInternetMessageId(
+        "<message-1@example.com>",
+      ),
+    ).rejects.toMatchObject({ code: "outlook_graph_unavailable" });
+  });
+
   it("retrieves full details only for messages still in the configured folder", async () => {
     const requestOptions: RequestInit[] = [];
     const fetcher = vi.fn(
