@@ -8,6 +8,7 @@ from worker import (
     InspectionGate,
     WorkerConfig,
     collect_job_postings,
+    request_route_policy,
     select_structured_posting,
 )
 
@@ -89,6 +90,51 @@ class StructuredPostingTests(unittest.TestCase):
         )
         self.assertEqual(selected, exact)
         self.assertIsNone(reason)
+
+
+class RequestRoutePolicyTests(unittest.TestCase):
+    def test_only_main_frame_navigation_can_be_a_redirect_escape(self) -> None:
+        suffixes = ("indeed.com", "indeedcdn.com")
+        self.assertEqual(
+            request_route_policy(
+                "indeed",
+                CANONICAL_URL,
+                "https://captcha.example.net/frame",
+                suffixes,
+                is_main_frame_navigation=False,
+            ),
+            (True, False),
+        )
+        self.assertEqual(
+            request_route_policy(
+                "indeed",
+                CANONICAL_URL,
+                "https://static.indeedcdn.com/frame",
+                suffixes,
+                is_main_frame_navigation=False,
+            ),
+            (False, False),
+        )
+        self.assertEqual(
+            request_route_policy(
+                "indeed",
+                CANONICAL_URL,
+                "https://uk.indeed.com/viewjob?jk=e56772bb8f333a4d",
+                suffixes,
+                is_main_frame_navigation=True,
+            ),
+            (True, True),
+        )
+        self.assertEqual(
+            request_route_policy(
+                "indeed",
+                CANONICAL_URL,
+                CANONICAL_URL,
+                suffixes,
+                is_main_frame_navigation=True,
+            ),
+            (False, False),
+        )
 
 
 class GateTests(unittest.IsolatedAsyncioTestCase):

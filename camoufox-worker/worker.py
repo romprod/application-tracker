@@ -290,6 +290,24 @@ def challenge_title(value: str) -> bool:
     )
 
 
+def request_route_policy(
+    provider: str,
+    canonical_url: str,
+    value: str,
+    allowed_suffixes: tuple[str, ...],
+    *,
+    is_main_frame_navigation: bool,
+) -> tuple[bool, bool]:
+    if not allowed_request_url(value, allowed_suffixes):
+        return True, is_main_frame_navigation
+    if (
+        is_main_frame_navigation
+        and canonicalize_posting_url(provider, value) != canonical_url
+    ):
+        return True, True
+    return False, False
+
+
 async def inspect_with_browser(
     config: WorkerConfig,
     provider: str,
@@ -334,20 +352,22 @@ async def inspect_with_browser(
                 nonlocal blocked_requests, redirect_escape
                 request = route.request
                 value = request.url
-                parsed = urlsplit(value)
-                if not allowed_request_url(value, config.allowed_suffixes):
+                block_request, escaped = request_route_policy(
+                    provider,
+                    canonical_url,
+                    value,
+                    config.allowed_suffixes,
+                    is_main_frame_navigation=(
+                        request.is_navigation_request()
+                        and request.frame == page.main_frame
+                    ),
+                )
+                if block_request:
                     blocked_requests += 1
-                    if request.is_navigation_request():
+                    if escaped:
                         redirect_escape = True
                     await route.abort("blockedbyclient")
                     return
-                if request.is_navigation_request():
-                    candidate = canonicalize_posting_url(provider, value)
-                    if candidate != canonical_url:
-                        blocked_requests += 1
-                        redirect_escape = True
-                        await route.abort("blockedbyclient")
-                        return
                 if request.resource_type in ("font", "image", "media"):
                     await route.abort("blockedbyclient")
                     return
