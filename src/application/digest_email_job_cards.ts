@@ -29,6 +29,28 @@ interface DigestCardIdentity {
   title: string;
 }
 
+export type DigestEmailJobCardUnavailableReason =
+  | "card_elements_exceeded"
+  | "card_text_exceeded"
+  | "employer_ambiguous"
+  | "employer_missing"
+  | "matching_card_not_found"
+  | "multiple_posting_links"
+  | "title_ambiguous"
+  | "title_missing";
+
+export interface DigestEmailJobCardInspectionResults {
+  inspections: ReadonlyMap<string, AvailableJobPostingInspection>;
+  unavailable: ReadonlyMap<string, DigestEmailJobCardUnavailableReason>;
+}
+
+type DigestCardIdentityResult =
+  | { identity: DigestCardIdentity; unavailableReason: null }
+  | {
+      identity: null;
+      unavailableReason: DigestEmailJobCardUnavailableReason;
+    };
+
 function identityText(value: string): string | null {
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length > 0 && normalized.length <= maximumIdentityCharacters
@@ -40,13 +62,13 @@ function identityKey(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase("en-GB");
 }
 
-function oneIdentity(values: string[]): string | null {
+function uniqueIdentities(values: string[]): string[] {
   const unique = new Map<string, string>();
   for (const value of values) {
     const bounded = identityText(value);
     if (bounded) unique.set(identityKey(bounded), bounded);
   }
-  return unique.size === 1 ? [...unique.values()][0]! : null;
+  return [...unique.values()];
 }
 
 function signalText(element: Element): string {
@@ -133,15 +155,20 @@ function cardIdentity(
   container: Element,
   postingLink: Element,
   canonicalUrl: string,
-): DigestCardIdentity | null {
+): DigestCardIdentityResult {
   const cardText = DomUtils.innerText(container.children);
-  if (cardText.length === 0 || cardText.length > maximumCardTextCharacters) {
-    return null;
+  if (cardText.length === 0) {
+    return { identity: null, unavailableReason: "title_missing" };
+  }
+  if (cardText.length > maximumCardTextCharacters) {
+    return { identity: null, unavailableReason: "card_text_exceeded" };
   }
   const titleValues: string[] = [];
   const employerValues: string[] = [];
   const elements = descendants(container);
-  if (!elements) return null;
+  if (!elements) {
+    return { identity: null, unavailableReason: "card_elements_exceeded" };
+  }
   const linkText = identityText(DomUtils.innerText(postingLink.children));
   if (linkText && !genericLinkText.test(linkText)) titleValues.push(linkText);
 
@@ -161,24 +188,48 @@ function cardIdentity(
   }
   titleValues.push(...labelledIdentity(cardText, "title"));
   employerValues.push(...labelledIdentity(cardText, "company"));
-  const title = oneIdentity(titleValues);
-  const employer = oneIdentity(employerValues);
-  return title && employer ? { canonicalUrl, employer, title } : null;
+  const titles = uniqueIdentities(titleValues);
+  if (titles.length === 0) {
+    return { identity: null, unavailableReason: "title_missing" };
+  }
+  if (titles.length > 1) {
+    return { identity: null, unavailableReason: "title_ambiguous" };
+  }
+  const employers = uniqueIdentities(employerValues);
+  if (employers.length === 0) {
+    return { identity: null, unavailableReason: "employer_missing" };
+  }
+  if (employers.length > 1) {
+    return { identity: null, unavailableReason: "employer_ambiguous" };
+  }
+  return {
+    identity: {
+      canonicalUrl,
+      employer: employers[0]!,
+      title: titles[0]!,
+    },
+    unavailableReason: null,
+  };
 }
 
 function htmlCardIdentities(
   content: string,
   providers: JobBoardProviderRegistry,
-): DigestCardIdentity[] {
+): {
+  identities: DigestCardIdentity[];
+  unavailable: Map<string, DigestEmailJobCardUnavailableReason>;
+} {
   const document = parseDocument(content, { decodeEntities: true });
   const links = DomUtils.findAll(
     (element) => hrefMatch(element, providers) !== undefined,
     document.children,
   ).slice(0, 20);
   const identities: DigestCardIdentity[] = [];
+  const unavailable = new Map<string, DigestEmailJobCardUnavailableReason>();
   for (const link of links) {
     const match = hrefMatch(link, providers);
     if (!match) continue;
+    let identityFound = false;
     let ancestor = link.parent;
     for (
       let depth = 0;
@@ -189,17 +240,30 @@ function htmlCardIdentities(
         continue;
       }
       const urls = supportedUrls(ancestor, providers);
-      if (!urls) break;
-      if (urls.length > 1) break;
-      if (urls[0] !== match.url.href) continue;
-      const identity = cardIdentity(ancestor, link, match.url.href);
-      if (identity) {
-        identities.push(identity);
+      if (!urls) {
+        unavailable.set(match.url.href, "card_elements_exceeded");
         break;
       }
+      if (urls.length > 1) {
+        unavailable.set(match.url.href, "multiple_posting_links");
+        break;
+      }
+      if (urls[0] !== match.url.href) continue;
+      const result = cardIdentity(ancestor, link, match.url.href);
+      if (result.identity) {
+        identities.push(result.identity);
+        identityFound = true;
+        break;
+      }
+      if (!unavailable.has(match.url.href)) {
+        unavailable.set(match.url.href, result.unavailableReason);
+      }
+    }
+    if (!identityFound && !unavailable.has(match.url.href)) {
+      unavailable.set(match.url.href, "matching_card_not_found");
     }
   }
-  return identities;
+  return { identities, unavailable };
 }
 
 function cleanTextUrl(value: string): string {
@@ -209,31 +273,54 @@ function cleanTextUrl(value: string): string {
 function textCardIdentities(
   content: string,
   providers: JobBoardProviderRegistry,
-): DigestCardIdentity[] {
+): {
+  identities: DigestCardIdentity[];
+  unavailable: Map<string, DigestEmailJobCardUnavailableReason>;
+} {
   const identities: DigestCardIdentity[] = [];
+  const unavailable = new Map<string, DigestEmailJobCardUnavailableReason>();
   for (const block of content.split(/\r?\n\s*\r?\n/).slice(0, 100)) {
-    if (block.length > maximumCardTextCharacters) continue;
     const urls = new Set<string>();
     for (const match of block.matchAll(textUrlPattern)) {
       try {
         const supported = providers.match(new URL(cleanTextUrl(match[0])));
         if (supported) urls.add(supported.url.href);
+        if (urls.size >= 20) break;
       } catch {
         continue;
       }
     }
-    if (urls.size !== 1) continue;
-    const title = oneIdentity(labelledIdentity(block, "title"));
-    const employer = oneIdentity(labelledIdentity(block, "company"));
-    if (title && employer) {
+    if (urls.size === 0) continue;
+    if (block.length > maximumCardTextCharacters) {
+      for (const url of urls) unavailable.set(url, "card_text_exceeded");
+      continue;
+    }
+    if (urls.size > 1) {
+      for (const url of urls) unavailable.set(url, "multiple_posting_links");
+      continue;
+    }
+    const url = [...urls][0]!;
+    const titles = uniqueIdentities(labelledIdentity(block, "title"));
+    const employers = uniqueIdentities(labelledIdentity(block, "company"));
+    if (titles.length !== 1) {
+      unavailable.set(
+        url,
+        titles.length === 0 ? "title_missing" : "title_ambiguous",
+      );
+    } else if (employers.length !== 1) {
+      unavailable.set(
+        url,
+        employers.length === 0 ? "employer_missing" : "employer_ambiguous",
+      );
+    } else {
       identities.push({
-        canonicalUrl: [...urls][0]!,
-        employer,
-        title,
+        canonicalUrl: url,
+        employer: employers[0]!,
+        title: titles[0]!,
       });
     }
   }
-  return identities;
+  return { identities, unavailable };
 }
 
 function fallbackInspection(
@@ -257,32 +344,40 @@ export function digestEmailJobCardInspections(
   content: string,
   contentType: "html" | "text",
   providers = new JobBoardProviderRegistry(),
-): ReadonlyMap<string, AvailableJobPostingInspection> {
-  const identities =
+): DigestEmailJobCardInspectionResults {
+  const parsed =
     contentType === "html"
       ? htmlCardIdentities(content, providers)
       : textCardIdentities(content, providers);
   const grouped = new Map<string, DigestCardIdentity[]>();
-  for (const identity of identities) {
+  for (const identity of parsed.identities) {
     const existing = grouped.get(identity.canonicalUrl) ?? [];
     existing.push(identity);
     grouped.set(identity.canonicalUrl, existing);
   }
 
   const inspections = new Map<string, AvailableJobPostingInspection>();
+  const unavailable = new Map(parsed.unavailable);
   for (const [url, candidates] of grouped) {
-    const titles = oneIdentity(candidates.map(({ title }) => title));
-    const employers = oneIdentity(candidates.map(({ employer }) => employer));
-    if (titles && employers) {
+    const titles = uniqueIdentities(candidates.map(({ title }) => title));
+    const employers = uniqueIdentities(
+      candidates.map(({ employer }) => employer),
+    );
+    if (titles.length === 1 && employers.length === 1) {
       inspections.set(
         url,
         fallbackInspection({
           canonicalUrl: url,
-          employer: employers,
-          title: titles,
+          employer: employers[0]!,
+          title: titles[0]!,
         }),
       );
+      unavailable.delete(url);
+    } else if (titles.length > 1) {
+      unavailable.set(url, "title_ambiguous");
+    } else {
+      unavailable.set(url, "employer_ambiguous");
     }
   }
-  return inspections;
+  return { inspections, unavailable };
 }

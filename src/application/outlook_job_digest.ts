@@ -23,7 +23,10 @@ import type {
   SearchOutlookJobDigestsInput,
 } from "../domain/outlook_job_digest.js";
 import type { EmailLinkExtractionService } from "./email_links.js";
-import { digestEmailJobCardInspections } from "./digest_email_job_cards.js";
+import {
+  digestEmailJobCardInspections,
+  type DigestEmailJobCardUnavailableReason,
+} from "./digest_email_job_cards.js";
 
 export const maximumOutlookDigestPostingsPerPage = 5;
 export const maximumOutlookDigestDescriptionCharacters = 4_000;
@@ -34,6 +37,10 @@ export type OutlookJobDigestProcessingOutcome =
 export interface OutlookJobDigestPosting {
   candidate: ResolvedJobLinkCandidate;
   descriptionTruncated: boolean;
+  digestFallback: {
+    attempted: boolean;
+    unavailableReason: DigestEmailJobCardUnavailableReason | null;
+  };
   inspection: JobPostingInspectionResult;
   inspectionSource: "digest_email" | "provider_page";
   match: JobEmailMatchResult;
@@ -263,7 +270,7 @@ export class OutlookJobDigestProcessingService {
     const resolution = await this.jobLinkResolver.resolve({
       content: message.body.content.slice(0, 200_000),
     });
-    const digestInspections = digestEmailJobCardInspections(
+    const digestCards = digestEmailJobCardInspections(
       message.body.content.slice(0, 200_000),
       message.body.contentType,
     );
@@ -276,11 +283,12 @@ export class OutlookJobDigestProcessingService {
         const providerInspection = await this.jobPostingInspector.inspect({
           url: candidate.url,
         });
-        const digestInspection =
+        const digestFallbackAttempted =
           providerInspection.status === "unavailable" &&
-          providerInspection.reason === "provider_challenge"
-            ? digestInspections.get(candidate.url)
-            : undefined;
+          providerInspection.reason === "provider_challenge";
+        const digestInspection = digestFallbackAttempted
+          ? digestCards.inspections.get(candidate.url)
+          : undefined;
         const inspectionSource = digestInspection
           ? ("digest_email" as const)
           : ("provider_page" as const);
@@ -300,6 +308,14 @@ export class OutlookJobDigestProcessingService {
         return {
           candidate,
           ...inspection,
+          digestFallback: {
+            attempted: digestFallbackAttempted,
+            unavailableReason:
+              digestFallbackAttempted && !digestInspection
+                ? (digestCards.unavailable.get(candidate.url) ??
+                  "matching_card_not_found")
+                : null,
+          },
           inspectionSource,
           match: this.jobEmails.match(actor, {
             ...fallbackIdentity,

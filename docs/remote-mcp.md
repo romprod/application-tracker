@@ -190,7 +190,9 @@ read-only server-side workflow. It resolves the named Graph connection,
 retrieves the exact message from its configured folder, resolves and inspects a
 bounded page of postings, and returns no message body. Provider JSON-LD is
 preferred; a challenged provider can use only an unambiguous same-card
-employer/title pair and reports `inspectionSource: digest_email`.
+employer/title pair and reports `inspectionSource: digest_email`. Every
+posting also reports whether digest fallback was attempted and a stable
+unavailable reason when it failed.
 
 For older digest discovery, `search_outlook_job_digests` performs the bounded
 backward Graph search inside Application Tracker. It accepts a fixed window of

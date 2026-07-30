@@ -188,8 +188,10 @@ inside Application Tracker, resolves its job links, inspects structured posting
 metadata in pages of five, and reports deterministic tracker matches. Provider
 JSON-LD is preferred; a provider challenge can use only an explicitly paired,
 unambiguous employer/title from the same bounded digest card and reports that
-provenance. It returns no email body and changes neither Outlook nor application
-records. See the [operator setup guide](docs/outlook-email-sync.md).
+provenance. It also reports whether digest fallback was attempted and a stable
+reason when it was unavailable. It returns no email body and changes neither
+Outlook nor application records. See the
+[operator setup guide](docs/outlook-email-sync.md).
 
 ### Job-email agent skill
 

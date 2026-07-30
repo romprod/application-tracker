@@ -239,8 +239,10 @@ connection are known.
    fields came from provider JSON-LD. `inspectionSource: digest_email` means a
    provider challenge blocked inspection and the server found one exact
    supported posting link plus one explicit employer and title in the same
-   bounded digest card. Never infer missing employer, title, location, salary,
-   or working arrangement from the digest metadata.
+   bounded digest card. Report `digestFallback.attempted` and its stable
+   `unavailableReason` for every challenged posting that could not use this
+   fallback. Never infer missing employer, title, location, salary, or working
+   arrangement from the digest metadata.
 4. If `page.nextOffset` is non-null, repeat with the same connection and
    Message-ID and that exact offset.
 5. Confirm the privacy boundary from `verification.mailboxReadOnly` and
