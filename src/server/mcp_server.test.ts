@@ -136,6 +136,9 @@ function fakeTools(): McpApplicationTools {
     prepareReconcileOutlookGraphConnection: vi.fn(() =>
       Promise.reject(new Error("not configured")),
     ),
+    processOutlookJobDigest: vi.fn(() =>
+      Promise.resolve(outlookJobDigestResult()),
+    ),
     reconcileApplicationFromEvidence: vi.fn(),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
@@ -239,6 +242,33 @@ function outlookConnectionReconciliationResult() {
   };
 }
 
+function outlookJobDigestResult() {
+  return {
+    classification: "marketing_or_digest" as const,
+    connection: {
+      folderPath: "Inbox\\Jobs",
+      id: "22222222-2222-4222-8222-222222222222",
+      mailbox: "jobs@example.com",
+      name: "Work tenant",
+    },
+    digest: {
+      messageId: "<digest-1@example.com>",
+      receivedAt: "2026-07-30T08:00:00.000Z",
+      sender: "alerts@example.com",
+      subject: "Daily job alert",
+    },
+    outcome: "processed" as const,
+    page: { nextOffset: null, offset: 0, returned: 0, total: 0 },
+    postings: [],
+    tracking: { attempted: 0, resolved: 0, unavailable: [] },
+    verification: {
+      exactMessageMatches: 1,
+      mailboxReadOnly: true as const,
+      messageBodyReturned: false as const,
+    },
+  };
+}
+
 describe("local MCP server", () => {
   it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
@@ -278,6 +308,7 @@ describe("local MCP server", () => {
       "audit_duplicate_applications",
       "find_duplicate_applications",
       "match_job_application_email",
+      "process_outlook_job_digest",
       "extract_job_links",
       "resolve_job_links",
       "inspect_job_posting",
@@ -289,6 +320,7 @@ describe("local MCP server", () => {
     const openWorldReadOnlyTools = new Set([
       "resolve_job_links",
       "inspect_job_posting",
+      "process_outlook_job_digest",
     ]);
     const openWorldWriteTools = new Set([
       "sync_outlook_email_evidence",
@@ -626,6 +658,52 @@ describe("local MCP server", () => {
     expect(commit).toHaveBeenCalledOnce();
     expect(record).toHaveBeenCalledWith({
       action: "reconcile_outlook_graph_connection",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("processes one exact Outlook digest as a read-only audited call", async () => {
+    const tools = fakeTools();
+    const process = vi.fn(() => Promise.resolve(outlookJobDigestResult()));
+    tools.processOutlookJobDigest = process;
+    const record = vi.fn();
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically: (operation) => operation(),
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: {
+        connection: "jobs@example.com",
+        messageId: "<digest-1@example.com>",
+      },
+      name: "process_outlook_job_digest",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(outlookJobDigestResult());
+    expect(process).toHaveBeenCalledWith({
+      connection: "jobs@example.com",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+    expect(record).toHaveBeenCalledWith({
+      action: "process_outlook_job_digest",
       actorUserId: "actor-user-1",
       result: "success",
       targetType: "job_email",

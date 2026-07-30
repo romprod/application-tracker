@@ -16,6 +16,7 @@ import { McpAuditService } from "../application/mcp_audit.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { OutlookConnectionReconciliationService } from "../application/outlook_connection_reconciliation.js";
+import { OutlookJobDigestProcessingService } from "../application/outlook_job_digest.js";
 import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
@@ -92,6 +93,13 @@ async function startLocalMcpServer(): Promise<void> {
             outlookGraphConnectionsService,
           )
         : undefined;
+    const outlookJobDigestProcessingService = outlookGraphConnectionsService
+      ? new OutlookJobDigestProcessingService(
+          outlookGraphConnectionsService,
+          jobEmailReconciliationService,
+          emailLinksService,
+        )
+      : undefined;
     const tools = new ApplicationMcpService(
       actorProvider,
       applicationsService,
@@ -106,6 +114,7 @@ async function startLocalMcpServer(): Promise<void> {
       jobEmailReconciliationService,
       outlookEmailSyncService,
       outlookConnectionReconciliationService,
+      outlookJobDigestProcessingService,
     );
     const auditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),

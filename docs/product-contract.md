@@ -83,6 +83,13 @@ read-back, verification, and audit. The client does not invoke a separate
 Microsoft 365 MCP for this workflow. Graph reads occur before the SQLite
 transaction; only the evidence link and successful audit row commit together.
 
+For one exact Outlook job-alert or digest RFC Message-ID, the MCP client calls
+`process_outlook_job_digest`. Application Tracker reads the configured Graph
+folder, confirms the exact message and digest classification, resolves bounded
+job links, inspects at most five structured postings per requested page, and
+reports deterministic tracker matches. It returns no email body, does not
+change mailbox state, and does not create or update application records.
+
 An administrator manages one or more named Graph connections under **Settings
 → Connections**. Application Tracker verifies each tenant, application, client
 secret, mailbox, and Inbox child folder before saving or enabling it. The

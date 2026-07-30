@@ -59,6 +59,7 @@ import type { EmailLinkExtractionInput } from "../domain/email_links.js";
 import type { JobPostingInspectionInput } from "../domain/job_postings.js";
 import type { SyncOutlookEmailEvidenceInput } from "../domain/outlook_email_sync.js";
 import type { ReconcileOutlookGraphConnectionInput } from "../domain/outlook_connection_reconciliation.js";
+import type { ProcessOutlookJobDigestInput } from "../domain/outlook_job_digest.js";
 import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
 import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 import {
@@ -70,10 +71,14 @@ import type {
   OutlookConnectionReconciliationResult,
   OutlookConnectionReconciliationService,
 } from "./outlook_connection_reconciliation.js";
+import type {
+  OutlookJobDigestProcessingResult,
+  OutlookJobDigestProcessingService,
+} from "./outlook_job_digest.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 11;
+export const applicationMcpSchemaVersion = 12;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -93,6 +98,7 @@ export const applicationMcpToolNames = [
   "reconcile_application_from_evidence",
   "sync_outlook_email_evidence",
   "reconcile_outlook_graph_connection",
+  "process_outlook_job_digest",
   "extract_job_links",
   "resolve_job_links",
   "inspect_job_posting",
@@ -470,6 +476,9 @@ export interface McpApplicationTools {
   prepareReconcileOutlookGraphConnection(
     input: ReconcileOutlookGraphConnectionInput,
   ): Promise<PreparedMcpWriteOperation<OutlookConnectionReconciliationResult>>;
+  processOutlookJobDigest(
+    input: ProcessOutlookJobDigestInput,
+  ): Promise<OutlookJobDigestProcessingResult>;
   resolveJobLinks(
     input: EmailLinkExtractionInput,
   ): Promise<JobLinkResolutionResult>;
@@ -583,6 +592,7 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly jobEmails?: JobEmailReconciliationService,
     private readonly outlookEmailSync?: OutlookEmailSyncService,
     private readonly outlookConnectionReconciliation?: OutlookConnectionReconciliationService,
+    private readonly outlookJobDigestProcessing?: OutlookJobDigestProcessingService,
     private readonly clock: () => Date = () => new Date(),
     private readonly jobLinkResolver = new JobLinkResolutionService(emailLinks),
     private readonly jobPostingInspector = new JobPostingInspectionService(),
@@ -872,6 +882,13 @@ export class ApplicationMcpService implements McpApplicationTools {
     };
   }
 
+  public processOutlookJobDigest(
+    input: ProcessOutlookJobDigestInput,
+  ): Promise<OutlookJobDigestProcessingResult> {
+    const actor = this.actorProvider.getActor();
+    return this.outlookJobDigestProcessingService().process(actor, input);
+  }
+
   public extractJobLinks(
     input: EmailLinkExtractionInput,
   ): McpEmailLinkCandidates {
@@ -1070,5 +1087,14 @@ export class ApplicationMcpService implements McpApplicationTools {
       );
     }
     return this.outlookConnectionReconciliation;
+  }
+
+  private outlookJobDigestProcessingService(): OutlookJobDigestProcessingService {
+    if (!this.outlookJobDigestProcessing) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    return this.outlookJobDigestProcessing;
   }
 }

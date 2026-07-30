@@ -125,6 +125,9 @@ export interface OutlookMailReconciliationResult {
 }
 
 export interface OutlookMailReader {
+  findMessagesByInternetMessageId?(
+    messageId: string,
+  ): Promise<OutlookMailMessageDetail[]>;
   getMessages(ids: string[]): Promise<OutlookMailMessageDetail[]>;
   listMessagesReceivedBetween?(
     input: OutlookMailReconciliationWindow,
@@ -315,6 +318,17 @@ function classification(
     return "recruiter_conversation";
   }
   return "irrelevant";
+}
+
+export function classifyOutlookMailMessage(
+  message: OutlookMailMessageDetail,
+): OutlookEmailClassification {
+  const bodyText = inertBodyText(message);
+  return classification(
+    message,
+    `${message.subject}\n${message.bodyPreview}\n${bodyText}`,
+    false,
+  );
 }
 
 function isTransactional(value: OutlookEmailClassification): boolean {

@@ -411,6 +411,44 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
     return { messages, queriesRun: queries.length };
   }
 
+  public async findMessagesByInternetMessageId(
+    messageId: string,
+  ): Promise<OutlookMailMessageDetail[]> {
+    const folderId = await this.resolveFolderId();
+    const parameters = new URLSearchParams({
+      $filter: `internetMessageId eq ${odataString(messageId)}`,
+      $select:
+        "id,internetMessageId,subject,from,replyTo,receivedDateTime,webLink,body,bodyPreview,internetMessageHeaders,parentFolderId",
+      $top: "2",
+    });
+    let page: z.infer<typeof graphMessagePageSchema>;
+    try {
+      page = await this.request(
+        `users/${encodeURIComponent(this.config.mailbox)}/mailFolders/${encodeURIComponent(folderId)}/messages?${parameters.toString()}`,
+        graphMessagePageSchema,
+        graphMessageResponseBytes,
+      );
+    } catch (error) {
+      if (error instanceof GraphResourceNotFoundError) {
+        this.folderId = undefined;
+        throw new OutlookEmailSyncOperationalError("outlook_folder_not_found");
+      }
+      throw error;
+    }
+    const matches = page.value
+      .filter(
+        (message) =>
+          message.parentFolderId === folderId &&
+          message.internetMessageId?.trim() === messageId,
+      )
+      .slice(0, 2)
+      .map(messageDetail);
+    if (page["@odata.nextLink"] !== undefined && matches.length < 2) {
+      throw new OutlookEmailSyncOperationalError("outlook_graph_unavailable");
+    }
+    return matches;
+  }
+
   public async listMessagesReceivedBetween(input: {
     after: string;
     through: string;

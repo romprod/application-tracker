@@ -73,6 +73,7 @@ import {
 import { jobBoardProviderSchema } from "../domain/job_board.js";
 import { syncOutlookEmailEvidenceSchema } from "../domain/outlook_email_sync.js";
 import { reconcileOutlookGraphConnectionSchema } from "../domain/outlook_connection_reconciliation.js";
+import { processOutlookJobDigestSchema } from "../domain/outlook_job_digest.js";
 import {
   OutlookEmailSyncOperationalError,
   OutlookEmailSyncVerificationError,
@@ -535,6 +536,47 @@ const jobPostingInspectionResultSchema = z.strictObject({
   status: z.enum(["available", "unavailable"]),
   title: z.string().max(160).nullable().optional(),
   workArrangement: z.enum(["hybrid", "office", "remote"]).nullable().optional(),
+});
+const outlookJobDigestInspectionResultSchema =
+  jobPostingInspectionResultSchema.extend({
+    description: z.string().max(4_000).nullable().optional(),
+  });
+const outlookJobDigestPostingSchema = z.strictObject({
+  candidate: resolvedJobLinkCandidateSchema,
+  descriptionTruncated: z.boolean(),
+  inspection: outlookJobDigestInspectionResultSchema,
+  match: jobEmailMatchResultSchema,
+});
+const outlookJobDigestProcessingResultSchema = z.strictObject({
+  classification: outlookEmailClassificationSchema.nullable(),
+  connection: z.strictObject({
+    folderPath: z.string(),
+    id: z.uuid(),
+    mailbox: z.string().email().max(254),
+    name: z.string(),
+  }),
+  digest: z
+    .strictObject({
+      messageId: z.string().max(998),
+      receivedAt: z.iso.datetime(),
+      sender: z.string().email().max(254).nullable(),
+      subject: z.string().max(255),
+    })
+    .nullable(),
+  outcome: z.enum(["ambiguous", "not_digest", "not_found", "processed"]),
+  page: z.strictObject({
+    nextOffset: z.number().int().min(0).max(19).nullable(),
+    offset: z.number().int().min(0).max(19),
+    returned: z.number().int().min(0).max(5),
+    total: z.number().int().min(0).max(20),
+  }),
+  postings: z.array(outlookJobDigestPostingSchema).max(5),
+  tracking: jobLinkResolutionResultSchema.shape.tracking,
+  verification: z.strictObject({
+    exactMessageMatches: z.number().int().min(0).max(2),
+    mailboxReadOnly: z.literal(true),
+    messageBodyReturned: z.literal(false),
+  }),
 });
 const upsertApplicationFromEmailResultSchema = z.strictObject({
   action: z.enum(["created", "matched", "updated"]),
@@ -1418,6 +1460,26 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "process_outlook_job_digest",
+    {
+      annotations: openWorldReadOnlyAnnotations,
+      description:
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox; retrieve one exact RFC Message-ID from its configured folder; require a digest or job-alert classification; resolve bounded job links; inspect up to five structured postings from the requested offset; and report deterministic tracker matches. The tool returns no email body, never changes mailbox state, and never creates or updates applications.",
+      inputSchema: processOutlookJobDigestSchema,
+      outputSchema: outlookJobDigestProcessingResultSchema,
+      title: "Process Outlook job digest",
+    },
+    (input) =>
+      executeAsyncTool(
+        "process_outlook_job_digest",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.processOutlookJobDigest(input),
+      ),
+  );
+
+  server.registerTool(
     "extract_job_links",
     {
       annotations: readOnlyAnnotations,
@@ -1777,7 +1839,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. Each tool performs all required tracker and Microsoft Graph reads, writes, and verification, so do not call get_tracker_context or a separate Microsoft 365 connector around either workflow. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To inspect one exact digest without exposing its body, call process_outlook_job_digest with the same connection and its RFC Message-ID. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

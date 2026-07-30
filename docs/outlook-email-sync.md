@@ -154,6 +154,33 @@ as the evidence and MCP audit event. Ambiguous, conflicting, marketing, and
 unmatched messages are reported without being linked. The mailbox remains
 read-only.
 
+For one exact job-alert or digest message, call
+`process_outlook_job_digest` with the same exact connection selector and the
+RFC Message-ID:
+
+```json
+{
+  "connection": "russ@sargeson.co.uk",
+  "messageId": "<digest-message-id>",
+  "offset": 0
+}
+```
+
+This path accepts `read_only` or `read_write` connector access. The server
+queries only the configured folder for that exact Message-ID, confirms that
+exactly one message exists and classifies as `marketing_or_digest`, resolves up
+to 20 canonical candidates, and inspects at most five candidates from the
+requested offset. Each posting includes its deterministic tracker match. A
+structured description is capped at 4,000 characters in this batch result and
+reports `descriptionTruncated` when clipped. Follow `page.nextOffset` to inspect
+another page.
+
+The outcomes are `processed`, `not_digest`, `not_found`, and `ambiguous`.
+`verification.mailboxReadOnly` is always true and
+`verification.messageBodyReturned` is always false. The tool does not advance
+the reconciliation cursor, create evidence, or create or update an
+application. It never marks, moves, categorizes, sends, or deletes mail.
+
 Stable operational errors include:
 
 | Code                                    | Meaning                                        |
@@ -188,7 +215,9 @@ workspace, connection, tenant, and application IDs. The encryption key remains
 in the server environment. The server never stores Graph access tokens, message
 subjects, senders, headers, previews, or bodies. The cursor is only an ISO
 timestamp, never a Graph token or message identifier. Candidate subject and sender
-values exist only in the tool result for the authorized invocation.
+values exist only in the tool result for the authorized invocation. Digest
+processing returns bounded subject and sender metadata plus structured posting
+data, but never returns or stores the source message body.
 
 Graph response bodies and credential failures are converted to stable error
 codes rather than logged. Requests use only `https://graph.microsoft.com/v1.0`,
