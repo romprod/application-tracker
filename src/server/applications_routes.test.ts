@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ApplicationLedgerService } from "../application/applications.js";
 import { AuthService } from "../application/auth.js";
+import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
 import { UserAdministrationService } from "../application/users.js";
 import { ScryptPasswordHasher } from "../infrastructure/auth/password_hasher.js";
 import { CryptoSessionTokenManager } from "../infrastructure/auth/session_token_manager.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
 import { SqliteAuthRepository } from "../infrastructure/database/auth_repository.js";
 import { openApplicationDatabase } from "../infrastructure/database/connection.js";
+import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { createApp } from "./app.js";
@@ -59,6 +61,15 @@ async function createApplicationsApp() {
     new SqliteApplicationsRepository(database),
     () => new Date("2026-07-18T12:15:00.000Z"),
   );
+  const jobEmailRepository = new SqliteJobEmailReconciliationRepository(
+    database,
+  );
+  const jobEmailReconciliationService = new JobEmailReconciliationService(
+    jobEmailRepository,
+    applicationsService,
+    (operation) => database.transaction(operation).immediate(),
+    () => new Date("2026-07-18T12:16:00.000Z"),
+  );
   const usersService = new UserAdministrationService(
     new SqliteUsersRepository(database),
     hasher,
@@ -68,6 +79,7 @@ async function createApplicationsApp() {
     applicationsService,
     authCookie: { maxAgeSeconds: 86_400, secure: false },
     authService,
+    jobEmailReconciliationService,
     usersService,
   });
   function referenceId(category: string, label: string): string {
@@ -84,6 +96,7 @@ async function createApplicationsApp() {
   return {
     app,
     database,
+    jobEmailRepository,
     references: {
       applied: referenceId("status", "Applied"),
       interview: referenceId("status", "Interview"),
@@ -207,6 +220,9 @@ describe("application ledger routes", () => {
     await request(app)
       .get("/api/applications")
       .expect(401, { error: { code: "authentication_required" } });
+    await request(app)
+      .get("/api/applications/123e4567-e89b-12d3-a456-426614174000/evidence")
+      .expect(401, { error: { code: "authentication_required" } });
 
     const cookie = await login(app, "alex", "correct horse battery staple");
     await request(app)
@@ -246,6 +262,59 @@ describe("application ledger routes", () => {
       .set("Origin", "https://other.example.test")
       .send(input)
       .expect(403, { error: { code: "csrf_rejected" } });
+  });
+
+  it("returns linked email and canonical job-posting evidence", async () => {
+    const { app, jobEmailRepository, references, setup } =
+      await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput(references))
+      .expect(201);
+    const applicationId = createdApplication(created).id;
+    if (typeof applicationId !== "string") {
+      throw new Error("Expected an application ID");
+    }
+    jobEmailRepository.linkEmailEvidence({
+      applicationId,
+      messageId: "<application@example.com>",
+      occurredAt: "2026-07-18T12:16:00.000Z",
+      receivedAt: "2026-07-18T11:45:00.000Z",
+      webUrl: "https://outlook.office.com/mail/inbox/id/example",
+      workspaceId: setup.workspace.id,
+    });
+    jobEmailRepository.linkJobPosting({
+      applicationId,
+      canonicalUrl: "https://www.indeed.com/viewjob?jk=example",
+      externalPostingId: "example",
+      occurredAt: "2026-07-18T12:16:00.000Z",
+      provider: "indeed",
+      workspaceId: setup.workspace.id,
+    });
+
+    const response = await request(app)
+      .get(`/api/applications/${applicationId}/evidence`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(responseBody(response)).toMatchObject({
+      emailEvidence: [
+        {
+          applicationId,
+          messageId: "<application@example.com>",
+          receivedAt: "2026-07-18T11:45:00.000Z",
+          webUrl: "https://outlook.office.com/mail/inbox/id/example",
+        },
+      ],
+      jobPostings: [
+        {
+          applicationId,
+          canonicalUrl: "https://www.indeed.com/viewjob?jk=example",
+          externalPostingId: "example",
+          provider: "indeed",
+        },
+      ],
+    });
   });
 
   it("audits, previews, and applies an explicit application merge", async () => {
@@ -584,6 +653,14 @@ describe("application ledger routes", () => {
       .get(`/api/applications/${missingId}/events`)
       .set("Cookie", cookie)
       .expect(404, { error: { code: "application_not_found" } });
+    await request(app)
+      .get(`/api/applications/${missingId}/evidence`)
+      .set("Cookie", cookie)
+      .expect(404, { error: { code: "application_not_found" } });
+    await request(app)
+      .get("/api/applications/not-a-uuid/evidence")
+      .set("Cookie", cookie)
+      .expect(400, { error: { code: "validation_error" } });
   });
 
   it("returns the latest application when an update is stale", async () => {

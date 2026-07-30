@@ -448,6 +448,9 @@ function createApplicationsClient(
     deleteApplication: vi
       .fn<ApplicationsClient["deleteApplication"]>()
       .mockResolvedValue(),
+    getApplicationEvidence: vi
+      .fn<ApplicationsClient["getApplicationEvidence"]>()
+      .mockResolvedValue({ emailEvidence: [], jobPostings: [] }),
     listApplications: vi
       .fn<ApplicationsClient["listApplications"]>()
       .mockResolvedValue(applications),
@@ -1968,6 +1971,70 @@ describe("application shell", () => {
     expect(
       screen.queryByRole("dialog", { name: "Product Designer" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("displays linked source email and canonical job-posting evidence", async () => {
+    const applicationsClient = createApplicationsClient();
+    applicationsClient.getApplicationEvidence.mockResolvedValue({
+      emailEvidence: [
+        {
+          applicationId: applicationRecord.id,
+          createdAt: "2026-07-25T10:44:00.000Z",
+          id: "abababab-abab-4bab-8bab-abababababab",
+          messageId: "<application@example.com>",
+          receivedAt: "2026-07-25T10:43:03.000Z",
+          updatedAt: "2026-07-25T10:44:00.000Z",
+          webUrl: "https://outlook.office.com/mail/inbox/id/example",
+        },
+      ],
+      jobPostings: [
+        {
+          applicationId: applicationRecord.id,
+          canonicalUrl: "https://www.indeed.com/viewjob?jk=example",
+          createdAt: "2026-07-25T10:44:00.000Z",
+          externalPostingId: "example",
+          id: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+          provider: "indeed",
+          updatedAt: "2026-07-25T10:44:00.000Z",
+        },
+      ],
+    });
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+
+    await waitFor(() => {
+      expect(applicationsClient.getApplicationEvidence).toHaveBeenCalledWith(
+        applicationRecord.id,
+      );
+      expect(applicationsClient.listApplicationEvents).toHaveBeenCalledWith(
+        applicationRecord.id,
+      );
+    });
+    expect(
+      await screen.findByRole("link", { name: /Source email/ }),
+    ).toHaveAttribute(
+      "href",
+      "https://outlook.office.com/mail/inbox/id/example",
+    );
+    expect(
+      screen.getByRole("link", { name: /Indeed job posting/ }),
+    ).toHaveAttribute("href", "https://www.indeed.com/viewjob?jk=example");
   });
 
   it("signs in with local credentials", async () => {

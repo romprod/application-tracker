@@ -10,6 +10,7 @@ import {
 
 import {
   ApplicationsClientError,
+  type ApplicationEvidence,
   type ApplicationEvent,
   type ApplicationRecord,
   type ApplicationsClient,
@@ -99,8 +100,11 @@ export function ApplicationWorkspace({
   const [events, setEvents] = useState<ApplicationEvent[]>();
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState(false);
+  const [evidence, setEvidence] = useState<ApplicationEvidence>();
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState(false);
   const [reviewingDuplicates, setReviewingDuplicates] = useState(false);
-  const historyRequest = useRef(0);
+  const drawerRequest = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -146,32 +150,55 @@ export function ApplicationWorkspace({
   }, [outlookConnectionsClient]);
 
   function openApplication(application: ApplicationRecord) {
-    const request = historyRequest.current + 1;
-    historyRequest.current = request;
+    const request = drawerRequest.current + 1;
+    drawerRequest.current = request;
     setSelectedApplication(application);
     setEvents(undefined);
     setEventsError(false);
     setEventsLoading(true);
-    void applicationsClient
-      .listApplicationEvents(application.id)
+    setEvidence(undefined);
+    setEvidenceError(false);
+    setEvidenceLoading(true);
+
+    const eventsRequest = applicationsClient.listApplicationEvents(
+      application.id,
+    );
+    const evidenceRequest = applicationsClient.getApplicationEvidence(
+      application.id,
+    );
+    void eventsRequest
       .then((loaded) => {
-        if (historyRequest.current !== request) return;
+        if (drawerRequest.current !== request) return;
         setEvents(loaded);
         setEventsLoading(false);
       })
       .catch(() => {
-        if (historyRequest.current !== request) return;
+        if (drawerRequest.current !== request) return;
         setEventsError(true);
         setEventsLoading(false);
+      });
+    void evidenceRequest
+      .then((loaded) => {
+        if (drawerRequest.current !== request) return;
+        setEvidence(loaded);
+        setEvidenceLoading(false);
+      })
+      .catch(() => {
+        if (drawerRequest.current !== request) return;
+        setEvidenceError(true);
+        setEvidenceLoading(false);
       });
   }
 
   function closeApplication() {
-    historyRequest.current += 1;
+    drawerRequest.current += 1;
     setSelectedApplication(undefined);
     setEvents(undefined);
     setEventsLoading(false);
     setEventsError(false);
+    setEvidence(undefined);
+    setEvidenceLoading(false);
+    setEvidenceError(false);
   }
 
   function beginCreate() {
@@ -352,6 +379,9 @@ export function ApplicationWorkspace({
         <ApplicationDrawer
           key={selectedApplication.id}
           application={selectedApplication}
+          evidence={evidence}
+          evidenceError={evidenceError}
+          evidenceLoading={evidenceLoading}
           events={events}
           eventsError={eventsError}
           eventsLoading={eventsLoading}
