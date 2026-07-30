@@ -188,6 +188,10 @@ describe("OutlookJobDigestProcessingService", () => {
     expect(result.postings).toHaveLength(5);
     expect(result.postings[0]).toMatchObject({
       descriptionTruncated: true,
+      digestFallback: {
+        attempted: false,
+        unavailableReason: null,
+      },
       inspectionSource: "provider_page",
       inspection: {
         description: "x".repeat(4_000),
@@ -263,6 +267,10 @@ describe("OutlookJobDigestProcessingService", () => {
           title: "Senior Platform Engineer",
           workArrangement: null,
         },
+        digestFallback: {
+          attempted: true,
+          unavailableReason: null,
+        },
         inspectionSource: "digest_email",
         match: { level: null, matches: [], outcome: "none" },
       },
@@ -321,6 +329,10 @@ describe("OutlookJobDigestProcessingService", () => {
 
     expect(result.postings[0]).toMatchObject({
       descriptionTruncated: false,
+      digestFallback: {
+        attempted: true,
+        unavailableReason: "employer_ambiguous",
+      },
       inspection: unavailable,
       inspectionSource: "provider_page",
     });
@@ -376,6 +388,10 @@ describe("OutlookJobDigestProcessingService", () => {
     });
 
     expect(result.postings[0]).toMatchObject({
+      digestFallback: {
+        attempted: true,
+        unavailableReason: "card_elements_exceeded",
+      },
       inspection: {
         reason: "provider_challenge",
         status: "unavailable",
@@ -383,6 +399,64 @@ describe("OutlookJobDigestProcessingService", () => {
       inspectionSource: "provider_page",
     });
   });
+
+  it.each([
+    {
+      content: `
+        <div data-job-card>
+          <a class="job-title"
+             href="https://www.linkedin.com/jobs/view/4405273020">
+            Senior Platform Engineer
+          </a>
+        </div>
+      `,
+      unavailableReason: "employer_missing",
+    },
+    {
+      content: `
+        <div data-job-card>
+          <a class="job-title"
+             href="https://www.linkedin.com/jobs/view/4405273020">
+            Senior Platform Engineer
+          </a>
+          <div class="company-name">Example Ltd</div>
+          <a href="https://www.linkedin.com/jobs/view/4405273021">
+            Another job
+          </a>
+        </div>
+      `,
+      unavailableReason: "multiple_posting_links",
+    },
+  ] as const)(
+    "reports $unavailableReason without returning digest content",
+    async ({ content, unavailableReason }) => {
+      const value = harness([
+        message({ body: { content, contentType: "html" } }),
+      ]);
+      value.resolve.mockResolvedValue({
+        candidates: [candidate(0)],
+        tracking: { attempted: 0, resolved: 0, unavailable: [] },
+      });
+      value.inspect.mockResolvedValue({
+        canonicalUrl: candidate(0).url,
+        reason: "provider_challenge",
+        retryAfter: "2026-07-30T08:15:00.000Z",
+        status: "unavailable",
+      });
+
+      const result = await value.service.process(actor, {
+        connection: "Work tenant",
+        messageId: "<digest-1@example.com>",
+        offset: 0,
+      });
+
+      expect(result.postings[0]).toMatchObject({
+        digestFallback: { attempted: true, unavailableReason },
+        inspectionSource: "provider_page",
+      });
+      expect(JSON.stringify(result)).not.toContain("data-job-card");
+    },
+  );
 
   it("prefers provider JSON-LD over paired digest-card metadata", async () => {
     const value = harness([
@@ -409,6 +483,10 @@ describe("OutlookJobDigestProcessingService", () => {
     });
 
     expect(result.postings[0]).toMatchObject({
+      digestFallback: {
+        attempted: false,
+        unavailableReason: null,
+      },
       inspection: {
         employer: "Example Company",
         title: "Platform Engineer",
@@ -447,6 +525,10 @@ describe("OutlookJobDigestProcessingService", () => {
     });
 
     expect(result.postings[0]).toMatchObject({
+      digestFallback: {
+        attempted: false,
+        unavailableReason: null,
+      },
       inspection: {
         reason: "missing_structured_data",
         status: "unavailable",

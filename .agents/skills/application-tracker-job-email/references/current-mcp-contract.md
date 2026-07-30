@@ -179,12 +179,17 @@ classify as `marketing_or_digest`; any other classification returns
 For a digest, the server resolves at most 20 canonical candidates and inspects
 at most five from the requested offset. Every returned posting includes the
 resolved candidate, structured inspection, `inspectionSource`, a deterministic
-tracker match, and whether its description was clipped to the digest-result
-limit of 4,000 characters. `provider_page` identifies provider JSON-LD.
-`digest_email` is used only when a provider challenge blocked inspection and
-one bounded card contained one exact supported posting link plus one explicit,
-unambiguous employer/title pair. Follow `page.nextOffset` with otherwise
-identical input to read another page.
+tracker match, whether its description was clipped to the digest-result limit
+of 4,000 characters, and `digestFallback` diagnostics. `provider_page`
+identifies provider JSON-LD. `digest_email` is used only when a provider
+challenge blocked inspection and one bounded card contained one exact
+supported posting link plus one explicit, unambiguous employer/title pair.
+The diagnostics report whether fallback was attempted and a stable bounded
+reason when it was unavailable, without returning card content. Follow
+`page.nextOffset` with otherwise identical input to read another page.
+Unavailable reasons are `card_elements_exceeded`, `card_text_exceeded`,
+`employer_ambiguous`, `employer_missing`, `matching_card_not_found`,
+`multiple_posting_links`, `title_ambiguous`, and `title_missing`.
 
 The result never contains the message body. It does not advance a connection
 cursor, persist the digest, link evidence, create a prospect, update an

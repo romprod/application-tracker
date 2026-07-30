@@ -262,8 +262,32 @@ function outlookJobDigestResult() {
       subject: "Daily job alert",
     },
     outcome: "processed" as const,
-    page: { nextOffset: null, offset: 0, returned: 0, total: 0 },
-    postings: [],
+    page: { nextOffset: null, offset: 0, returned: 1, total: 1 },
+    postings: [
+      {
+        candidate: {
+          externalPostingId: "4405273020",
+          host: "www.linkedin.com",
+          provider: "linkedin" as const,
+          redirectsFollowed: 0,
+          resolution: "deterministic" as const,
+          url: "https://www.linkedin.com/jobs/view/4405273020",
+        },
+        descriptionTruncated: false,
+        digestFallback: {
+          attempted: true,
+          unavailableReason: "employer_missing" as const,
+        },
+        inspection: {
+          canonicalUrl: "https://www.linkedin.com/jobs/view/4405273020",
+          reason: "provider_challenge" as const,
+          retryAfter: "2026-07-30T08:15:00.000Z",
+          status: "unavailable" as const,
+        },
+        inspectionSource: "provider_page" as const,
+        match: { level: null, matches: [], outcome: "none" as const },
+      },
+    ],
     tracking: { attempted: 0, resolved: 0, unavailable: [] },
     verification: {
       exactMessageMatches: 1,

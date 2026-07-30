@@ -546,9 +546,23 @@ const outlookJobDigestInspectionResultSchema =
   jobPostingInspectionResultSchema.extend({
     description: z.string().max(4_000).nullable().optional(),
   });
+const digestEmailJobCardUnavailableReasonSchema = z.enum([
+  "card_elements_exceeded",
+  "card_text_exceeded",
+  "employer_ambiguous",
+  "employer_missing",
+  "matching_card_not_found",
+  "multiple_posting_links",
+  "title_ambiguous",
+  "title_missing",
+]);
 const outlookJobDigestPostingSchema = z.strictObject({
   candidate: resolvedJobLinkCandidateSchema,
   descriptionTruncated: z.boolean(),
+  digestFallback: z.strictObject({
+    attempted: z.boolean(),
+    unavailableReason: digestEmailJobCardUnavailableReasonSchema.nullable(),
+  }),
   inspection: outlookJobDigestInspectionResultSchema,
   inspectionSource: z.enum(["digest_email", "provider_page"]),
   match: jobEmailMatchResultSchema,
@@ -1535,7 +1549,7 @@ export function createApplicationMcpServer(
     {
       annotations: openWorldReadOnlyAnnotations,
       description:
-        "Resolve one enabled Graph connection by exact ID, name, or mailbox; retrieve one exact RFC Message-ID from its configured folder; require a digest or job-alert classification; resolve bounded job links; inspect up to five structured postings from the requested offset; and report deterministic tracker matches. When a provider challenge prevents inspection, one posting may use an explicitly paired title and employer from the same bounded digest card and reports digest_email provenance. The tool returns no email body, never changes mailbox state, and never creates or updates applications.",
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox; retrieve one exact RFC Message-ID from its configured folder; require a digest or job-alert classification; resolve bounded job links; inspect up to five structured postings from the requested offset; and report deterministic tracker matches. When a provider challenge prevents inspection, one posting may use an explicitly paired title and employer from the same bounded digest card and reports digest_email provenance; each posting also reports whether this fallback was attempted and a stable unavailable reason when it failed. The tool returns no email body, never changes mailbox state, and never creates or updates applications.",
       inputSchema: processOutlookJobDigestSchema,
       outputSchema: outlookJobDigestProcessingResultSchema,
       title: "Process Outlook job digest",

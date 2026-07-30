@@ -187,8 +187,14 @@ reports `descriptionTruncated` when clipped. Follow `page.nextOffset` to inspect
 another page. Each posting also reports `inspectionSource`. Provider JSON-LD is
 preferred. If a provider challenge blocks inspection, the server may use
 `digest_email` only when one bounded card explicitly and unambiguously pairs
-the exact supported posting link, employer, and title. It returns no card or
-message body, and incomplete or ambiguous cards remain unavailable.
+the exact supported posting link, employer, and title. `digestFallback`
+reports whether that fallback was attempted and a stable unavailable reason
+when it failed. It returns no card or message body, and incomplete or ambiguous
+cards remain unavailable.
+
+Fallback reasons are `card_elements_exceeded`, `card_text_exceeded`,
+`employer_ambiguous`, `employer_missing`, `matching_card_not_found`,
+`multiple_posting_links`, `title_ambiguous`, and `title_missing`.
 
 The outcomes are `processed`, `not_digest`, `not_found`, and `ambiguous`.
 `verification.mailboxReadOnly` is always true and

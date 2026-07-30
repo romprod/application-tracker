@@ -90,7 +90,8 @@ job links, inspects at most five structured postings per requested page, and
 reports deterministic tracker matches. Provider challenges activate a strict
 same-card fallback only when one supported posting link, employer, and title
 are explicitly paired; the result reports whether inspection came from the
-provider page or digest email. It returns no email body, does not change
+provider page or digest email, whether fallback was attempted, and a stable
+unavailable reason when it failed. It returns no email body, does not change
 mailbox state, and does not create or update application records.
 
 For historical digest discovery, the MCP client calls
