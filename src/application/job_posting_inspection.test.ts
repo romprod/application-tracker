@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { JobPostingInspectionService } from "./job_posting_inspection.js";
+import {
+  indeedInspectionMinimumIntervalMs,
+  JobPostingInspectionService,
+} from "./job_posting_inspection.js";
 import type {
   PublicHttpsReader,
   PublicHttpsResponse,
@@ -128,7 +131,7 @@ describe("JobPostingInspectionService", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("returns unavailable for expired, blocked, and ambiguous postings", async () => {
+  it("returns unavailable for expired, challenged, and ambiguous postings", async () => {
     const expired = inspectionService(
       vi.fn(() =>
         Promise.resolve(
@@ -153,7 +156,8 @@ describe("JobPostingInspectionService", () => {
     );
     await expect(blocked.inspect({ url: canonicalUrl })).resolves.toEqual({
       canonicalUrl,
-      reason: "blocked",
+      reason: "provider_challenge",
+      retryAfter: "2026-07-27T12:15:00.000Z",
       status: "unavailable",
     });
 
@@ -228,5 +232,125 @@ describe("JobPostingInspectionService", () => {
       status: "unavailable",
     });
     expect(read.mock.calls[0]?.[0]).toEqual(new URL(canonicalUrl));
+  });
+
+  it("deduplicates concurrent and recently completed canonical inspections", async () => {
+    let releaseRead: (() => void) | undefined;
+    const read = vi.fn(
+      () =>
+        new Promise<PublicHttpsResponse>((resolve) => {
+          releaseRead = () => resolve(response({ status: 410 }));
+        }),
+    );
+    const service = inspectionService(read);
+
+    const first = service.inspect({ url: canonicalUrl });
+    const duplicate = service.inspect({
+      url: `${canonicalUrl}&from=email`,
+    });
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    releaseRead!();
+
+    await expect(Promise.all([first, duplicate])).resolves.toEqual([
+      { canonicalUrl, reason: "expired", status: "unavailable" },
+      { canonicalUrl, reason: "expired", status: "unavailable" },
+    ]);
+    await expect(service.inspect({ url: canonicalUrl })).resolves.toEqual({
+      canonicalUrl,
+      reason: "expired",
+      status: "unavailable",
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes and spaces distinct Indeed inspections", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-27T12:00:00.000Z"));
+    try {
+      let active = 0;
+      let maximumActive = 0;
+      const startedAt: number[] = [];
+      const read = vi.fn(async () => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        startedAt.push(Date.now());
+        await Promise.resolve();
+        active -= 1;
+        return response({ status: 410 });
+      });
+      const service = new JobPostingInspectionService(
+        undefined,
+        { read },
+        () => new Date(Date.now()),
+      );
+
+      const inspections = Promise.all([
+        service.inspect({ url: canonicalUrl }),
+        service.inspect({
+          url: "https://uk.indeed.com/viewjob?jk=0ecc2e04f72bf31c",
+        }),
+      ]);
+      await vi.advanceTimersByTimeAsync(indeedInspectionMinimumIntervalMs);
+      await inspections;
+
+      expect(maximumActive).toBe(1);
+      expect(startedAt).toHaveLength(2);
+      expect(startedAt[1]! - startedAt[0]!).toBeGreaterThanOrEqual(
+        indeedInspectionMinimumIntervalMs,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens an Indeed cooldown after a provider challenge without another fetch", async () => {
+    const read = vi.fn(() => Promise.resolve(response({ status: 403 })));
+    const service = inspectionService(read);
+
+    await expect(service.inspect({ url: canonicalUrl })).resolves.toMatchObject(
+      {
+        reason: "provider_challenge",
+        retryAfter: "2026-07-27T12:15:00.000Z",
+        status: "unavailable",
+      },
+    );
+    await expect(
+      service.inspect({
+        url: "https://uk.indeed.com/viewjob?jk=e56772bb8f333a4d",
+      }),
+    ).resolves.toEqual({
+      canonicalUrl: "https://uk.indeed.com/viewjob?jk=e56772bb8f333a4d",
+      reason: "provider_challenge",
+      retryAfter: "2026-07-27T12:15:00.000Z",
+      status: "unavailable",
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes an Indeed security-check page without returning its content", async () => {
+    const service = inspectionService(
+      vi.fn(() =>
+        Promise.resolve(
+          response({
+            body: `
+              <html>
+                <head><title>Security Check - Indeed.com</title></head>
+                <body>Challenge reference secret-value</body>
+              </html>
+            `,
+          }),
+        ),
+      ),
+    );
+
+    const result = await service.inspect({ url: canonicalUrl });
+
+    expect(result).toEqual({
+      canonicalUrl,
+      reason: "provider_challenge",
+      retryAfter: "2026-07-27T12:15:00.000Z",
+      status: "unavailable",
+    });
+    expect(JSON.stringify(result)).not.toContain("secret-value");
   });
 });

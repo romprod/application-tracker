@@ -235,8 +235,12 @@ connection are known.
 2. Treat `processed`, `not_digest`, `not_found`, and `ambiguous` exactly. Do not
    guess around a non-processed result.
 3. For `processed`, assess only the returned structured inspections and
-   deterministic tracker matches. Never infer missing employer, title,
-   location, salary, or working arrangement from the digest metadata.
+   deterministic tracker matches. `inspectionSource: provider_page` means the
+   fields came from provider JSON-LD. `inspectionSource: digest_email` means a
+   provider challenge blocked inspection and the server found one exact
+   supported posting link plus one explicit employer and title in the same
+   bounded digest card. Never infer missing employer, title, location, salary,
+   or working arrangement from the digest metadata.
 4. If `page.nextOffset` is non-null, repeat with the same connection and
    Message-ID and that exact offset.
 5. Confirm the privacy boundary from `verification.mailboxReadOnly` and
@@ -244,11 +248,16 @@ connection are known.
    returned or persisted.
 
 The server resolves at most 20 candidates and inspects at most five per page.
-Descriptions are capped at 4,000 characters and report truncation explicitly.
-The tool does not advance the reconciliation cursor, store digest content, link
-email evidence, create prospects, update applications, or change mailbox
-state. Any later mutation requires separate user authorization and the normal
-tracker context, reference, duplicate, and reconciliation checks.
+Indeed inspections are serialized, spaced, deduplicated, briefly cached, and
+placed in cooldown after a provider challenge. During that challenge only, the
+server may fall back to an unambiguous same-card employer/title pair and marks
+its provenance `digest_email`; incomplete or ambiguous cards remain
+unavailable. Descriptions are capped at 4,000 characters and report truncation
+explicitly. The tool does not return or store digest content, advance the
+reconciliation cursor, link email evidence, create prospects, update
+applications, or change mailbox state. Any later mutation requires separate
+user authorization and the normal tracker context, reference, duplicate, and
+reconciliation checks.
 
 ## Server-side historical digest search
 

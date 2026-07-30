@@ -8,6 +8,7 @@ import { DocumentLibraryService } from "../application/documents.js";
 import { DocumentPreviewService } from "../application/document_previews.js";
 import { EmailLinkExtractionService } from "../application/email_links.js";
 import { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
+import { JobPostingInspectionService } from "../application/job_posting_inspection.js";
 import { ApplicationMcpService } from "../application/mcp.js";
 import { McpDocumentImportManager } from "../application/mcp_document_imports.js";
 import {
@@ -80,6 +81,7 @@ async function startApplication(): Promise<void> {
       (operation) => database.transaction(operation).immediate(),
     );
     const emailLinksService = new EmailLinkExtractionService();
+    const jobPostingInspectionService = new JobPostingInspectionService();
     const outlookGraphConnectionsService = config.outlookConnectionEncryptionKey
       ? new OutlookGraphConnectionsService(
           new SqliteOutlookGraphConnectionsRepository(database),
@@ -111,6 +113,8 @@ async function startApplication(): Promise<void> {
           outlookGraphConnectionsService,
           jobEmailReconciliationService,
           emailLinksService,
+          undefined,
+          jobPostingInspectionService,
         )
       : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
@@ -218,6 +222,9 @@ async function startApplication(): Promise<void> {
                 outlookEmailSyncService,
                 outlookConnectionReconciliationService,
                 outlookJobDigestProcessingService,
+                undefined,
+                undefined,
+                jobPostingInspectionService,
               ),
               {
                 audit: {

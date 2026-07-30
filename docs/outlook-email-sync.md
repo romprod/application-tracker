@@ -184,7 +184,11 @@ to 20 canonical candidates, and inspects at most five candidates from the
 requested offset. Each posting includes its deterministic tracker match. A
 structured description is capped at 4,000 characters in this batch result and
 reports `descriptionTruncated` when clipped. Follow `page.nextOffset` to inspect
-another page.
+another page. Each posting also reports `inspectionSource`. Provider JSON-LD is
+preferred. If a provider challenge blocks inspection, the server may use
+`digest_email` only when one bounded card explicitly and unambiguously pairs
+the exact supported posting link, employer, and title. It returns no card or
+message body, and incomplete or ambiguous cards remain unavailable.
 
 The outcomes are `processed`, `not_digest`, `not_found`, and `ambiguous`.
 `verification.mailboxReadOnly` is always true and

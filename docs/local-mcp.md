@@ -168,7 +168,10 @@ its RFC Message-ID, call `process_outlook_job_digest` with `connection`,
 `messageId`, and optional `offset`. The server retrieves the message from the
 configured folder, returns at most five posting inspections, and supplies
 `page.nextOffset` until all of the digest's at most 20 candidates are covered.
-It returns no message body and never creates or updates applications.
+Provider JSON-LD is preferred; after a provider challenge, a strict same-card
+fallback may return an explicitly paired employer and title with
+`inspectionSource: digest_email`. It returns no message body and never creates
+or updates applications.
 
 See [`mcp-data-transfer.md`](mcp-data-transfer.md) for the document chunk
 protocol and the boundary between logical MCP transfer and exact backup.

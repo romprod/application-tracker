@@ -188,6 +188,7 @@ describe("OutlookJobDigestProcessingService", () => {
     expect(result.postings).toHaveLength(5);
     expect(result.postings[0]).toMatchObject({
       descriptionTruncated: true,
+      inspectionSource: "provider_page",
       inspection: {
         description: "x".repeat(4_000),
         status: "available",
@@ -200,6 +201,258 @@ describe("OutlookJobDigestProcessingService", () => {
     );
     expect(value.inspect).toHaveBeenCalledTimes(5);
     expect(value.match).toHaveBeenCalledTimes(5);
+  });
+
+  it("uses an explicitly paired digest card when a provider challenge blocks inspection", async () => {
+    const value = harness([
+      message({
+        body: {
+          content: `
+            <table><tr data-job-card>
+              <td>
+                <a class="job-title"
+                   href="https://uk.indeed.com/pagead/clk?jk=96550901704ee48a&amp;from=jobalert">
+                  Senior Platform Engineer
+                </a>
+                <div class="company-name">Example Ltd</div>
+              </td>
+            </tr></table>
+          `,
+          contentType: "html",
+        },
+      }),
+    ]);
+    const indeedCandidate: ResolvedJobLinkCandidate = {
+      externalPostingId: "96550901704ee48a",
+      host: "uk.indeed.com",
+      provider: "indeed",
+      redirectsFollowed: 0,
+      resolution: "deterministic",
+      url: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+    };
+    value.resolve.mockResolvedValue({
+      candidates: [indeedCandidate],
+      tracking: { attempted: 0, resolved: 0, unavailable: [] },
+    });
+    value.inspect.mockResolvedValue({
+      canonicalUrl: indeedCandidate.url,
+      reason: "provider_challenge",
+      retryAfter: "2026-07-30T08:15:00.000Z",
+      status: "unavailable",
+    });
+
+    const result = await value.service.process(actor, {
+      connection: "Work tenant",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+
+    expect(result.postings).toEqual([
+      {
+        candidate: indeedCandidate,
+        descriptionTruncated: false,
+        inspection: {
+          applyUrl: indeedCandidate.url,
+          canonicalUrl: indeedCandidate.url,
+          closingDate: null,
+          description: null,
+          employer: "Example Ltd",
+          location: null,
+          salary: null,
+          status: "available",
+          title: "Senior Platform Engineer",
+          workArrangement: null,
+        },
+        inspectionSource: "digest_email",
+        match: { level: null, matches: [], outcome: "none" },
+      },
+    ]);
+    expect(value.match).toHaveBeenCalledWith(actor, {
+      companyName: "Example Ltd",
+      posting: { url: indeedCandidate.url },
+      roleTitle: "Senior Platform Engineer",
+    });
+    expect(JSON.stringify(result)).not.toContain("data-job-card");
+  });
+
+  it("rejects incomplete or ambiguous digest-card fallback metadata", async () => {
+    const value = harness([
+      message({
+        body: {
+          content: `
+            <div data-job-card>
+              <a class="job-title"
+                 href="https://uk.indeed.com/viewjob?jk=96550901704ee48a">
+                Senior Platform Engineer
+              </a>
+              <div class="company-name">Example Ltd</div>
+              <div class="employer">Different Ltd</div>
+            </div>
+          `,
+          contentType: "html",
+        },
+      }),
+    ]);
+    const indeedCandidate: ResolvedJobLinkCandidate = {
+      externalPostingId: "96550901704ee48a",
+      host: "uk.indeed.com",
+      provider: "indeed",
+      redirectsFollowed: 0,
+      resolution: "deterministic",
+      url: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+    };
+    value.resolve.mockResolvedValue({
+      candidates: [indeedCandidate],
+      tracking: { attempted: 0, resolved: 0, unavailable: [] },
+    });
+    const unavailable = {
+      canonicalUrl: indeedCandidate.url,
+      reason: "provider_challenge" as const,
+      retryAfter: "2026-07-30T08:15:00.000Z",
+      status: "unavailable" as const,
+    };
+    value.inspect.mockResolvedValue(unavailable);
+
+    const result = await value.service.process(actor, {
+      connection: "Work tenant",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+
+    expect(result.postings[0]).toMatchObject({
+      descriptionTruncated: false,
+      inspection: unavailable,
+      inspectionSource: "provider_page",
+    });
+    expect(value.match).toHaveBeenCalledWith(actor, {
+      posting: { url: indeedCandidate.url },
+    });
+  });
+
+  it("rejects an oversized digest card instead of missing a later posting link", async () => {
+    const value = harness([
+      message({
+        body: {
+          content: `
+            <div data-job-card>
+              <a class="job-title"
+                 href="https://uk.indeed.com/viewjob?jk=96550901704ee48a">
+                Senior Platform Engineer
+              </a>
+              <div class="company-name">Example Ltd</div>
+              ${Array.from({ length: 105 }, () => "<span>x</span>").join("")}
+              <a href="https://www.linkedin.com/jobs/view/4405273020">
+                Another job
+              </a>
+            </div>
+          `,
+          contentType: "html",
+        },
+      }),
+    ]);
+    const indeedCandidate: ResolvedJobLinkCandidate = {
+      externalPostingId: "96550901704ee48a",
+      host: "uk.indeed.com",
+      provider: "indeed",
+      redirectsFollowed: 0,
+      resolution: "deterministic",
+      url: "https://uk.indeed.com/viewjob?jk=96550901704ee48a",
+    };
+    value.resolve.mockResolvedValue({
+      candidates: [indeedCandidate],
+      tracking: { attempted: 0, resolved: 0, unavailable: [] },
+    });
+    value.inspect.mockResolvedValue({
+      canonicalUrl: indeedCandidate.url,
+      reason: "provider_challenge",
+      retryAfter: "2026-07-30T08:15:00.000Z",
+      status: "unavailable",
+    });
+
+    const result = await value.service.process(actor, {
+      connection: "Work tenant",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+
+    expect(result.postings[0]).toMatchObject({
+      inspection: {
+        reason: "provider_challenge",
+        status: "unavailable",
+      },
+      inspectionSource: "provider_page",
+    });
+  });
+
+  it("prefers provider JSON-LD over paired digest-card metadata", async () => {
+    const value = harness([
+      message({
+        body: {
+          content: `
+            <div data-job-card>
+              <a class="job-title"
+                 href="https://www.linkedin.com/jobs/view/4405273020">
+                Email title
+              </a>
+              <div class="company-name">Email employer</div>
+            </div>
+          `,
+          contentType: "html",
+        },
+      }),
+    ]);
+
+    const result = await value.service.process(actor, {
+      connection: "Work tenant",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+
+    expect(result.postings[0]).toMatchObject({
+      inspection: {
+        employer: "Example Company",
+        title: "Platform Engineer",
+      },
+      inspectionSource: "provider_page",
+    });
+  });
+
+  it("does not use digest-card metadata for non-challenge inspection failures", async () => {
+    const value = harness([
+      message({
+        body: {
+          content: `
+            <div data-job-card>
+              <a class="job-title"
+                 href="https://www.linkedin.com/jobs/view/4405273020">
+                Email title
+              </a>
+              <div class="company-name">Email employer</div>
+            </div>
+          `,
+          contentType: "html",
+        },
+      }),
+    ]);
+    value.inspect.mockResolvedValue({
+      canonicalUrl: candidate(0).url,
+      reason: "missing_structured_data",
+      status: "unavailable",
+    });
+
+    const result = await value.service.process(actor, {
+      connection: "Work tenant",
+      messageId: "<digest-1@example.com>",
+      offset: 0,
+    });
+
+    expect(result.postings[0]).toMatchObject({
+      inspection: {
+        reason: "missing_structured_data",
+        status: "unavailable",
+      },
+      inspectionSource: "provider_page",
+    });
   });
 
   it("pages through the remaining postings deterministically", async () => {

@@ -1,7 +1,11 @@
 import { DomUtils, parseDocument } from "htmlparser2";
 
+import type { JobBoardProvider } from "../domain/job_board.js";
 import type { JobPostingInspectionInput } from "../domain/job_postings.js";
-import { JobBoardProviderRegistry } from "./job_board_provider_registry.js";
+import {
+  type JobBoardMatch,
+  JobBoardProviderRegistry,
+} from "./job_board_provider_registry.js";
 import {
   maximumPublicHttpsResponseBytes,
   publicHttpsRequestTimeoutMs,
@@ -12,6 +16,11 @@ import {
 const maximumRedirects = 3;
 const maximumDescriptionCharacters = 20_000;
 const maximumMetadataNodes = 1_000;
+const maximumRecentInspections = 256;
+
+export const indeedInspectionMinimumIntervalMs = 1_500;
+export const providerChallengeCooldownMs = 15 * 60 * 1_000;
+export const recentInspectionCacheMs = 5 * 60 * 1_000;
 
 export type JobPostingUnavailableReason =
   | "ambiguous_metadata"
@@ -19,6 +28,7 @@ export type JobPostingUnavailableReason =
   | "expired"
   | "fetch_failed"
   | "missing_structured_data"
+  | "provider_challenge"
   | "redirect_limit"
   | "unrecognized_url";
 
@@ -38,6 +48,7 @@ export interface AvailableJobPostingInspection {
 export interface UnavailableJobPostingInspection {
   canonicalUrl: string | null;
   reason: JobPostingUnavailableReason;
+  retryAfter?: string;
   status: "unavailable";
 }
 
@@ -274,12 +285,179 @@ function blockedStatus(status: number): boolean {
   return [401, 403, 407, 409, 423, 429, 451].includes(status);
 }
 
+function isProviderChallenge(
+  provider: JobBoardProvider,
+  response: {
+    body: string;
+    status: number;
+  },
+): boolean {
+  if (provider !== "indeed") return false;
+  if (response.status === 403 || response.status === 429) return true;
+  if (response.status < 200 || response.status >= 300) return false;
+  return (
+    /<title[^>]*>\s*security check(?:\s*-\s*indeed\.com)?\s*<\/title>/i.test(
+      response.body,
+    ) ||
+    /\b(?:cf-chl|g-recaptcha|hcaptcha|verify you are human)\b/i.test(
+      response.body,
+    )
+  );
+}
+
+interface ProviderInspectionState {
+  challengeUntil: number;
+  nextRequestAt: number;
+  tail: Promise<void>;
+}
+
+interface RecentInspection {
+  expiresAt: number;
+  result: JobPostingInspectionResult;
+}
+
+type InspectionDelay = (milliseconds: number) => Promise<void>;
+
+function defaultInspectionDelay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+class JobPostingInspectionCoordinator {
+  private readonly inFlight = new Map<
+    string,
+    Promise<JobPostingInspectionResult>
+  >();
+  private readonly providerStates = new Map<
+    JobBoardProvider,
+    ProviderInspectionState
+  >();
+  private readonly recent = new Map<string, RecentInspection>();
+
+  public constructor(
+    private readonly clock: () => number,
+    private readonly delay: InspectionDelay,
+  ) {}
+
+  public inspect(
+    match: JobBoardMatch,
+    operation: () => Promise<JobPostingInspectionResult>,
+  ): Promise<JobPostingInspectionResult> {
+    this.pruneRecent();
+    const key = match.url.href;
+    const cached = this.recent.get(key);
+    if (cached) return Promise.resolve(cached.result);
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+
+    const inspection = this.run(match, operation).then((result) => {
+      this.remember(key, result);
+      return result;
+    });
+    this.inFlight.set(key, inspection);
+    const clearPending = () => {
+      if (this.inFlight.get(key) === inspection) this.inFlight.delete(key);
+    };
+    void inspection.then(clearPending, clearPending);
+    return inspection;
+  }
+
+  private async run(
+    match: JobBoardMatch,
+    operation: () => Promise<JobPostingInspectionResult>,
+  ): Promise<JobPostingInspectionResult> {
+    if (match.provider !== "indeed") return operation();
+    const state = this.providerState(match.provider);
+    const previous = state.tail;
+    let releaseTurn = () => {};
+    const turn = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    state.tail = previous.then(() => turn);
+    await previous;
+    try {
+      const now = this.clock();
+      if (state.challengeUntil > now) {
+        return this.challengeResult(match.url, state.challengeUntil);
+      }
+      const waitMs = Math.max(0, state.nextRequestAt - now);
+      if (waitMs > 0) await this.delay(waitMs);
+      const afterDelay = this.clock();
+      if (state.challengeUntil > afterDelay) {
+        return this.challengeResult(match.url, state.challengeUntil);
+      }
+      state.nextRequestAt = afterDelay + indeedInspectionMinimumIntervalMs;
+      const result = await operation();
+      if (
+        result.status === "unavailable" &&
+        result.reason === "provider_challenge"
+      ) {
+        state.challengeUntil = this.clock() + providerChallengeCooldownMs;
+        return this.challengeResult(match.url, state.challengeUntil);
+      }
+      return result;
+    } finally {
+      releaseTurn();
+    }
+  }
+
+  private challengeResult(
+    canonicalUrl: URL,
+    retryAt: number,
+  ): UnavailableJobPostingInspection {
+    return {
+      canonicalUrl: canonicalUrl.href,
+      reason: "provider_challenge",
+      retryAfter: new Date(retryAt).toISOString(),
+      status: "unavailable",
+    };
+  }
+
+  private providerState(provider: JobBoardProvider): ProviderInspectionState {
+    const existing = this.providerStates.get(provider);
+    if (existing) return existing;
+    const created: ProviderInspectionState = {
+      challengeUntil: 0,
+      nextRequestAt: 0,
+      tail: Promise.resolve(),
+    };
+    this.providerStates.set(provider, created);
+    return created;
+  }
+
+  private pruneRecent(): void {
+    const now = this.clock();
+    for (const [key, cached] of this.recent) {
+      if (cached.expiresAt <= now) this.recent.delete(key);
+    }
+  }
+
+  private remember(key: string, result: JobPostingInspectionResult): void {
+    this.recent.set(key, {
+      expiresAt: this.clock() + recentInspectionCacheMs,
+      result,
+    });
+    while (this.recent.size > maximumRecentInspections) {
+      const oldest = this.recent.keys().next().value;
+      if (!oldest) break;
+      this.recent.delete(oldest);
+    }
+  }
+}
+
 export class JobPostingInspectionService {
+  private readonly coordinator: JobPostingInspectionCoordinator;
+
   public constructor(
     private readonly providers = new JobBoardProviderRegistry(),
     private readonly reader: PublicHttpsReader = new SecurePublicHttpsReader(),
     private readonly clock: () => Date = () => new Date(),
-  ) {}
+    delay: InspectionDelay = defaultInspectionDelay,
+  ) {
+    this.coordinator = new JobPostingInspectionCoordinator(
+      () => this.clock().getTime(),
+      delay,
+    );
+  }
 
   public async inspect(
     input: JobPostingInspectionInput,
@@ -302,7 +480,14 @@ export class JobPostingInspectionService {
         status: "unavailable",
       };
     }
+    return this.coordinator.inspect(initial, () =>
+      this.inspectCanonical(initial),
+    );
+  }
 
+  private async inspectCanonical(
+    initial: JobBoardMatch,
+  ): Promise<JobPostingInspectionResult> {
     let canonicalUrl = initial.url;
     const deadline = this.clock().getTime() + publicHttpsRequestTimeoutMs;
     for (let redirectsFollowed = 0; ; redirectsFollowed += 1) {
@@ -364,6 +549,13 @@ export class JobPostingInspectionService {
         return {
           canonicalUrl: canonicalUrl.href,
           reason: "expired",
+          status: "unavailable",
+        };
+      }
+      if (isProviderChallenge(initial.provider, response)) {
+        return {
+          canonicalUrl: canonicalUrl.href,
+          reason: "provider_challenge",
           status: "unavailable",
         };
       }

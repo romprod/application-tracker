@@ -188,7 +188,9 @@ Tracker host must have the optional Graph integration configured.
 For one known digest RFC Message-ID, `process_outlook_job_digest` is the
 read-only server-side workflow. It resolves the named Graph connection,
 retrieves the exact message from its configured folder, resolves and inspects a
-bounded page of postings, and returns no message body.
+bounded page of postings, and returns no message body. Provider JSON-LD is
+preferred; a challenged provider can use only an unambiguous same-card
+employer/title pair and reports `inspectionSource: digest_email`.
 
 For older digest discovery, `search_outlook_job_digests` performs the bounded
 backward Graph search inside Application Tracker. It accepts a fixed window of

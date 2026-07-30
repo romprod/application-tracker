@@ -521,6 +521,7 @@ const jobPostingUnavailableReasonSchema = z.enum([
   "expired",
   "fetch_failed",
   "missing_structured_data",
+  "provider_challenge",
   "redirect_limit",
   "unrecognized_url",
 ]);
@@ -535,6 +536,7 @@ const jobPostingInspectionResultSchema = z.strictObject({
   employer: z.string().max(160).nullable().optional(),
   location: z.string().max(160).nullable().optional(),
   reason: jobPostingUnavailableReasonSchema.optional(),
+  retryAfter: z.iso.datetime().optional(),
   salary: z.string().max(160).nullable().optional(),
   status: z.enum(["available", "unavailable"]),
   title: z.string().max(160).nullable().optional(),
@@ -548,6 +550,7 @@ const outlookJobDigestPostingSchema = z.strictObject({
   candidate: resolvedJobLinkCandidateSchema,
   descriptionTruncated: z.boolean(),
   inspection: outlookJobDigestInspectionResultSchema,
+  inspectionSource: z.enum(["digest_email", "provider_page"]),
   match: jobEmailMatchResultSchema,
 });
 const outlookJobDigestProcessingResultSchema = z.strictObject({
@@ -1532,7 +1535,7 @@ export function createApplicationMcpServer(
     {
       annotations: openWorldReadOnlyAnnotations,
       description:
-        "Resolve one enabled Graph connection by exact ID, name, or mailbox; retrieve one exact RFC Message-ID from its configured folder; require a digest or job-alert classification; resolve bounded job links; inspect up to five structured postings from the requested offset; and report deterministic tracker matches. The tool returns no email body, never changes mailbox state, and never creates or updates applications.",
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox; retrieve one exact RFC Message-ID from its configured folder; require a digest or job-alert classification; resolve bounded job links; inspect up to five structured postings from the requested offset; and report deterministic tracker matches. When a provider challenge prevents inspection, one posting may use an explicitly paired title and employer from the same bounded digest card and reports digest_email provenance. The tool returns no email body, never changes mailbox state, and never creates or updates applications.",
       inputSchema: processOutlookJobDigestSchema,
       outputSchema: outlookJobDigestProcessingResultSchema,
       title: "Process Outlook job digest",
@@ -1588,7 +1591,7 @@ export function createApplicationMcpServer(
     {
       annotations: openWorldReadOnlyAnnotations,
       description:
-        "Fetch one provider-registry-validated canonical HTTPS job posting through public pinned IPs and bounded redirects, then return only structured JobPosting metadata. Blocked, expired, missing, or ambiguous postings return unavailable instead of inferred details.",
+        "Fetch one provider-registry-validated canonical HTTPS job posting through public pinned IPs and bounded redirects, then return only structured JobPosting metadata. Indeed requests are serialized, conservatively spaced, deduplicated, briefly cached, and placed in cooldown after a provider challenge. Blocked, challenged, expired, missing, or ambiguous postings return unavailable instead of inferred details.",
       inputSchema: jobPostingInspectionInputSchema,
       outputSchema: jobPostingInspectionResultSchema,
       title: "Inspect job posting",
