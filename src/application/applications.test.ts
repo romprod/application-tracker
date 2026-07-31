@@ -204,10 +204,12 @@ describe("ApplicationLedgerService", () => {
       roleTypeId: null,
       roleTitle: "Product Designer",
       salary: "£70,000–£80,000",
+      salaryDetails: null,
       sourceId: null,
       sourceUrl: null,
       statusId: prospectId,
       workArrangement: null,
+      workArrangementDetails: null,
       workspaceId: "workspace-1",
     });
   });

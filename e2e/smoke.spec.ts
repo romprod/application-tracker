@@ -374,7 +374,10 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   ).toBeVisible();
   await expect(page).toHaveURL(/\/opportunities$/);
 
-  await page.getByRole("button", { name: "Log application" }).first().click();
+  await page
+    .getByRole("button")
+    .filter({ hasText: /^Log application$/ })
+    .click();
   const applicationDialog = page.getByRole("dialog", {
     name: "Log an application",
   });
@@ -382,10 +385,21 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
   await applicationDialog.getByLabel("Role title").fill("Product Designer");
   await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
-  await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+  await applicationDialog
+    .getByLabel("Salary", { exact: true })
+    .fill("£70,000–£80,000");
+  await applicationDialog.getByLabel("Salary currency").fill("GBP");
+  await applicationDialog.getByLabel("Salary period").selectOption("annual");
+  await applicationDialog.getByLabel("Minimum salary").fill("70000");
+  await applicationDialog.getByLabel("Maximum salary").fill("80000");
   await applicationDialog.getByLabel("Rating").selectOption("4");
   await applicationDialog.getByLabel("Location").fill("London");
   await applicationDialog.getByLabel("Work arrangement").selectOption("hybrid");
+  await applicationDialog
+    .getByLabel("Original arrangement wording")
+    .fill("Two days in the London office");
+  await applicationDialog.getByLabel("Office days per week").fill("2");
+  await applicationDialog.getByLabel("Remote days per week").fill("3");
   await applicationDialog
     .getByRole("button", { name: "Save application" })
     .click();
@@ -425,6 +439,12 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   ).toBeVisible();
   await expect(
     applicationDrawer.getByText("Application created"),
+  ).toBeVisible();
+  await expect(
+    applicationDrawer.getByText(/GBP 70000–80000 annual/),
+  ).toBeVisible();
+  await expect(
+    applicationDrawer.getByText(/Two days in the London office/),
   ).toBeVisible();
   await applicationDrawer
     .getByRole("button", { name: "Record activity" })
@@ -613,7 +633,9 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   expect(companyFontSize).toBeGreaterThanOrEqual(14);
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  await page.getByRole("button", { name: "Log application" }).click();
+  await page
+    .getByRole("button", { name: "Log application", exact: true })
+    .click();
   await applicationDialog.getByLabel("End company").fill("Prospect Company");
   await applicationDialog.getByLabel("Role title").fill("Software Engineer");
   await applicationDialog
@@ -645,12 +667,16 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     applicationsTable.getByRole("button", { name: "Filter Stage" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Log application" }).click();
+  await page
+    .getByRole("button", { name: "Log application", exact: true })
+    .click();
   await applicationDialog.getByLabel("End company").fill("Example Studio");
   await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
   await applicationDialog.getByLabel("Role title").fill("Product Designer");
   await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
-  await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+  await applicationDialog
+    .getByLabel("Salary", { exact: true })
+    .fill("£70,000–£80,000");
   await applicationDialog.getByLabel("Rating").selectOption("4");
   await applicationDialog.getByLabel("Location").fill("London");
   await applicationDialog.getByLabel("Work arrangement").selectOption("hybrid");
@@ -1513,12 +1539,16 @@ async function ensureMobileAuditData(page: Page): Promise<void> {
     }
 
     if (!companyNames.has("Example Studio")) {
-      await page.getByRole("button", { name: "Log application" }).click();
+      await page
+        .getByRole("button", { name: "Log application", exact: true })
+        .click();
       await applicationDialog.getByLabel("End company").fill("Example Studio");
       await applicationDialog.getByLabel("Agency").fill("Example Recruitment");
       await applicationDialog.getByLabel("Role title").fill("Product Designer");
       await applicationDialog.getByLabel("Applied date").fill("2026-07-24");
-      await applicationDialog.getByLabel("Salary").fill("£70,000–£80,000");
+      await applicationDialog
+        .getByLabel("Salary", { exact: true })
+        .fill("£70,000–£80,000");
       await applicationDialog.getByLabel("Rating").selectOption("4");
       await applicationDialog.getByLabel("Location").fill("London");
       await applicationDialog
@@ -2159,7 +2189,9 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
       page.getByRole("heading", { name: "Applications", exact: true }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Log application" }).click();
+    await page
+      .getByRole("button", { name: "Log application", exact: true })
+      .click();
     const applicationDialog = page.getByRole("dialog", {
       name: "Log an application",
     });
@@ -2221,7 +2253,9 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
         page.getByRole("heading", { name: "Applications", exact: true }),
       ).toBeVisible();
 
-      await page.getByRole("button", { name: "Log application" }).click();
+      await page
+        .getByRole("button", { name: "Log application", exact: true })
+        .click();
       const applicationDialog = page.getByRole("dialog", {
         name: "Log an application",
       });
@@ -2422,7 +2456,9 @@ test("keeps the full desktop register contained with long record values", async 
   );
 
   if (!hasStressRecord) {
-    await page.getByRole("button", { name: "Log application" }).first().click();
+    await page
+      .getByRole("button", { name: "Log application", exact: true })
+      .click();
     const applicationDialog = page.getByRole("dialog", {
       name: "Log an application",
     });

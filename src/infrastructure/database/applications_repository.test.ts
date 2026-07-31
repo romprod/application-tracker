@@ -5,6 +5,8 @@ import {
   ApplicationActivityEvidenceError,
   ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
+  ApplicationFieldProvenanceIdempotencyConflictError,
+  ApplicationFieldProvenanceSourceError,
   InvalidOutlookGraphConnectionAssignmentError,
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
@@ -1240,6 +1242,268 @@ describe("SqliteApplicationsRepository", () => {
       ).toThrow(
         new ApplicationActivityCorrectionError("invalid_correction_target"),
       );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("creates, reads, updates, and clears normalized salary and work-arrangement details", () => {
+    const { database, repository, setup } = createRepository();
+    try {
+      const application = repository.createApplication({
+        appliedOn: null,
+        companyName: "Structured Ltd",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: "London",
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Engineer",
+        salary: "£70,000 to £80,000 plus bonus",
+        salaryDetails: {
+          currency: "GBP",
+          disclosed: true,
+          maximum: 80_000,
+          minimum: 70_000,
+          negotiable: false,
+          period: "annual",
+        },
+        sourceUrl: null,
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
+        workArrangement: "hybrid",
+        workArrangementDetails: {
+          officeDaysPerWeek: 2,
+          originalText: "Two days in the London office",
+          remoteDaysPerWeek: 3,
+        },
+        workspaceId: setup.workspace.id,
+      });
+      expect(application).toMatchObject({
+        salary: "£70,000 to £80,000 plus bonus",
+        salaryDetails: {
+          currency: "GBP",
+          disclosed: true,
+          maximum: 80_000,
+          minimum: 70_000,
+          negotiable: false,
+          period: "annual",
+        },
+        workArrangement: "hybrid",
+        workArrangementDetails: {
+          officeDaysPerWeek: 2,
+          originalText: "Two days in the London office",
+          remoteDaysPerWeek: 3,
+        },
+      });
+
+      const updated = repository.updateApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: application.id,
+        expectedUpdatedAt: application.updatedAt,
+        salaryDetails: null,
+        updatedAt: "2026-07-18T12:01:00.000Z",
+        workArrangement: "remote",
+        workArrangementDetails: {
+          officeDaysPerWeek: 0,
+          originalText: "Fully remote",
+          remoteDaysPerWeek: 5,
+        },
+        workspaceId: setup.workspace.id,
+      });
+      expect(updated).toMatchObject({
+        salary: "£70,000 to £80,000 plus bonus",
+        salaryDetails: null,
+        workArrangement: "remote",
+        workArrangementDetails: {
+          officeDaysPerWeek: 0,
+          originalText: "Fully remote",
+          remoteDaysPerWeek: 5,
+        },
+      });
+      expect(() =>
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: application.id,
+          expectedUpdatedAt: updated!.updatedAt,
+          updatedAt: "2026-07-18T12:02:00.000Z",
+          workArrangementDetails: { officeDaysPerWeek: 1 },
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(RangeError);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("retains immutable provenance with precedence, conflicts, staleness, verification, and exact retry", () => {
+    const { database, repository, setup } = createRepository();
+    try {
+      const create = (companyName: string) =>
+        repository.createApplication({
+          appliedOn: null,
+          companyName,
+          createdAt,
+          createdByUserId: setup.administrator.id,
+          location: null,
+          nextAction: null,
+          nextActionDue: null,
+          notes: null,
+          roleTitle: "Engineer",
+          salary: "Original wording remains authoritative",
+          sourceUrl: null,
+          statusId: referenceId(
+            database,
+            setup.workspace.id,
+            "status",
+            "Prospect",
+          ),
+          workspaceId: setup.workspace.id,
+        });
+      const application = create("Evidence Ltd");
+      const other = create("Other Ltd");
+      const jobPostingId = "posting-0001";
+      database
+        .prepare(
+          `INSERT INTO application_job_postings
+             (id, workspace_id, application_id, provider, external_posting_id,
+              canonical_url, created_at, updated_at)
+           VALUES (?, ?, ?, 'indeed', ?, NULL, ?, ?)`,
+        )
+        .run(
+          jobPostingId,
+          setup.workspace.id,
+          application.id,
+          "indeed-123",
+          createdAt,
+          createdAt,
+        );
+
+      const imported = repository.recordApplicationFieldProvenance({
+        applicationId: application.id,
+        confidence: 0.9,
+        createdAt,
+        field: "salary",
+        fieldState: "disclosed",
+        idempotencyKey: "salary-import-1",
+        observedAt: "2026-07-20T12:00:00.000Z",
+        source: { type: "imported" },
+        value: "£55,000",
+        workspaceId: setup.workspace.id,
+      });
+      const posting = repository.recordApplicationFieldProvenance({
+        applicationId: application.id,
+        confidence: 0.95,
+        createdAt,
+        field: "salary",
+        fieldState: "disclosed",
+        idempotencyKey: "salary-posting-1",
+        observedAt: "2026-07-19T12:00:00.000Z",
+        source: { jobPostingId, type: "job_posting" },
+        value: "£60,000",
+        workspaceId: setup.workspace.id,
+      });
+      repository.recordApplicationFieldProvenance({
+        applicationId: application.id,
+        confidence: 0.7,
+        createdAt,
+        field: "salary",
+        fieldState: "disclosed",
+        observedAt: "2026-07-18T12:00:00.000Z",
+        source: { type: "imported" },
+        value: "£50,000",
+        workspaceId: setup.workspace.id,
+      });
+      const assessment = repository.listApplicationFieldProvenance(
+        setup.workspace.id,
+        application.id,
+      )?.[0];
+      expect(assessment).toMatchObject({
+        conflicting: 1,
+        selected: { id: posting?.id, relationship: "selected" },
+        stale: 1,
+      });
+      expect(repository.listApplications(setup.workspace.id)[0]?.salary).toBe(
+        "Original wording remains authoritative",
+      );
+
+      const retried = repository.recordApplicationFieldProvenance({
+        applicationId: application.id,
+        confidence: 0.9,
+        createdAt: "2026-07-21T12:00:00.000Z",
+        field: "salary",
+        fieldState: "disclosed",
+        idempotencyKey: "salary-import-1",
+        observedAt: "2026-07-20T12:00:00.000Z",
+        source: { type: "imported" },
+        value: "£55,000",
+        workspaceId: setup.workspace.id,
+      });
+      expect(retried?.id).toBe(imported?.id);
+      expect(() =>
+        repository.recordApplicationFieldProvenance({
+          applicationId: application.id,
+          confidence: 0.8,
+          createdAt,
+          field: "salary",
+          fieldState: "disclosed",
+          idempotencyKey: "salary-import-1",
+          observedAt: "2026-07-20T12:00:00.000Z",
+          source: { type: "imported" },
+          value: "different",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationFieldProvenanceIdempotencyConflictError);
+      expect(() =>
+        repository.recordApplicationFieldProvenance({
+          applicationId: other.id,
+          confidence: 1,
+          createdAt,
+          field: "salary",
+          fieldState: "disclosed",
+          observedAt: createdAt,
+          source: { jobPostingId, type: "job_posting" },
+          value: "£60,000",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationFieldProvenanceSourceError);
+
+      const verified = repository.verifyApplicationFieldProvenance({
+        applicationId: application.id,
+        provenanceId: imported!.id,
+        verifiedAt: "2026-07-22T12:00:00.000Z",
+        verifiedByUserId: setup.administrator.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(verified).toMatchObject({
+        relationship: "selected",
+        verifiedAt: "2026-07-22T12:00:00.000Z",
+        verifiedByDisplayName: "Alex Example",
+      });
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE application_field_provenance SET confidence = 0
+             WHERE id = ?`,
+          )
+          .run(imported!.id),
+      ).toThrow(/immutable/);
+      expect(() =>
+        database
+          .prepare(`DELETE FROM application_field_provenance WHERE id = ?`)
+          .run(imported!.id),
+      ).toThrow(/immutable/);
+      expect(
+        repository.listApplicationFieldProvenance(
+          "wrong-workspace",
+          application.id,
+        ),
+      ).toBeUndefined();
     } finally {
       database.close();
     }

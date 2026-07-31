@@ -99,7 +99,59 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name
+             FROM pragma_table_info('applications')
+             WHERE name IN (
+               'salary_minimum_amount', 'salary_maximum_amount',
+               'salary_currency', 'salary_period', 'salary_disclosed',
+               'salary_negotiable', 'work_arrangement_text',
+               'office_days_per_week', 'remote_days_per_week'
+             )
+             ORDER BY cid`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "salary_minimum_amount",
+        "salary_maximum_amount",
+        "salary_currency",
+        "salary_period",
+        "salary_disclosed",
+        "salary_negotiable",
+        "work_arrangement_text",
+        "office_days_per_week",
+        "remote_days_per_week",
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM pragma_table_info('application_field_provenance')
+             ORDER BY cid`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "id",
+        "workspace_id",
+        "application_id",
+        "field_name",
+        "value_json",
+        "source_type",
+        "source_email_evidence_id",
+        "source_document_id",
+        "source_job_posting_id",
+        "observed_at",
+        "confidence",
+        "field_state",
+        "idempotency_key",
+        "verified_at",
+        "verified_by_user_id",
+        "created_at",
       ]);
       expect(
         database

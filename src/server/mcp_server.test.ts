@@ -3,6 +3,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationNotFoundError } from "../application/applications.js";
+import type {
+  RecordApplicationFieldProvenanceInput,
+  VerifyApplicationFieldProvenanceInput,
+} from "../domain/applications.js";
 import {
   applicationMcpPublishedSchema,
   applicationMcpSchemaManifest,
@@ -153,6 +157,24 @@ function fakeTools(): McpApplicationTools {
       Promise.resolve(outlookJobDigestSearchResult()),
     ),
     reconcileApplicationFromEvidence: vi.fn(),
+    recordApplicationFieldProvenance: vi.fn(
+      (input: RecordApplicationFieldProvenanceInput) => ({
+        applicationId: input.applicationId,
+        confidence: input.confidence,
+        createdAt: "2026-07-30T12:00:00.000Z",
+        field: input.field,
+        fieldState: input.fieldState,
+        id: "33333333-3333-4333-8333-333333333333",
+        idempotencyKey: input.idempotencyKey ?? null,
+        observedAt: input.observedAt,
+        relationship: "selected" as const,
+        source: input.source,
+        value: input.value,
+        verifiedAt: null,
+        verifiedByDisplayName: null,
+        verifiedByUserId: null,
+      }),
+    ),
     resolveJobLinks: vi.fn(() =>
       Promise.resolve({
         candidates: [
@@ -170,6 +192,24 @@ function fakeTools(): McpApplicationTools {
     ),
     updateApplication: vi.fn(),
     upsertApplicationFromEmail: vi.fn(),
+    verifyApplicationFieldProvenance: vi.fn(
+      (input: VerifyApplicationFieldProvenanceInput) => ({
+        applicationId: input.applicationId,
+        confidence: 0.9,
+        createdAt: "2026-07-30T12:00:00.000Z",
+        field: "salary" as const,
+        fieldState: "disclosed" as const,
+        id: input.provenanceId,
+        idempotencyKey: "salary-observation-1",
+        observedAt: "2026-07-30T11:00:00.000Z",
+        relationship: "selected" as const,
+        source: { type: "imported" as const },
+        value: "£75,000",
+        verifiedAt: "2026-07-30T12:05:00.000Z",
+        verifiedByDisplayName: "Alex Example",
+        verifiedByUserId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ),
   };
 }
 
@@ -413,6 +453,7 @@ describe("local MCP server", () => {
       "delete_application",
       "add_application_event",
       "add_application_activity",
+      "record_application_field_provenance",
       "reconcile_outlook_graph_connection",
     ]);
     for (const tool of listed.tools) {
@@ -459,6 +500,12 @@ describe("local MCP server", () => {
     expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
       "workArrangement",
     );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "salaryDetails",
+    );
+    expect(createApplicationTool?.inputSchema.properties).toHaveProperty(
+      "workArrangementDetails",
+    );
     expect(
       JSON.stringify(
         listed.tools.find(({ name }) => name === "list_applications")
@@ -471,6 +518,12 @@ describe("local MCP server", () => {
           ?.outputSchema,
       ),
     ).toContain('"rating"');
+    expect(
+      JSON.stringify(
+        listed.tools.find(({ name }) => name === "get_application")
+          ?.outputSchema,
+      ),
+    ).toContain('"provenance"');
     const duplicateApplicationId = "11111111-1111-4111-8111-111111111111";
     const duplicateBulkUpdate = await client.callTool({
       arguments: {

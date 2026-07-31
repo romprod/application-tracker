@@ -92,6 +92,17 @@ do not turn every linked email into a general activity automatically. Use
 `list_application_events` to page beyond the bounded activity page embedded by
 `get_application`.
 
+When broader reconciliation extracts a machine-derived salary, location,
+arrangement, agency, applied date, company, role title, or source URL, preserve
+the application scalar and call `record_application_field_provenance` for the
+observation. Include the exact source association, observed time, confidence,
+field state, and an idempotency key when the caller can produce a stable one.
+The returned `selected`, `conflicting`, `stale`, or `corroborating`
+relationship is review metadata, not permission to overwrite the application.
+Use `verify_application_field_provenance` only when the user explicitly
+confirms one observation; verification records the bound actor and does not
+rewrite the evidence or application value.
+
 When the user explicitly includes duplicate detection or consolidation, also
 require:
 
@@ -453,6 +464,11 @@ relationships, and retained source event count. Then rerun
 `match_job_application_email` with the original evidence before continuing the
 evidence reconciliation. Apply the reconciliation only if the original request
 authorized it.
+
+Do not resolve a provenance conflict through a merge or ordinary update. Read
+the `provenance` assessments returned by `get_application`, report every
+conflicting or stale observation, and ask the user which evidence to verify or
+which application scalar to edit.
 
 ### 7. Reconcile evidence atomically
 

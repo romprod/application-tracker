@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 36 tools:
+The local server registers 38 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -91,6 +91,8 @@ The local server registers 36 tools:
 | `bulk_update_applications`            | Atomically update selected fields on up to 25 applications |
 | `add_application_event`               | Concurrency-checked immutable status transition            |
 | `add_application_activity`            | Immutable non-status activity with correction support      |
+| `record_application_field_provenance` | Store one immutable normalized-field observation           |
+| `verify_application_field_provenance` | Manually verify one provenance observation                 |
 | `delete_application`                  | Confirmed, audited soft deletion                           |
 | `upsert_application_from_email`       | Ordered, idempotent application and email reconciliation   |
 | `begin_document_import`               | Begin or resume a bounded document transfer                |

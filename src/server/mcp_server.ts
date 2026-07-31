@@ -7,6 +7,9 @@ import {
   ApplicationActivityEvidenceError,
   ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
+  ApplicationFieldProvenanceIdempotencyConflictError,
+  ApplicationFieldProvenanceSourceError,
+  ApplicationFieldProvenanceVerificationConflictError,
   ApplicationEventNoChangeError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
@@ -59,12 +62,19 @@ import {
   addApplicationEventSchema,
   applicationActivityTypeSchema,
   applicationIdSchema,
+  applicationFieldNameSchema,
+  applicationFieldProvenanceSourceSchema,
+  applicationFieldStateSchema,
   applicationMergeFieldSchema,
   auditDuplicateApplicationsSchema,
   createApplicationSchema,
   listApplicationEventsSchema,
   mergeApplicationsSchema,
+  recordApplicationFieldProvenanceSchema,
+  salaryDetailsSchema,
   updateApplicationSchema,
+  verifyApplicationFieldProvenanceSchema,
+  workArrangementDetailsSchema,
 } from "../domain/applications.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
 import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
@@ -165,11 +175,13 @@ const applicationSummarySchema = z.strictObject({
   rating: z.number().int().min(1).max(5).nullable(),
   roleTitle: z.string(),
   salary: z.string().max(160).nullable(),
+  salaryDetails: salaryDetailsSchema.nullable().optional(),
   status: z.string(),
   statusId: referenceValueIdSchema,
   statusIsTerminal: z.boolean(),
   updatedAt: z.iso.datetime(),
   workArrangement: z.enum(["hybrid", "remote", "office"]).nullable(),
+  workArrangementDetails: workArrangementDetailsSchema.nullable().optional(),
 });
 const applicationListSchema = z.strictObject({
   applications: z.array(applicationSummarySchema),
@@ -261,6 +273,7 @@ const applicationRecordSchema = z.strictObject({
   roleType: z.string().nullable(),
   roleTypeId: referenceValueIdSchema.nullable(),
   salary: z.string().max(160).nullable(),
+  salaryDetails: salaryDetailsSchema.nullable().optional(),
   source: z.string().nullable(),
   sourceId: referenceValueIdSchema.nullable(),
   sourceUrl: z.url().nullable(),
@@ -269,6 +282,7 @@ const applicationRecordSchema = z.strictObject({
   statusIsTerminal: z.boolean(),
   updatedAt: z.iso.datetime(),
   workArrangement: z.enum(["hybrid", "remote", "office"]).nullable(),
+  workArrangementDetails: workArrangementDetailsSchema.nullable().optional(),
 });
 const maximumBulkApplicationUpdates = 25;
 const bulkApplicationUpdatesSchema = z
@@ -357,12 +371,36 @@ const applicationEmailEvidenceSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
   webUrl: z.url().nullable(),
 });
+const applicationFieldProvenanceRecordSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  field: applicationFieldNameSchema,
+  fieldState: applicationFieldStateSchema,
+  id: applicationIdSchema,
+  idempotencyKey: z.string().max(200).nullable(),
+  observedAt: z.iso.datetime(),
+  relationship: z.enum(["conflicting", "corroborating", "selected", "stale"]),
+  source: applicationFieldProvenanceSourceSchema,
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  verifiedAt: z.iso.datetime().nullable(),
+  verifiedByDisplayName: z.string().nullable(),
+  verifiedByUserId: z.uuid().nullable(),
+});
+const applicationFieldProvenanceAssessmentSchema = z.strictObject({
+  conflicting: z.number().int().nonnegative(),
+  field: applicationFieldNameSchema,
+  records: z.array(applicationFieldProvenanceRecordSchema),
+  selected: applicationFieldProvenanceRecordSchema.nullable(),
+  stale: z.number().int().nonnegative(),
+});
 const applicationDetailSchema = z.strictObject({
   application: applicationRecordSchema,
   emailEvidence: z.array(applicationEmailEvidenceSchema),
   events: z.array(applicationEventSchema),
   eventsPage: applicationEventsPageMetadataSchema,
   jobPostings: z.array(applicationJobPostingSchema),
+  provenance: z.array(applicationFieldProvenanceAssessmentSchema).optional(),
 });
 const outlookEmailClassificationSchema = z.enum([
   "account_or_security",
@@ -1166,6 +1204,19 @@ function executeWriteTool(
         ? failedToolResult(activityErrorCode)
         : failedToolResult("internal_error");
     }
+    const provenanceErrorCode =
+      error instanceof ApplicationFieldProvenanceIdempotencyConflictError
+        ? "provenance_idempotency_conflict"
+        : error instanceof ApplicationFieldProvenanceSourceError
+          ? "invalid_provenance_source"
+          : error instanceof ApplicationFieldProvenanceVerificationConflictError
+            ? "provenance_verification_conflict"
+            : undefined;
+    if (provenanceErrorCode) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(provenanceErrorCode)
+        : failedToolResult("internal_error");
+    }
     const statusEventErrorCode =
       error instanceof ApplicationStatusStaleError
         ? tool === "add_application_event"
@@ -1867,6 +1918,46 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.addApplicationActivity(input),
+      ),
+  );
+
+  server.registerTool(
+    "record_application_field_provenance",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Append one immutable machine-derived observation for a selected application field without changing the application value. Source precedence, stale evidence, and conflicts are assessed explicitly; exact retries may use idempotencyKey.",
+      inputSchema: recordApplicationFieldProvenanceSchema,
+      outputSchema: applicationFieldProvenanceRecordSchema,
+      title: "Record application field provenance",
+    },
+    (input) =>
+      executeWriteTool(
+        "record_application_field_provenance",
+        "application",
+        logger,
+        options.audit,
+        () => tools.recordApplicationFieldProvenance(input),
+      ),
+  );
+
+  server.registerTool(
+    "verify_application_field_provenance",
+    {
+      annotations: idempotentWriteAnnotations,
+      description:
+        "Manually verify one immutable field-evidence observation for an application. Verification records the bound actor and server time without rewriting the source observation or application scalar.",
+      inputSchema: verifyApplicationFieldProvenanceSchema,
+      outputSchema: applicationFieldProvenanceRecordSchema,
+      title: "Verify application field provenance",
+    },
+    (input) =>
+      executeWriteTool(
+        "verify_application_field_provenance",
+        "application",
+        logger,
+        options.audit,
+        () => tools.verifyApplicationFieldProvenance(input),
       ),
   );
 

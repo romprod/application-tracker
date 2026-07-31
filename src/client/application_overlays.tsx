@@ -12,6 +12,7 @@ import type {
   ApplicationActivityType,
   ApplicationEvidence,
   ApplicationEvent,
+  ApplicationFieldProvenanceAssessment,
   ApplicationRecord,
   CreateApplicationInput,
   UpdateApplicationInput,
@@ -48,10 +49,19 @@ export interface ApplicationFormState {
   roleTypeId: string;
   roleTitle: string;
   salary: string;
+  salaryCurrency: string;
+  salaryDisclosed: "no" | "yes";
+  salaryMaximum: string;
+  salaryMinimum: string;
+  salaryNegotiable: "no" | "yes";
+  salaryPeriod: "" | "annual" | "daily" | "hourly" | "monthly" | "weekly";
   sourceId: string;
   sourceUrl: string;
   statusId: string;
   workArrangement: "" | NonNullable<ApplicationRecord["workArrangement"]>;
+  workArrangementText: string;
+  officeDaysPerWeek: string;
+  remoteDaysPerWeek: string;
 }
 
 interface ApplicationContactForm {
@@ -84,6 +94,12 @@ function emptyApplicationForm(
     roleTypeId: "",
     roleTitle: "",
     salary: "",
+    salaryCurrency: "",
+    salaryDisclosed: "yes",
+    salaryMaximum: "",
+    salaryMinimum: "",
+    salaryNegotiable: "no",
+    salaryPeriod: "",
     sourceId: "",
     sourceUrl: "",
     statusId:
@@ -91,6 +107,9 @@ function emptyApplicationForm(
         ({ category, isActive }) => category === "status" && isActive,
       )?.id ?? "",
     workArrangement: "",
+    workArrangementText: "",
+    officeDaysPerWeek: "",
+    remoteDaysPerWeek: "",
   };
 }
 
@@ -120,6 +139,44 @@ function linkInput(link: ApplicationLinkForm) {
   return { label: link.label.trim(), url: link.url.trim() };
 }
 
+function salaryDetailsInput(form: ApplicationFormState) {
+  const currency = form.salaryCurrency.trim().toUpperCase();
+  if (
+    !currency &&
+    !form.salaryPeriod &&
+    !form.salaryMinimum &&
+    !form.salaryMaximum
+  ) {
+    return undefined;
+  }
+  return {
+    currency,
+    disclosed: form.salaryDisclosed === "yes",
+    ...(form.salaryMaximum ? { maximum: Number(form.salaryMaximum) } : {}),
+    ...(form.salaryMinimum ? { minimum: Number(form.salaryMinimum) } : {}),
+    negotiable: form.salaryNegotiable === "yes",
+    period: form.salaryPeriod as NonNullable<
+      CreateApplicationInput["salaryDetails"]
+    >["period"],
+  };
+}
+
+function workArrangementDetailsInput(form: ApplicationFormState) {
+  const originalText = form.workArrangementText.trim();
+  if (!originalText && !form.officeDaysPerWeek && !form.remoteDaysPerWeek) {
+    return undefined;
+  }
+  return {
+    ...(form.officeDaysPerWeek
+      ? { officeDaysPerWeek: Number(form.officeDaysPerWeek) }
+      : {}),
+    ...(originalText ? { originalText } : {}),
+    ...(form.remoteDaysPerWeek
+      ? { remoteDaysPerWeek: Number(form.remoteDaysPerWeek) }
+      : {}),
+  };
+}
+
 export function applicationInput(
   form: ApplicationFormState,
 ): CreateApplicationInput {
@@ -132,6 +189,8 @@ export function applicationInput(
   const rating = form.rating ? Number(form.rating) : undefined;
   const salary = form.salary.trim();
   const sourceUrl = form.sourceUrl.trim();
+  const salaryDetails = salaryDetailsInput(form);
+  const workArrangementDetails = workArrangementDetailsInput(form);
   return {
     companyName: form.companyName.trim(),
     contacts: form.contacts.map(contactInput),
@@ -150,9 +209,11 @@ export function applicationInput(
     ...(rating ? { rating } : {}),
     ...(form.roleTypeId ? { roleTypeId: form.roleTypeId } : {}),
     ...(salary ? { salary } : {}),
+    ...(salaryDetails ? { salaryDetails } : {}),
     ...(form.sourceId ? { sourceId: form.sourceId } : {}),
     ...(sourceUrl ? { sourceUrl } : {}),
     ...(form.workArrangement ? { workArrangement: form.workArrangement } : {}),
+    ...(workArrangementDetails ? { workArrangementDetails } : {}),
   };
 }
 
@@ -176,10 +237,12 @@ export function applicationUpdateInput(
     roleTypeId: form.roleTypeId || null,
     roleTitle: form.roleTitle.trim(),
     salary: form.salary.trim() || null,
+    salaryDetails: salaryDetailsInput(form) ?? null,
     sourceId: form.sourceId || null,
     sourceUrl: form.sourceUrl.trim() || null,
     statusId: form.statusId,
     workArrangement: form.workArrangement || null,
+    workArrangementDetails: workArrangementDetailsInput(form) ?? null,
   };
 }
 
@@ -204,10 +267,22 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
     roleTypeId: application.roleTypeId ?? "",
     roleTitle: application.roleTitle,
     salary: application.salary ?? "",
+    salaryCurrency: application.salaryDetails?.currency ?? "",
+    salaryDisclosed:
+      application.salaryDetails?.disclosed === false ? "no" : "yes",
+    salaryMaximum: application.salaryDetails?.maximum?.toString() ?? "",
+    salaryMinimum: application.salaryDetails?.minimum?.toString() ?? "",
+    salaryNegotiable: application.salaryDetails?.negotiable ? "yes" : "no",
+    salaryPeriod: application.salaryDetails?.period ?? "",
     sourceId: application.sourceId ?? "",
     sourceUrl: application.sourceUrl ?? "",
     statusId: application.statusId,
     workArrangement: application.workArrangement ?? "",
+    workArrangementText: application.workArrangementDetails?.originalText ?? "",
+    officeDaysPerWeek:
+      application.workArrangementDetails?.officeDaysPerWeek?.toString() ?? "",
+    remoteDaysPerWeek:
+      application.workArrangementDetails?.remoteDaysPerWeek?.toString() ?? "",
   };
 }
 
@@ -378,6 +453,11 @@ export function ApplicationDrawer({
   onDelete,
   onEdit,
   onLoadMoreEvents,
+  onVerifyProvenance,
+  provenance,
+  provenanceError,
+  provenanceLoading,
+  provenanceVerifyingId,
 }: {
   application: ApplicationRecord;
   evidence: ApplicationEvidence | undefined;
@@ -393,6 +473,11 @@ export function ApplicationDrawer({
   onDelete: () => void;
   onEdit: () => void;
   onLoadMoreEvents: () => Promise<void>;
+  onVerifyProvenance: (provenanceId: string) => Promise<void>;
+  provenance: ApplicationFieldProvenanceAssessment[] | undefined;
+  provenanceError: boolean;
+  provenanceLoading: boolean;
+  provenanceVerifyingId: string | undefined;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -476,7 +561,12 @@ export function ApplicationDrawer({
             </div>
             <div>
               <dt>Work arrangement</dt>
-              <dd>{formatWorkArrangement(application.workArrangement)}</dd>
+              <dd>
+                {formatWorkArrangement(application.workArrangement)}
+                {application.workArrangementDetails?.originalText
+                  ? ` · ${application.workArrangementDetails.originalText}`
+                  : ""}
+              </dd>
             </div>
             <div>
               <dt>Updated</dt>
@@ -502,7 +592,12 @@ export function ApplicationDrawer({
             </div>
             <div>
               <dt>Salary</dt>
-              <dd>{application.salary ?? "Not recorded"}</dd>
+              <dd>
+                {application.salary ?? "Not recorded"}
+                {application.salaryDetails
+                  ? ` · ${application.salaryDetails.currency} ${application.salaryDetails.minimum ?? "?"}–${application.salaryDetails.maximum ?? "?"} ${application.salaryDetails.period}`
+                  : ""}
+              </dd>
             </div>
             <div>
               <dt>Rating</dt>
@@ -620,10 +715,77 @@ export function ApplicationDrawer({
           </section>
           <section
             className="tracker-drawer-section"
-            aria-labelledby="notes-title"
+            aria-labelledby="provenance-title"
           >
             <div className="tracker-drawer-section-heading">
               <span>03</span>
+              <h3 id="provenance-title">Evidence provenance</h3>
+            </div>
+            {provenanceLoading && (
+              <p className="tracker-loading" role="status">
+                Loading field evidence…
+              </p>
+            )}
+            {provenanceError && (
+              <p className="tracker-load-error" role="alert">
+                Field evidence could not be loaded or verified. Try again.
+              </p>
+            )}
+            {!provenanceLoading &&
+              !provenanceError &&
+              provenance?.length === 0 && (
+                <p>No machine-derived field evidence has been recorded.</p>
+              )}
+            {provenance && provenance.length > 0 && (
+              <ul className="tracker-provenance-list">
+                {provenance.flatMap((assessment) =>
+                  assessment.records.map((record) => (
+                    <li key={record.id}>
+                      <div>
+                        <strong>
+                          {assessment.field} · {record.relationship}
+                        </strong>
+                        <small>
+                          {record.source.type.replaceAll("_", " ")} · observed{" "}
+                          {formatDateTime(record.observedAt)} · confidence{" "}
+                          {Math.round(record.confidence * 100)}%
+                        </small>
+                        <p>
+                          {record.value === null
+                            ? record.fieldState.replaceAll("_", " ")
+                            : String(record.value)}
+                        </p>
+                        {record.verifiedAt && (
+                          <small>
+                            Verified by {record.verifiedByDisplayName} ·{" "}
+                            {formatDateTime(record.verifiedAt)}
+                          </small>
+                        )}
+                      </div>
+                      {!record.verifiedAt && (
+                        <button
+                          className="tracker-button tracker-button-quiet"
+                          disabled={provenanceVerifyingId !== undefined}
+                          type="button"
+                          onClick={() => void onVerifyProvenance(record.id)}
+                        >
+                          {provenanceVerifyingId === record.id
+                            ? "Verifying…"
+                            : "Verify"}
+                        </button>
+                      )}
+                    </li>
+                  )),
+                )}
+              </ul>
+            )}
+          </section>
+          <section
+            className="tracker-drawer-section"
+            aria-labelledby="notes-title"
+          >
+            <div className="tracker-drawer-section-heading">
+              <span>04</span>
               <h3 id="notes-title">Notes</h3>
             </div>
             <p>{application.notes ?? "No notes have been recorded."}</p>
@@ -633,7 +795,7 @@ export function ApplicationDrawer({
             aria-labelledby="history-title"
           >
             <div className="tracker-drawer-section-heading">
-              <span>04</span>
+              <span>05</span>
               <h3 id="history-title">Activity</h3>
             </div>
             <div className="tracker-activity-actions">
@@ -1166,6 +1328,100 @@ export function ApplicationDialog({
                 />
               </div>
               <div className="field">
+                <label htmlFor="application-salary-currency">
+                  Salary currency
+                </label>
+                <input
+                  id="application-salary-currency"
+                  maxLength={3}
+                  placeholder="GBP"
+                  value={form.salaryCurrency}
+                  onChange={(event) =>
+                    updateText(
+                      "salaryCurrency",
+                      event.target.value.toUpperCase(),
+                    )
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary-period">Salary period</label>
+                <select
+                  id="application-salary-period"
+                  value={form.salaryPeriod}
+                  onChange={(event) =>
+                    updateText("salaryPeriod", event.target.value)
+                  }
+                >
+                  <option value="">Not normalized</option>
+                  <option value="annual">Annual</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="daily">Daily</option>
+                  <option value="hourly">Hourly</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary-minimum">
+                  Minimum salary
+                </label>
+                <input
+                  id="application-salary-minimum"
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={form.salaryMinimum}
+                  onChange={(event) =>
+                    updateText("salaryMinimum", event.target.value)
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary-maximum">
+                  Maximum salary
+                </label>
+                <input
+                  id="application-salary-maximum"
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={form.salaryMaximum}
+                  onChange={(event) =>
+                    updateText("salaryMaximum", event.target.value)
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary-disclosed">
+                  Salary disclosed
+                </label>
+                <select
+                  id="application-salary-disclosed"
+                  value={form.salaryDisclosed}
+                  onChange={(event) =>
+                    updateText("salaryDisclosed", event.target.value)
+                  }
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="application-salary-negotiable">
+                  Salary negotiable
+                </label>
+                <select
+                  id="application-salary-negotiable"
+                  value={form.salaryNegotiable}
+                  onChange={(event) =>
+                    updateText("salaryNegotiable", event.target.value)
+                  }
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </div>
+              <div className="field">
                 <label htmlFor="application-rating">Rating</label>
                 <select
                   id="application-rating"
@@ -1285,6 +1541,49 @@ export function ApplicationDialog({
                   <option value="remote">Remote</option>
                   <option value="office">Office</option>
                 </select>
+              </div>
+              <div className="field tracker-form-wide">
+                <label htmlFor="application-work-arrangement-text">
+                  Original arrangement wording
+                </label>
+                <input
+                  id="application-work-arrangement-text"
+                  maxLength={500}
+                  value={form.workArrangementText}
+                  onChange={(event) =>
+                    updateText("workArrangementText", event.target.value)
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-office-days">
+                  Office days per week
+                </label>
+                <input
+                  id="application-office-days"
+                  max="7"
+                  min="0"
+                  type="number"
+                  value={form.officeDaysPerWeek}
+                  onChange={(event) =>
+                    updateText("officeDaysPerWeek", event.target.value)
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="application-remote-days">
+                  Remote days per week
+                </label>
+                <input
+                  id="application-remote-days"
+                  max="7"
+                  min="0"
+                  type="number"
+                  value={form.remoteDaysPerWeek}
+                  onChange={(event) =>
+                    updateText("remoteDaysPerWeek", event.target.value)
+                  }
+                />
               </div>
               <div className="field">
                 <label htmlFor="application-source">Source link</label>
