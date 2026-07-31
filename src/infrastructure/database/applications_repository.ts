@@ -1086,6 +1086,35 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     return conflicts;
   }
 
+  private missingOutlookGraphConnectionConflicts(
+    workspaceId: string,
+    applications: ApplicationRecord[],
+  ): ApplicationRecoveryConflict[] {
+    const conflicts: ApplicationRecoveryConflict[] = [];
+    const seen = new Set<string>();
+    for (const application of applications) {
+      const connectionId = application.outlookGraphConnectionId;
+      if (connectionId === null || seen.has(connectionId)) continue;
+      seen.add(connectionId);
+      const exists = this.database
+        .prepare(
+          `SELECT 1 FROM outlook_graph_connections
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, connectionId);
+      if (exists !== 1) {
+        conflicts.push({
+          code: "outlook_connection_changed",
+          field: null,
+          message: `The Microsoft Graph connection required by ${application.companyName} is no longer available.`,
+          recordId: connectionId,
+        });
+      }
+    }
+    return conflicts;
+  }
+
   private applicationForMerge(
     workspaceId: string,
     applicationId: string,
@@ -1632,6 +1661,16 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         input.sourceApplicationId,
       );
       if (existing) {
+        const recovered = this.database
+          .prepare(
+            `SELECT 1 FROM application_merge_recoveries
+             WHERE workspace_id = ? AND merge_id = ?`,
+          )
+          .pluck()
+          .get(input.workspaceId, existing.id);
+        if (recovered === 1) {
+          throw new ApplicationMergeStateError("application_already_merged");
+        }
         if (existing.targetApplicationId !== input.targetApplicationId) {
           throw new ApplicationMergeStateError("application_already_merged");
         }
@@ -2137,6 +2176,10 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       }
       conflicts.push(
         ...this.inactiveReferenceConflicts(workspaceId, [
+          snapshot.sourceBefore,
+          snapshot.targetBefore,
+        ]),
+        ...this.missingOutlookGraphConnectionConflicts(workspaceId, [
           snapshot.sourceBefore,
           snapshot.targetBefore,
         ]),
@@ -3353,7 +3396,18 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     if (!stored) throw new ApplicationRecoveryNotFoundError();
     const deletedAt = this.applicationDeletedAt(workspaceId, applicationId);
     if (deletedAt === null) {
-      throw new ApplicationRecoveryStateError("application_already_active");
+      const restored = this.database
+        .prepare(
+          `SELECT 1 FROM application_restorations
+           WHERE workspace_id = ? AND application_id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, applicationId);
+      throw new ApplicationRecoveryStateError(
+        restored === 1
+          ? "application_already_restored"
+          : "application_already_active",
+      );
     }
     const deletion = this.findCurrentApplicationDeletion(
       workspaceId,
@@ -3435,6 +3489,22 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             });
           }
         }
+        const expectedEvidenceIds = new Set(
+          snapshot.emailEvidence.map(({ id }) => id),
+        );
+        for (const current of this.listEmailEvidence(
+          workspaceId,
+          application.id,
+        )) {
+          if (!expectedEvidenceIds.has(current.id)) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Email evidence was attached after deletion.",
+              recordId: current.id,
+            });
+          }
+        }
         const postings = this.database.prepare(
           `SELECT id, application_id AS applicationId, updated_at AS updatedAt
            FROM application_job_postings
@@ -3457,6 +3527,22 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
               field: null,
               message: "Job-posting evidence changed after deletion.",
               recordId: expected.id,
+            });
+          }
+        }
+        const expectedPostingIds = new Set(
+          snapshot.jobPostings.map(({ id }) => id),
+        );
+        for (const current of this.listJobPostings(
+          workspaceId,
+          application.id,
+        )) {
+          if (!expectedPostingIds.has(current.id)) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Job-posting evidence was attached after deletion.",
+              recordId: current.id,
             });
           }
         }

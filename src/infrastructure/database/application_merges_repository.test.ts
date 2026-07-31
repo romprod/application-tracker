@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ApplicationMergeRecoveryUnsafeError,
   ApplicationMergeNotFoundError,
-  ApplicationRecoveryStateError,
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
+  ApplicationRecoveryNotFoundError,
+  ApplicationRecoveryStateError,
+  ApplicationRecoveryVersionConflictError,
   type ApplicationDuplicateReasonKind,
   type ApplicationMergeStateError,
   type ApplicationRecord,
@@ -646,6 +649,14 @@ describe("SqliteApplicationsRepository application merges", () => {
       expect(() =>
         database
           .prepare(
+            `UPDATE application_merges SET target_application_id = ?
+             WHERE source_application_id = ?`,
+          )
+          .run(source.id, source.id),
+      ).toThrow("application merges are immutable");
+      expect(() =>
+        database
+          .prepare(
             "DELETE FROM application_merges WHERE source_application_id = ?",
           )
           .run(source.id),
@@ -797,6 +808,272 @@ describe("SqliteApplicationsRepository application merges", () => {
     }
   });
 
+  it("blocks merge recovery when the target changed after the merge", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    try {
+      const source = createApplication();
+      const target = createApplication();
+      repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+      const changedAt = "2026-07-24T11:30:00.000Z";
+      expect(
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: target.id,
+          expectedUpdatedAt: mergedAt,
+          notes: "Changed after merge",
+          updatedAt: changedAt,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toMatchObject({ notes: "Changed after merge", updatedAt: changedAt });
+
+      const preview = repository.previewApplicationMergeRecovery(
+        setup.workspace.id,
+        source.id,
+      );
+      expect(preview.safeToRecover).toBe(false);
+      expect(preview.conflicts).toContainEqual(
+        expect.objectContaining({
+          code: "target_changed",
+          recordId: target.id,
+        }),
+      );
+      expect(() =>
+        repository.recoverApplicationMerge({
+          actorUserId: setup.administrator.id,
+          expectedSourceUpdatedAt: preview.source.updatedAt,
+          expectedTargetUpdatedAt: preview.target?.updatedAt ?? "",
+          recoveredAt: "2026-07-24T12:00:00.000Z",
+          sourceApplicationId: source.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationMergeRecoveryUnsafeError);
+      expect(repository.listApplications(setup.workspace.id)).toEqual([
+        expect.objectContaining({
+          id: target.id,
+          notes: "Changed after merge",
+        }),
+      ]);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_merge_recoveries")
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("blocks merge recovery when the target is deleted or out of scope", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    try {
+      const source = createApplication();
+      const target = createApplication();
+      repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(
+        repository.deleteApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: target.id,
+          deletedAt: "2026-07-24T11:30:00.000Z",
+          reason: "Target deleted after merge.",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toBe(true);
+
+      const preview = repository.previewApplicationMergeRecovery(
+        setup.workspace.id,
+        source.id,
+      );
+      expect(preview).toMatchObject({
+        safeToRecover: false,
+        target: null,
+      });
+      expect(preview.conflicts).toContainEqual(
+        expect.objectContaining({
+          code: "target_unavailable",
+          recordId: target.id,
+        }),
+      );
+      expect(() =>
+        repository.recoverApplicationMerge({
+          actorUserId: setup.administrator.id,
+          expectedSourceUpdatedAt: preview.source.updatedAt,
+          expectedTargetUpdatedAt: mergedAt,
+          recoveredAt: "2026-07-24T12:00:00.000Z",
+          sourceApplicationId: source.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "merge_target_unavailable",
+        }) as ApplicationRecoveryStateError,
+      );
+      expect(() =>
+        repository.previewApplicationMergeRecovery(
+          "workspace-outside-actor-scope",
+          source.id,
+        ),
+      ).toThrow(ApplicationRecoveryNotFoundError);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_merge_recoveries")
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("reports an original Graph connection deleted after the merge", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    const sourceConnectionId = "44444444-4444-4444-8444-444444444444";
+    const targetConnectionId = "55555555-5555-4555-8555-555555555555";
+    try {
+      addGraphConnection(harness, sourceConnectionId, "Source");
+      addGraphConnection(harness, targetConnectionId, "Target");
+      const source = createApplication({
+        outlookGraphConnectionId: sourceConnectionId,
+      });
+      const target = createApplication({
+        outlookGraphConnectionId: targetConnectionId,
+      });
+      repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: {
+          fields: { outlookGraphConnectionId: "target" },
+        },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+      database
+        .prepare(
+          `DELETE FROM outlook_graph_connections
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(setup.workspace.id, sourceConnectionId);
+
+      const preview = repository.previewApplicationMergeRecovery(
+        setup.workspace.id,
+        source.id,
+      );
+      expect(preview.safeToRecover).toBe(false);
+      expect(preview.conflicts).toContainEqual(
+        expect.objectContaining({
+          code: "outlook_connection_changed",
+          recordId: sourceConnectionId,
+        }),
+      );
+      expect(preview.conflicts).not.toContainEqual(
+        expect.objectContaining({ code: "target_changed" }),
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back every change when merge recovery audit storage fails", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    try {
+      const source = createApplication({ notes: "Source notes" });
+      const target = createApplication();
+      addSourceRelationships(harness, source);
+      repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+      const preview = repository.previewApplicationMergeRecovery(
+        setup.workspace.id,
+        source.id,
+      );
+      database.exec(`
+        CREATE TRIGGER fail_merge_recovery_audit
+        BEFORE INSERT ON application_merge_recoveries
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated recovery audit failure');
+        END;
+      `);
+
+      expect(() =>
+        repository.recoverApplicationMerge({
+          actorUserId: setup.administrator.id,
+          expectedSourceUpdatedAt: preview.source.updatedAt,
+          expectedTargetUpdatedAt: preview.target?.updatedAt ?? "",
+          recoveredAt: "2026-07-24T12:00:00.000Z",
+          sourceApplicationId: source.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow("simulated recovery audit failure");
+      expect(repository.listApplications(setup.workspace.id)).toEqual([
+        expect.objectContaining({ id: target.id, updatedAt: mergedAt }),
+      ]);
+      expect(
+        repository.listDeletedApplications(setup.workspace.id, {
+          limit: 25,
+          offset: 0,
+        }).applications,
+      ).toEqual([
+        expect.objectContaining({
+          application: expect.objectContaining({ id: source.id }),
+        }),
+      ]);
+      expect(
+        database
+          .prepare(
+            "SELECT application_id FROM application_email_evidence WHERE id = ?",
+          )
+          .pluck()
+          .get("22222222-2222-4222-8222-222222222222"),
+      ).toBe(target.id);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_merge_recoveries")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_restorations")
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
   it("recovers a merge only while the snapshotted target and relationships are unchanged", () => {
     const harness = createHarness();
     const { createApplication, database, repository, setup } = harness;
@@ -856,6 +1133,16 @@ describe("SqliteApplicationsRepository application merges", () => {
         source: { id: source.id, updatedAt: mergedAt },
         target: { id: target.id, updatedAt: mergedAt },
       });
+      expect(() =>
+        repository.recoverApplicationMerge({
+          actorUserId: setup.administrator.id,
+          expectedSourceUpdatedAt: source.updatedAt,
+          expectedTargetUpdatedAt: preview.target?.updatedAt ?? "",
+          recoveredAt: "2026-07-24T11:30:00.000Z",
+          sourceApplicationId: source.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationRecoveryVersionConflictError);
       const recoveredAt = "2026-07-24T12:00:00.000Z";
       const recovered = repository.recoverApplicationMerge({
         actorUserId: setup.administrator.id,
@@ -928,7 +1215,27 @@ describe("SqliteApplicationsRepository application merges", () => {
           setup.workspace.id,
           source.id,
         ),
-      ).toThrow(ApplicationRecoveryStateError);
+      ).toThrowError(
+        expect.objectContaining({
+          code: "application_already_restored",
+        }) as ApplicationRecoveryStateError,
+      );
+      expect(() =>
+        repository.mergeApplications({
+          actorUserId: setup.administrator.id,
+          expectedSourceUpdatedAt: recovered.source.updatedAt,
+          expectedTargetUpdatedAt: recovered.target.updatedAt,
+          mergedAt: "2026-07-24T13:00:00.000Z",
+          resolutions: { fields: {} },
+          sourceApplicationId: source.id,
+          targetApplicationId: target.id,
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "application_already_merged",
+        }) as ApplicationMergeStateError,
+      );
     } finally {
       database.close();
     }
