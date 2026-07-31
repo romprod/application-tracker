@@ -7,6 +7,7 @@ import {
   ApplicationConflictError,
   ApplicationFieldProvenanceIdempotencyConflictError,
   ApplicationFieldProvenanceSourceError,
+  ApplicationRecoveryVersionConflictError,
   InvalidOutlookGraphConnectionAssignmentError,
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
@@ -865,6 +866,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T13:00:00.000Z",
+          reason: "Wrong workspace test deletion.",
           workspaceId: "workspace-00002",
         }),
       ).toBe(false);
@@ -908,6 +910,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T15:00:00.000Z",
+          reason: "Duplicate record created during import.",
           workspaceId: setup.workspace.id,
         }),
       ).toBe(true);
@@ -951,9 +954,75 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T17:00:00.000Z",
+          reason: "Second deletion attempt.",
           workspaceId: setup.workspace.id,
         }),
       ).toBe(false);
+      expect(
+        repository.listDeletedApplications(setup.workspace.id, {
+          limit: 1,
+          offset: 0,
+        }),
+      ).toMatchObject({
+        applications: [
+          {
+            actorDisplayName: "Alex Example",
+            application: { id: created.id },
+            deletedAt: "2026-07-18T15:00:00.000Z",
+            merge: null,
+            reason: "Duplicate record created during import.",
+          },
+        ],
+        nextOffset: null,
+        returned: 1,
+        total: 1,
+      });
+      const preview = repository.previewApplicationRestore(
+        setup.workspace.id,
+        created.id,
+      );
+      expect(preview).toMatchObject({
+        application: { id: created.id, status: "Prospect" },
+        conflicts: [],
+        safeToRestore: true,
+      });
+      expect(() =>
+        repository.restoreApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          expectedDeletedAt: preview.deletion.deletedAt,
+          expectedUpdatedAt: created.updatedAt,
+          restoredAt: "2026-07-18T18:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationRecoveryVersionConflictError);
+      const restored = repository.restoreApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        expectedDeletedAt: preview.deletion.deletedAt,
+        expectedUpdatedAt: preview.application.updatedAt,
+        restoredAt: "2026-07-18T18:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(restored).toMatchObject({
+        application: { id: created.id, updatedAt: "2026-07-18T18:00:00.000Z" },
+        restoration: {
+          actorDisplayName: "Alex Example",
+          recoveryType: "manual",
+        },
+      });
+      expect(repository.listApplications(setup.workspace.id)).toHaveLength(1);
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toHaveLength(1);
+      expect(
+        database
+          .prepare(
+            "SELECT count(*) FROM application_deletions WHERE application_id = ?",
+          )
+          .pluck()
+          .get(created.id),
+      ).toBe(1);
     } finally {
       database.close();
     }
@@ -988,6 +1057,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: "missing-user",
           applicationId: created.id,
           deletedAt: "2026-07-18T15:00:00.000Z",
+          reason: "Missing actor rollback test.",
           workspaceId: setup.workspace.id,
         }),
       ).toThrow();

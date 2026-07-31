@@ -60,6 +60,13 @@ const DuplicateApplicationsDialog = lazy(() =>
     default: module.DuplicateApplicationsDialog,
   })),
 );
+const loadDeletedApplicationsDialog = () =>
+  import("./deleted_applications_dialog");
+const DeletedApplicationsDialog = lazy(() =>
+  loadDeletedApplicationsDialog().then((module) => ({
+    default: module.DeletedApplicationsDialog,
+  })),
+);
 
 export function ApplicationWorkspace({
   applicationsClient,
@@ -117,6 +124,7 @@ export function ApplicationWorkspace({
   const [provenanceError, setProvenanceError] = useState(false);
   const [provenanceVerifyingId, setProvenanceVerifyingId] = useState<string>();
   const [reviewingDuplicates, setReviewingDuplicates] = useState(false);
+  const [reviewingDeleted, setReviewingDeleted] = useState(false);
   const drawerRequest = useRef(0);
 
   const refreshAttention = useCallback(() => {
@@ -397,13 +405,13 @@ export function ApplicationWorkspace({
     setDeleteError(undefined);
   }
 
-  function removeApplication() {
+  function removeApplication(reason: string) {
     if (!deletionTarget) return;
     const removing = deletionTarget;
     setDeleting(true);
     setDeleteError(undefined);
     void applicationsClient
-      .deleteApplication(removing.id)
+      .deleteApplication({ applicationId: removing.id, reason })
       .then(() => {
         const removeDeleted = (current: ApplicationRecord[]) =>
           current.filter(({ id }) => id !== removing.id);
@@ -527,6 +535,10 @@ export function ApplicationWorkspace({
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
+          onReviewDeleted={() => {
+            setNotice(undefined);
+            setReviewingDeleted(true);
+          }}
           onReviewDuplicates={() => {
             setNotice(undefined);
             setReviewingDuplicates(true);
@@ -619,6 +631,36 @@ export function ApplicationWorkspace({
               setNotice(
                 `${survivor.companyName} duplicates were merged safely.`,
               );
+            }}
+          />
+        </Suspense>
+      )}
+      {reviewingDeleted && (
+        <Suspense
+          fallback={
+            <p className="tracker-loading" role="status">
+              Opening deleted applications…
+            </p>
+          }
+        >
+          <DeletedApplicationsDialog
+            applicationsClient={applicationsClient}
+            onClose={() => setReviewingDeleted(false)}
+            onRecovered={(recovered) => {
+              const recoveredIds = new Set(recovered.map(({ id }) => id));
+              const includeRecovered = (current: ApplicationRecord[]) => [
+                ...recovered,
+                ...current.filter(({ id }) => !recoveredIds.has(id)),
+              ];
+              setApplications((current) => includeRecovered(current ?? []));
+              updateCachedApplications(applicationsClient, includeRecovered);
+              setReviewingDeleted(false);
+              setNotice(
+                recovered.length === 1
+                  ? `${recovered[0]?.companyName ?? "Application"} was restored.`
+                  : "The merge was recovered and both applications are active.",
+              );
+              void refreshAttention();
             }}
           />
         </Suspense>
@@ -1072,6 +1114,7 @@ function ApplicationsPage({
   loadError,
   onAdd,
   onOpen,
+  onReviewDeleted,
   onReviewDuplicates,
   page,
 }: {
@@ -1079,6 +1122,7 @@ function ApplicationsPage({
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
+  onReviewDeleted: () => void;
   onReviewDuplicates: () => void;
   page: "applications" | "opportunities";
 }) {
@@ -1163,6 +1207,16 @@ function ApplicationsPage({
           </p>
         </div>
         <div className="tracker-page-actions">
+          <button
+            className="tracker-button tracker-button-quiet"
+            type="button"
+            onFocus={() => void loadDeletedApplicationsDialog()}
+            onClick={onReviewDeleted}
+            onPointerDown={() => void loadDeletedApplicationsDialog()}
+            onPointerEnter={() => void loadDeletedApplicationsDialog()}
+          >
+            Deleted applications
+          </button>
           <button
             className="tracker-button tracker-button-quiet"
             type="button"

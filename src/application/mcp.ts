@@ -11,7 +11,12 @@ import {
   type ApplicationFieldProvenanceAssessment,
   type ApplicationFieldProvenanceRecord,
   type ApplicationMergeResult,
+  type ApplicationMergeRecoveryPreview,
+  type ApplicationMergeRecoveryResult,
   type ApplicationRecord,
+  type ApplicationRestorePreview,
+  type ApplicationRestoreResult,
+  type DeletedApplicationsPage,
 } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import type {
@@ -47,6 +52,13 @@ import type {
   VerifyApplicationFieldProvenanceInput,
 } from "../domain/applications.js";
 import type { ApplicationAttentionQueryInput } from "../domain/application_attention.js";
+import type {
+  DeleteApplicationInput,
+  ListDeletedApplicationsInput,
+  PreviewApplicationRestoreInput,
+  RecoverApplicationMergeInput,
+  RestoreApplicationInput,
+} from "../domain/application_recovery.js";
 import type { McpAccessMode } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
 import {
@@ -91,7 +103,7 @@ import type {
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 20;
+export const applicationMcpSchemaVersion = 21;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -101,6 +113,8 @@ export const applicationMcpToolNames = [
   "get_job_search_summary",
   "query_application_attention",
   "list_applications",
+  "list_deleted_applications",
+  "preview_application_restore",
   "get_application",
   "list_application_events",
   "list_unlinked_applications",
@@ -108,6 +122,7 @@ export const applicationMcpToolNames = [
   "audit_duplicate_applications",
   "find_duplicate_applications",
   "merge_applications",
+  "recover_application_merge",
   "match_job_application_email",
   "link_email_evidence",
   "reconcile_application_from_evidence",
@@ -129,6 +144,7 @@ export const applicationMcpToolNames = [
   "add_application_activity",
   "record_application_field_provenance",
   "verify_application_field_provenance",
+  "restore_application",
   "delete_application",
   "upsert_application_from_email",
   "begin_document_import",
@@ -220,6 +236,14 @@ export interface McpApplicationsReader {
     input: { limit: number; offset: number },
   ): ApplicationEventsPage;
   listApplications(actor: AuthenticatedActor): ApplicationRecord[];
+  listDeletedApplications(
+    actor: AuthenticatedActor,
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage;
+  previewApplicationRestore(
+    actor: AuthenticatedActor,
+    applicationId: string,
+  ): ApplicationRestorePreview;
   queryApplicationAttention(
     actor: AuthenticatedActor,
     input: ApplicationAttentionQueryInput,
@@ -247,11 +271,22 @@ export interface McpApplicationsService extends McpApplicationsReader {
     actor: AuthenticatedActor,
     input: CreateApplicationInput,
   ): ApplicationRecord;
-  deleteApplication(actor: AuthenticatedActor, applicationId: string): void;
+  deleteApplication(
+    actor: AuthenticatedActor,
+    input: DeleteApplicationInput,
+  ): void;
   mergeApplications(
     actor: AuthenticatedActor,
     input: MergeApplicationsInput,
   ): ApplicationMergeResult;
+  recoverApplicationMerge(
+    actor: AuthenticatedActor,
+    input: RecoverApplicationMergeInput,
+  ): ApplicationMergeRecoveryPreview | ApplicationMergeRecoveryResult;
+  restoreApplication(
+    actor: AuthenticatedActor,
+    input: RestoreApplicationInput,
+  ): ApplicationRestoreResult;
   recordApplicationFieldProvenance(
     actor: AuthenticatedActor,
     input: RecordApplicationFieldProvenanceInput,
@@ -478,7 +513,7 @@ export interface McpApplicationTools {
   cancelDocumentImport(uploadId: string): { cancelled: true };
   completeDocumentImport(uploadId: string): DocumentRecord;
   createApplication(input: CreateApplicationInput): ApplicationRecord;
-  deleteApplication(applicationId: string): {
+  deleteApplication(input: DeleteApplicationInput): {
     applicationId: string;
     deleted: true;
   };
@@ -512,6 +547,9 @@ export interface McpApplicationTools {
     input: LinkEmailEvidenceInput,
   ): LinkApplicationEvidenceResult;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
+  listDeletedApplications(
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage;
   listApplicationEvents(input: {
     applicationId: string;
     limit: number;
@@ -526,6 +564,12 @@ export interface McpApplicationTools {
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult;
   mergeApplications(input: MergeApplicationsInput): ApplicationMergeResult;
+  previewApplicationRestore(
+    input: PreviewApplicationRestoreInput,
+  ): ApplicationRestorePreview;
+  recoverApplicationMerge(
+    input: RecoverApplicationMergeInput,
+  ): ApplicationMergeRecoveryPreview | ApplicationMergeRecoveryResult;
   recordApplicationFieldProvenance(
     input: RecordApplicationFieldProvenanceInput,
   ): ApplicationFieldProvenanceRecord;
@@ -544,6 +588,7 @@ export interface McpApplicationTools {
   searchOutlookJobDigests(
     input: SearchOutlookJobDigestsInput,
   ): Promise<OutlookJobDigestSearchResult>;
+  restoreApplication(input: RestoreApplicationInput): ApplicationRestoreResult;
   resolveJobLinks(
     input: EmailLinkExtractionInput,
   ): Promise<JobLinkResolutionResult>;
@@ -922,6 +967,40 @@ export class ApplicationMcpService implements McpApplicationTools {
     return this.applications.mergeApplications(actor, input);
   }
 
+  public recoverApplicationMerge(
+    input: RecoverApplicationMergeInput,
+  ): ApplicationMergeRecoveryPreview | ApplicationMergeRecoveryResult {
+    const actor = this.actorProvider.getActor();
+    if (input.mode === "apply") this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.recoverApplicationMerge(actor, input);
+  }
+
+  public listDeletedApplications(
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage {
+    return this.applications.listDeletedApplications(
+      this.actorProvider.getActor(),
+      input,
+    );
+  }
+
+  public previewApplicationRestore(
+    input: PreviewApplicationRestoreInput,
+  ): ApplicationRestorePreview {
+    return this.applications.previewApplicationRestore(
+      this.actorProvider.getActor(),
+      input.applicationId,
+    );
+  }
+
+  public restoreApplication(
+    input: RestoreApplicationInput,
+  ): ApplicationRestoreResult {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.restoreApplication(actor, input);
+  }
+
   public matchJobApplicationEmail(
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult {
@@ -1188,14 +1267,14 @@ export class ApplicationMcpService implements McpApplicationTools {
     return this.applications.updateApplication(actor, applicationId, input);
   }
 
-  public deleteApplication(applicationId: string): {
+  public deleteApplication(input: DeleteApplicationInput): {
     applicationId: string;
     deleted: true;
   } {
     const actor = this.actorProvider.getActor();
     this.accessPolicy.requireWriteAccess(actor);
-    this.applications.deleteApplication(actor, applicationId);
-    return { applicationId, deleted: true };
+    this.applications.deleteApplication(actor, input);
+    return { applicationId: input.applicationId, deleted: true };
   }
 
   public upsertApplicationFromEmail(

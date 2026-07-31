@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ApplicationMergeNotFoundError,
+  ApplicationRecoveryStateError,
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
   type ApplicationDuplicateReasonKind,
@@ -694,6 +695,7 @@ describe("SqliteApplicationsRepository application merges", () => {
         actorUserId: setup.administrator.id,
         applicationId: source.id,
         deletedAt: mergedAt,
+        reason: "Deleted before merge preview test.",
         workspaceId: setup.workspace.id,
       });
       expect(() =>
@@ -790,6 +792,143 @@ describe("SqliteApplicationsRepository application merges", () => {
           .pluck()
           .get(),
       ).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("recovers a merge only while the snapshotted target and relationships are unchanged", () => {
+    const harness = createHarness();
+    const { createApplication, database, repository, setup } = harness;
+    try {
+      const source = createApplication({
+        contacts: [
+          {
+            email: "source@example.com",
+            name: "Source Contact",
+            phone: null,
+            role: "Recruiter",
+          },
+        ],
+        links: [{ label: "Source", url: "https://example.com/source" }],
+        notes: "Source notes",
+      });
+      const target = createApplication({
+        contacts: [
+          {
+            email: "target@example.com",
+            name: "Target Contact",
+            phone: null,
+            role: "Hiring manager",
+          },
+        ],
+        links: [{ label: "Target", url: "https://example.com/target" }],
+      });
+      addSourceRelationships(harness, source);
+      repository.mergeApplications({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mergedAt,
+        resolutions: { fields: {} },
+        sourceApplicationId: source.id,
+        targetApplicationId: target.id,
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(
+        repository.listDeletedApplications(setup.workspace.id, {
+          limit: 25,
+          offset: 0,
+        }).applications[0],
+      ).toMatchObject({
+        application: { id: source.id },
+        merge: { targetApplicationId: target.id },
+        reason: "Merged into another application.",
+      });
+      const preview = repository.previewApplicationMergeRecovery(
+        setup.workspace.id,
+        source.id,
+      );
+      expect(preview).toMatchObject({
+        conflicts: [],
+        safeToRecover: true,
+        source: { id: source.id, updatedAt: mergedAt },
+        target: { id: target.id, updatedAt: mergedAt },
+      });
+      const recoveredAt = "2026-07-24T12:00:00.000Z";
+      const recovered = repository.recoverApplicationMerge({
+        actorUserId: setup.administrator.id,
+        expectedSourceUpdatedAt: preview.source.updatedAt,
+        expectedTargetUpdatedAt: preview.target?.updatedAt ?? "",
+        recoveredAt,
+        sourceApplicationId: source.id,
+        workspaceId: setup.workspace.id,
+      });
+      expect(recovered).toMatchObject({
+        recovery: {
+          actorDisplayName: "Alex Example",
+          recoveredAt,
+          sourceApplicationId: source.id,
+          targetApplicationId: target.id,
+        },
+        source: {
+          contacts: [{ name: "Source Contact" }],
+          id: source.id,
+          links: [{ label: "Source" }],
+          notes: "Source notes",
+        },
+        target: {
+          contacts: [{ name: "Target Contact" }],
+          id: target.id,
+          links: [{ label: "Target" }],
+          notes: null,
+        },
+      });
+      expect(repository.listApplications(setup.workspace.id)).toHaveLength(2);
+      expect(
+        database
+          .prepare(
+            "SELECT application_id FROM application_email_evidence WHERE id = ?",
+          )
+          .pluck()
+          .get("22222222-2222-4222-8222-222222222222"),
+      ).toBe(source.id);
+      expect(
+        database
+          .prepare(
+            "SELECT application_id FROM application_job_postings WHERE id = ?",
+          )
+          .pluck()
+          .get("11111111-1111-4111-8111-111111111111"),
+      ).toBe(source.id);
+      expect(
+        database
+          .prepare(
+            `SELECT application_id FROM application_documents
+             WHERE document_id = ? ORDER BY application_id`,
+          )
+          .pluck()
+          .all("33333333-3333-4333-8333-333333333333"),
+      ).toEqual([source.id]);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_deletions")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_restorations")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(() =>
+        repository.previewApplicationMergeRecovery(
+          setup.workspace.id,
+          source.id,
+        ),
+      ).toThrow(ApplicationRecoveryStateError);
     } finally {
       database.close();
     }

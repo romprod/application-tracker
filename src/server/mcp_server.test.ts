@@ -130,6 +130,14 @@ function fakeTools(): McpApplicationTools {
       returned: 0,
       total: 0,
     })),
+    listDeletedApplications: vi.fn(() => ({
+      applications: [],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
     listApplicationEvents: vi.fn(() => ({
       events: [],
       limit: 25,
@@ -158,6 +166,8 @@ function fakeTools(): McpApplicationTools {
       outcome: "none" as const,
     })),
     mergeApplications: vi.fn(),
+    previewApplicationRestore: vi.fn(),
+    recoverApplicationMerge: vi.fn(),
     prepareSyncOutlookEmailEvidence: vi.fn(() =>
       Promise.reject(new Error("not configured")),
     ),
@@ -204,6 +214,7 @@ function fakeTools(): McpApplicationTools {
         tracking: { attempted: 0, resolved: 0, unavailable: [] },
       }),
     ),
+    restoreApplication: vi.fn(),
     updateApplication: vi.fn(),
     upsertApplicationFromEmail: vi.fn(),
     verifyApplicationFieldProvenance: vi.fn(
@@ -438,6 +449,8 @@ describe("local MCP server", () => {
       "get_job_search_summary",
       "query_application_attention",
       "list_applications",
+      "list_deleted_applications",
+      "preview_application_restore",
       "get_application",
       "list_application_events",
       "list_unlinked_applications",
@@ -473,6 +486,8 @@ describe("local MCP server", () => {
       "add_application_event",
       "add_application_activity",
       "record_application_field_provenance",
+      "restore_application",
+      "recover_application_merge",
       "reconcile_outlook_graph_connection",
     ]);
     for (const tool of listed.tools) {

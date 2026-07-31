@@ -415,6 +415,7 @@ describe("application ledger routes", () => {
 
     await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)
+      .send({ reason: "Evidence-link deletion test." })
       .expect(204);
     await sameOrigin(
       request(app).post(`/api/applications/${applicationId}/evidence`),
@@ -1089,6 +1090,7 @@ describe("application ledger routes", () => {
 
     await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)
+      .send({ reason: "Duplicate record created during import." })
       .expect(204);
     await request(app)
       .get("/api/applications")
@@ -1104,7 +1106,62 @@ describe("application ledger routes", () => {
       .expect(404, { error: { code: "application_not_found" } });
     await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
       .set("Cookie", cookie)
+      .send({ reason: "Second deletion attempt." })
       .expect(404, { error: { code: "application_not_found" } });
+
+    const deleted = await request(app)
+      .get("/api/applications/deleted?limit=1&offset=0")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(responseBody(deleted)).toMatchObject({
+      applications: [
+        {
+          application: { id: applicationId },
+          merge: null,
+          reason: "Duplicate record created during import.",
+        },
+      ],
+      limit: 1,
+      nextOffset: null,
+      returned: 1,
+      total: 1,
+    });
+    const previewResponse = await request(app)
+      .get(`/api/applications/${applicationId}/restore-preview`)
+      .set("Cookie", cookie)
+      .expect(200);
+    const preview = objectProperty(responseBody(previewResponse), "preview");
+    const deletion = objectProperty(preview, "deletion");
+    const deletedApplication = objectProperty(preview, "application");
+    if (
+      typeof deletion.deletedAt !== "string" ||
+      typeof deletedApplication.updatedAt !== "string"
+    ) {
+      throw new Error("Expected restore concurrency values");
+    }
+    expect(preview).toMatchObject({ conflicts: [], safeToRestore: true });
+    await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/restore`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        confirm: true,
+        expectedDeletedAt: deletion.deletedAt,
+        expectedUpdatedAt: deletedApplication.updatedAt,
+      })
+      .expect(200)
+      .expect((response) => {
+        expect(responseBody(response)).toMatchObject({
+          restoration: {
+            application: { id: applicationId },
+            restoration: { recoveryType: "manual" },
+          },
+        });
+      });
+    await request(app)
+      .get(`/api/applications/${applicationId}/events`)
+      .set("Cookie", cookie)
+      .expect(200);
   });
 
   it("validates deletion paths and requires authentication", async () => {

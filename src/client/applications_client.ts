@@ -430,16 +430,109 @@ export interface ApplicationMergePreview {
 export interface ApplicationMergeResult {
   alreadyApplied: boolean;
   applied: boolean;
-  lineage: {
+  lineage: ApplicationMergeLineage | null;
+  preview: ApplicationMergePreview;
+}
+
+export interface ApplicationMergeLineage {
+  actorDisplayName: string;
+  id: string;
+  mergedAt: string;
+  sourceApplicationId: string;
+  sourceUpdatedAt: string;
+  targetApplicationId: string;
+  targetUpdatedAt: string;
+}
+
+export interface DeletedApplicationRecord {
+  actorDisplayName: string;
+  application: ApplicationRecord;
+  deletedAt: string;
+  id: string;
+  merge: {
+    id: string;
+    targetApplicationId: string;
+    targetCompanyName: string;
+    targetRoleTitle: string;
+  } | null;
+  reason: string;
+}
+
+export interface DeletedApplicationsPage {
+  applications: DeletedApplicationRecord[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export interface ApplicationRecoveryConflict {
+  code:
+    | "application_changed"
+    | "document_relationship_changed"
+    | "email_evidence_moved"
+    | "legacy_merge_snapshot_unavailable"
+    | "merge_recovery_required"
+    | "outlook_connection_changed"
+    | "posting_moved"
+    | "reference_inactive"
+    | "source_relationship_changed"
+    | "target_changed"
+    | "target_unavailable";
+  field: "role_type" | "source" | "status" | null;
+  message: string;
+  recordId: string | null;
+}
+
+export interface ApplicationRestorePreview {
+  application: ApplicationRecord;
+  conflicts: ApplicationRecoveryConflict[];
+  deletion: DeletedApplicationRecord;
+  relationships: {
+    contacts: number;
+    documents: number;
+    emailEvidence: number;
+    jobPostings: number;
+    links: number;
+    outlookGraphConnectionId: string | null;
+  };
+  safeToRestore: boolean;
+}
+
+export interface ApplicationRestoreResult {
+  application: ApplicationRecord;
+  restoration: {
+    actorDisplayName: string;
+    applicationId: string;
+    deletionId: string;
+    id: string;
+    recoveryType: "manual" | "merge";
+    restoredAt: string;
+  };
+}
+
+export interface ApplicationMergeRecoveryPreview {
+  conflicts: ApplicationRecoveryConflict[];
+  deletion: DeletedApplicationRecord;
+  merge: ApplicationMergeLineage;
+  safeToRecover: boolean;
+  source: ApplicationRecord;
+  target: ApplicationRecord | null;
+}
+
+export interface ApplicationMergeRecoveryResult {
+  preview: ApplicationMergeRecoveryPreview;
+  recovery: {
     actorDisplayName: string;
     id: string;
-    mergedAt: string;
+    mergeId: string;
+    recoveredAt: string;
     sourceApplicationId: string;
-    sourceUpdatedAt: string;
     targetApplicationId: string;
-    targetUpdatedAt: string;
-  } | null;
-  preview: ApplicationMergePreview;
+  };
+  source: ApplicationRecord;
+  target: ApplicationRecord;
 }
 
 export type MergeApplicationsInput =
@@ -465,7 +558,10 @@ export interface ApplicationsClient {
     offset: number;
   }): Promise<ApplicationDuplicateAudit>;
   createApplication(input: CreateApplicationInput): Promise<ApplicationRecord>;
-  deleteApplication(applicationId: string): Promise<void>;
+  deleteApplication(input: {
+    applicationId: string;
+    reason: string;
+  }): Promise<void>;
   getApplicationEvidence(applicationId: string): Promise<ApplicationEvidence>;
   addApplicationActivity(
     applicationId: string,
@@ -479,9 +575,33 @@ export interface ApplicationsClient {
     applicationId: string,
   ): Promise<ApplicationFieldProvenanceAssessment[]>;
   listApplications(): Promise<ApplicationRecord[]>;
+  listDeletedApplications(input?: {
+    limit: number;
+    offset: number;
+  }): Promise<DeletedApplicationsPage>;
   mergeApplications(
     input: MergeApplicationsInput,
   ): Promise<ApplicationMergeResult>;
+  previewApplicationRestore(
+    applicationId: string,
+  ): Promise<ApplicationRestorePreview>;
+  recoverApplicationMerge(
+    input:
+      | { mode: "preview"; sourceApplicationId: string }
+      | {
+          confirm: true;
+          expectedSourceUpdatedAt: string;
+          expectedTargetUpdatedAt: string;
+          mode: "apply";
+          sourceApplicationId: string;
+        },
+  ): Promise<ApplicationMergeRecoveryPreview | ApplicationMergeRecoveryResult>;
+  restoreApplication(input: {
+    applicationId: string;
+    confirm: true;
+    expectedDeletedAt: string;
+    expectedUpdatedAt: string;
+  }): Promise<ApplicationRestoreResult>;
   queryApplicationAttention(
     input?: ApplicationAttentionQuery,
   ): Promise<ApplicationAttentionPage>;
@@ -513,6 +633,8 @@ export class ApplicationsClientError extends Error {
     public readonly code: string,
     public readonly application?: ApplicationRecord,
     public readonly mergePreview?: ApplicationMergePreview,
+    public readonly recoveryPreview?:
+      ApplicationMergeRecoveryPreview | ApplicationRestorePreview,
   ) {
     super(code);
     this.name = "ApplicationsClientError";
@@ -1370,44 +1492,267 @@ function parseMergePreview(value: unknown): ApplicationMergePreview {
   };
 }
 
+function parseMergeLineage(value: unknown): ApplicationMergeLineage {
+  if (
+    !isRecord(value) ||
+    typeof value.actorDisplayName !== "string" ||
+    typeof value.id !== "string" ||
+    !isIsoDateTime(value.mergedAt) ||
+    typeof value.sourceApplicationId !== "string" ||
+    !isIsoDateTime(value.sourceUpdatedAt) ||
+    typeof value.targetApplicationId !== "string" ||
+    !isIsoDateTime(value.targetUpdatedAt)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    actorDisplayName: value.actorDisplayName,
+    id: value.id,
+    mergedAt: value.mergedAt,
+    sourceApplicationId: value.sourceApplicationId,
+    sourceUpdatedAt: value.sourceUpdatedAt,
+    targetApplicationId: value.targetApplicationId,
+    targetUpdatedAt: value.targetUpdatedAt,
+  };
+}
+
 function parseMergeResult(value: unknown): ApplicationMergeResult {
   if (
     !isRecord(value) ||
     typeof value.alreadyApplied !== "boolean" ||
-    typeof value.applied !== "boolean" ||
-    (value.lineage !== null && !isRecord(value.lineage))
+    typeof value.applied !== "boolean"
   ) {
     throw new ApplicationsClientError("invalid_response");
-  }
-  let lineage: ApplicationMergeResult["lineage"] = null;
-  if (value.lineage !== null) {
-    const candidate = value.lineage;
-    if (
-      typeof candidate.actorDisplayName !== "string" ||
-      typeof candidate.id !== "string" ||
-      typeof candidate.mergedAt !== "string" ||
-      typeof candidate.sourceApplicationId !== "string" ||
-      typeof candidate.sourceUpdatedAt !== "string" ||
-      typeof candidate.targetApplicationId !== "string" ||
-      typeof candidate.targetUpdatedAt !== "string"
-    ) {
-      throw new ApplicationsClientError("invalid_response");
-    }
-    lineage = {
-      actorDisplayName: candidate.actorDisplayName,
-      id: candidate.id,
-      mergedAt: candidate.mergedAt,
-      sourceApplicationId: candidate.sourceApplicationId,
-      sourceUpdatedAt: candidate.sourceUpdatedAt,
-      targetApplicationId: candidate.targetApplicationId,
-      targetUpdatedAt: candidate.targetUpdatedAt,
-    };
   }
   return {
     alreadyApplied: value.alreadyApplied,
     applied: value.applied,
-    lineage,
+    lineage: value.lineage === null ? null : parseMergeLineage(value.lineage),
     preview: parseMergePreview(value.preview),
+  };
+}
+
+const applicationRecoveryConflictCodes = new Set<
+  ApplicationRecoveryConflict["code"]
+>([
+  "application_changed",
+  "document_relationship_changed",
+  "email_evidence_moved",
+  "legacy_merge_snapshot_unavailable",
+  "merge_recovery_required",
+  "outlook_connection_changed",
+  "posting_moved",
+  "reference_inactive",
+  "source_relationship_changed",
+  "target_changed",
+  "target_unavailable",
+]);
+
+function parseRecoveryConflict(value: unknown): ApplicationRecoveryConflict {
+  if (
+    !isRecord(value) ||
+    typeof value.code !== "string" ||
+    !applicationRecoveryConflictCodes.has(
+      value.code as ApplicationRecoveryConflict["code"],
+    ) ||
+    (value.field !== null &&
+      value.field !== "role_type" &&
+      value.field !== "source" &&
+      value.field !== "status") ||
+    typeof value.message !== "string" ||
+    !isNullableString(value.recordId)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    code: value.code as ApplicationRecoveryConflict["code"],
+    field: value.field,
+    message: value.message,
+    recordId: value.recordId,
+  };
+}
+
+function parseDeletedApplication(value: unknown): DeletedApplicationRecord {
+  if (
+    !isRecord(value) ||
+    typeof value.actorDisplayName !== "string" ||
+    !isIsoDateTime(value.deletedAt) ||
+    typeof value.id !== "string" ||
+    typeof value.reason !== "string" ||
+    value.reason.length < 3 ||
+    value.reason.length > 500
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  let merge: DeletedApplicationRecord["merge"] = null;
+  if (value.merge !== null) {
+    if (
+      !isRecord(value.merge) ||
+      typeof value.merge.id !== "string" ||
+      typeof value.merge.targetApplicationId !== "string" ||
+      typeof value.merge.targetCompanyName !== "string" ||
+      typeof value.merge.targetRoleTitle !== "string"
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    merge = {
+      id: value.merge.id,
+      targetApplicationId: value.merge.targetApplicationId,
+      targetCompanyName: value.merge.targetCompanyName,
+      targetRoleTitle: value.merge.targetRoleTitle,
+    };
+  }
+  return {
+    actorDisplayName: value.actorDisplayName,
+    application: parseApplication(value.application),
+    deletedAt: value.deletedAt,
+    id: value.id,
+    merge,
+    reason: value.reason,
+  };
+}
+
+function parseDeletedApplicationsPage(value: unknown): DeletedApplicationsPage {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.applications) ||
+    !isNonNegativeInteger(value.limit) ||
+    value.limit < 1 ||
+    value.limit > 100 ||
+    !isNonNegativeInteger(value.offset) ||
+    !isNonNegativeInteger(value.returned) ||
+    !isNonNegativeInteger(value.total) ||
+    (value.nextOffset !== null && !isNonNegativeInteger(value.nextOffset))
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  const applications = value.applications.map(parseDeletedApplication);
+  if (applications.length !== value.returned || applications.length > 100) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    applications,
+    limit: value.limit,
+    nextOffset: value.nextOffset,
+    offset: value.offset,
+    returned: value.returned,
+    total: value.total,
+  };
+}
+
+function parseApplicationRestorePreview(
+  value: unknown,
+): ApplicationRestorePreview {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.conflicts) ||
+    !isRecord(value.relationships) ||
+    !isNonNegativeInteger(value.relationships.contacts) ||
+    !isNonNegativeInteger(value.relationships.documents) ||
+    !isNonNegativeInteger(value.relationships.emailEvidence) ||
+    !isNonNegativeInteger(value.relationships.jobPostings) ||
+    !isNonNegativeInteger(value.relationships.links) ||
+    !isNullableString(value.relationships.outlookGraphConnectionId) ||
+    typeof value.safeToRestore !== "boolean"
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    application: parseApplication(value.application),
+    conflicts: value.conflicts.map(parseRecoveryConflict),
+    deletion: parseDeletedApplication(value.deletion),
+    relationships: {
+      contacts: value.relationships.contacts,
+      documents: value.relationships.documents,
+      emailEvidence: value.relationships.emailEvidence,
+      jobPostings: value.relationships.jobPostings,
+      links: value.relationships.links,
+      outlookGraphConnectionId: value.relationships.outlookGraphConnectionId,
+    },
+    safeToRestore: value.safeToRestore,
+  };
+}
+
+function parseApplicationRestoreResult(
+  value: unknown,
+): ApplicationRestoreResult {
+  if (!isRecord(value) || !isRecord(value.restoration)) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  const restoration = value.restoration;
+  if (
+    typeof restoration.actorDisplayName !== "string" ||
+    typeof restoration.applicationId !== "string" ||
+    typeof restoration.deletionId !== "string" ||
+    typeof restoration.id !== "string" ||
+    (restoration.recoveryType !== "manual" &&
+      restoration.recoveryType !== "merge") ||
+    !isIsoDateTime(restoration.restoredAt)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    application: parseApplication(value.application),
+    restoration: {
+      actorDisplayName: restoration.actorDisplayName,
+      applicationId: restoration.applicationId,
+      deletionId: restoration.deletionId,
+      id: restoration.id,
+      recoveryType: restoration.recoveryType,
+      restoredAt: restoration.restoredAt,
+    },
+  };
+}
+
+function parseApplicationMergeRecoveryPreview(
+  value: unknown,
+): ApplicationMergeRecoveryPreview {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.conflicts) ||
+    typeof value.safeToRecover !== "boolean"
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    conflicts: value.conflicts.map(parseRecoveryConflict),
+    deletion: parseDeletedApplication(value.deletion),
+    merge: parseMergeLineage(value.merge),
+    safeToRecover: value.safeToRecover,
+    source: parseApplication(value.source),
+    target: value.target === null ? null : parseApplication(value.target),
+  };
+}
+
+function parseApplicationMergeRecoveryResult(
+  value: unknown,
+): ApplicationMergeRecoveryResult {
+  if (!isRecord(value) || !isRecord(value.recovery)) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  const recovery = value.recovery;
+  if (
+    typeof recovery.actorDisplayName !== "string" ||
+    typeof recovery.id !== "string" ||
+    typeof recovery.mergeId !== "string" ||
+    !isIsoDateTime(recovery.recoveredAt) ||
+    typeof recovery.sourceApplicationId !== "string" ||
+    typeof recovery.targetApplicationId !== "string"
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    preview: parseApplicationMergeRecoveryPreview(value.preview),
+    recovery: {
+      actorDisplayName: recovery.actorDisplayName,
+      id: recovery.id,
+      mergeId: recovery.mergeId,
+      recoveredAt: recovery.recoveredAt,
+      sourceApplicationId: recovery.sourceApplicationId,
+      targetApplicationId: recovery.targetApplicationId,
+    },
+    source: parseApplication(value.source),
+    target: parseApplication(value.target),
   };
 }
 
@@ -1468,6 +1813,18 @@ export const browserApplicationsClient: ApplicationsClient = {
     return body.applications.map(parseApplication);
   },
 
+  async listDeletedApplications(input = { limit: 25, offset: 0 }) {
+    const response = await browserApiFetch(
+      `/api/applications/deleted?limit=${String(input.limit)}&offset=${String(input.offset)}`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    return parseDeletedApplicationsPage(await successfulBody(response));
+  },
+
   async queryApplicationAttention(input = {}) {
     const query = new URLSearchParams();
     const append = (
@@ -1522,11 +1879,15 @@ export const browserApplicationsClient: ApplicationsClient = {
     return parseApplication(body.application);
   },
 
-  async deleteApplication(applicationId) {
-    const encodedId = encodeURIComponent(applicationId);
+  async deleteApplication(input) {
+    const encodedId = encodeURIComponent(input.applicationId);
     const response = await browserApiFetch(`/api/applications/${encodedId}`, {
+      body: JSON.stringify({ reason: input.reason }),
       credentials: "same-origin",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
       method: "DELETE",
     });
     if (response.ok) return;
@@ -1671,6 +2032,85 @@ export const browserApplicationsClient: ApplicationsClient = {
     }
     if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
     return parseMergeResult(body.merge);
+  },
+
+  async previewApplicationRestore(applicationId) {
+    const response = await browserApiFetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/restore-preview`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
+    return parseApplicationRestorePreview(body.preview);
+  },
+
+  async restoreApplication(input) {
+    const response = await browserApiFetch(
+      `/api/applications/${encodeURIComponent(input.applicationId)}/restore`,
+      {
+        body: JSON.stringify({
+          confirm: input.confirm,
+          expectedDeletedAt: input.expectedDeletedAt,
+          expectedUpdatedAt: input.expectedUpdatedAt,
+        }),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    const body = await readResponse(response);
+    if (!response.ok) {
+      const code = errorCode(body);
+      throw new ApplicationsClientError(
+        code,
+        undefined,
+        undefined,
+        code === "application_restore_unsafe" &&
+          isRecord(body) &&
+          body.preview !== undefined
+          ? parseApplicationRestorePreview(body.preview)
+          : undefined,
+      );
+    }
+    if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
+    return parseApplicationRestoreResult(body.restoration);
+  },
+
+  async recoverApplicationMerge(input) {
+    const response = await browserApiFetch("/api/applications/merge-recovery", {
+      body: JSON.stringify(input),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    const body = await readResponse(response);
+    if (!response.ok) {
+      const code = errorCode(body);
+      throw new ApplicationsClientError(
+        code,
+        undefined,
+        undefined,
+        code === "application_merge_recovery_unsafe" &&
+          isRecord(body) &&
+          body.preview !== undefined
+          ? parseApplicationMergeRecoveryPreview(body.preview)
+          : undefined,
+      );
+    }
+    if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
+    return input.mode === "preview"
+      ? parseApplicationMergeRecoveryPreview(body.mergeRecovery)
+      : parseApplicationMergeRecoveryResult(body.mergeRecovery);
   },
 
   async recordApplicationFieldProvenance(applicationId, input) {

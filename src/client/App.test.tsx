@@ -474,6 +474,16 @@ function createApplicationsClient(
     listApplications: vi
       .fn<ApplicationsClient["listApplications"]>()
       .mockResolvedValue(applications),
+    listDeletedApplications: vi
+      .fn<ApplicationsClient["listDeletedApplications"]>()
+      .mockResolvedValue({
+        applications: [],
+        limit: 25,
+        nextOffset: null,
+        offset: 0,
+        returned: 0,
+        total: 0,
+      }),
     listApplicationEvents: vi
       .fn<ApplicationsClient["listApplicationEvents"]>()
       .mockResolvedValue({
@@ -490,9 +500,18 @@ function createApplicationsClient(
     mergeApplications: vi
       .fn<ApplicationsClient["mergeApplications"]>()
       .mockRejectedValue(new Error("Merge response not configured")),
+    previewApplicationRestore: vi
+      .fn<ApplicationsClient["previewApplicationRestore"]>()
+      .mockRejectedValue(new Error("Restore preview not configured")),
+    recoverApplicationMerge: vi
+      .fn<ApplicationsClient["recoverApplicationMerge"]>()
+      .mockRejectedValue(new Error("Merge recovery not configured")),
     recordApplicationFieldProvenance: vi
       .fn<ApplicationsClient["recordApplicationFieldProvenance"]>()
       .mockRejectedValue(new Error("Provenance response not configured")),
+    restoreApplication: vi
+      .fn<ApplicationsClient["restoreApplication"]>()
+      .mockRejectedValue(new Error("Restore response not configured")),
     queryApplicationAttention: vi
       .fn<ApplicationsClient["queryApplicationAttention"]>()
       .mockResolvedValue({
@@ -1310,6 +1329,241 @@ describe("application shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("previews and restores a manually deleted application", async () => {
+    const applicationsClient = createApplicationsClient([]);
+    const deletion = {
+      actorDisplayName: "Alex Example",
+      application: applicationRecord,
+      deletedAt: "2026-07-19T09:30:00.000Z",
+      id: "70707070-7070-4070-8070-707070707070",
+      merge: null,
+      reason: "Removed while reconciling an import",
+    };
+    const preview = {
+      application: applicationRecord,
+      conflicts: [],
+      deletion,
+      relationships: {
+        contacts: 1,
+        documents: 0,
+        emailEvidence: 2,
+        jobPostings: 1,
+        links: 1,
+        outlookGraphConnectionId: null,
+      },
+      safeToRestore: true,
+    };
+    applicationsClient.listDeletedApplications.mockResolvedValue({
+      applications: [deletion],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 1,
+      total: 1,
+    });
+    applicationsClient.previewApplicationRestore.mockResolvedValue(preview);
+    applicationsClient.restoreApplication.mockResolvedValue({
+      application: applicationRecord,
+      restoration: {
+        actorDisplayName: "Alex Example",
+        applicationId: applicationRecord.id,
+        deletionId: deletion.id,
+        id: "71717171-7171-4171-8171-717171717171",
+        recoveryType: "manual",
+        restoredAt: "2026-07-19T10:00:00.000Z",
+      },
+    });
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Deleted applications" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Deleted applications",
+    });
+    await waitFor(() =>
+      expect(applicationsClient.listDeletedApplications).toHaveBeenCalledWith({
+        limit: 25,
+        offset: 0,
+      }),
+    );
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: /Example Studio/ }),
+    );
+    expect(
+      await within(dialog).findByText("Safe to recover"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        (_content, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "2 emails · 1 postings · 0 documents",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Restore application" }),
+    );
+
+    await waitFor(() =>
+      expect(applicationsClient.restoreApplication).toHaveBeenCalledWith({
+        applicationId: applicationRecord.id,
+        confirm: true,
+        expectedDeletedAt: deletion.deletedAt,
+        expectedUpdatedAt: applicationRecord.updatedAt,
+      }),
+    );
+    expect(
+      await screen.findByText("Example Studio was restored."),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "Applications" })).getByText(
+        "Example Studio",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("previews and safely recovers a deleted merge source", async () => {
+    const source = {
+      ...applicationRecord,
+      companyName: "Source Studio",
+      id: "72727272-7272-4272-8272-727272727272",
+      updatedAt: "2026-07-19T09:00:00.000Z",
+    };
+    const target = {
+      ...applicationRecord,
+      companyName: "Target Studio",
+      id: "73737373-7373-4373-8373-737373737373",
+      updatedAt: "2026-07-19T09:05:00.000Z",
+    };
+    const applicationsClient = createApplicationsClient([target]);
+    const merge = {
+      actorDisplayName: "Alex Example",
+      id: "74747474-7474-4474-8474-747474747474",
+      mergedAt: "2026-07-19T09:10:00.000Z",
+      sourceApplicationId: source.id,
+      sourceUpdatedAt: source.updatedAt,
+      targetApplicationId: target.id,
+      targetUpdatedAt: target.updatedAt,
+    };
+    const deletion = {
+      actorDisplayName: "Alex Example",
+      application: source,
+      deletedAt: merge.mergedAt,
+      id: "75757575-7575-4575-8575-757575757575",
+      merge: {
+        id: merge.id,
+        targetApplicationId: target.id,
+        targetCompanyName: target.companyName,
+        targetRoleTitle: target.roleTitle,
+      },
+      reason: "Merged duplicate application",
+    };
+    const preview = {
+      conflicts: [],
+      deletion,
+      merge,
+      safeToRecover: true,
+      source,
+      target,
+    };
+    applicationsClient.listDeletedApplications.mockResolvedValue({
+      applications: [deletion],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 1,
+      total: 1,
+    });
+    applicationsClient.recoverApplicationMerge.mockImplementation((input) =>
+      Promise.resolve(
+        input.mode === "preview"
+          ? preview
+          : {
+              preview,
+              recovery: {
+                actorDisplayName: "Alex Example",
+                id: "76767676-7676-4676-8676-767676767676",
+                mergeId: merge.id,
+                recoveredAt: "2026-07-19T09:20:00.000Z",
+                sourceApplicationId: source.id,
+                targetApplicationId: target.id,
+              },
+              source,
+              target,
+            },
+      ),
+    );
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Deleted applications" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Deleted applications",
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: /Source Studio/ }),
+    );
+    expect(
+      await within(dialog).findByText("Safe to recover"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Recover merge" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        applicationsClient.recoverApplicationMerge,
+      ).toHaveBeenLastCalledWith({
+        confirm: true,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedTargetUpdatedAt: target.updatedAt,
+        mode: "apply",
+        sourceApplicationId: source.id,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "The merge was recovered and both applications are active.",
+      ),
+    ).toBeInTheDocument();
+    const applicationsTable = screen.getByRole("table", {
+      name: "Applications",
+    });
+    expect(
+      within(applicationsTable).getByText("Source Studio"),
+    ).toBeInTheDocument();
+    expect(
+      within(applicationsTable).getByText("Target Studio"),
+    ).toBeInTheDocument();
+  });
+
   it("opens the document library and uploads an associated original", async () => {
     const documentsClient = createDocumentsClient();
     render(
@@ -2031,19 +2285,28 @@ describe("application shell", () => {
       name: "Remove Example Studio?",
     });
     expect(confirmation).toHaveAccessibleDescription(
-      "This removes Product Designer from the workspace. Its audit history remains stored.",
+      "This removes Product Designer from the workspace. Its audit history and deletion reason remain stored.",
     );
     expect(
       within(confirmation).getByRole("button", { name: "Cancel" }),
     ).toHaveFocus();
-    fireEvent.click(
-      within(confirmation).getByRole("button", { name: "Remove application" }),
+    const removeButton = within(confirmation).getByRole("button", {
+      name: "Remove application",
+    });
+    expect(removeButton).toBeDisabled();
+    fireEvent.change(
+      within(confirmation).getByRole("textbox", {
+        name: "Reason for deletion",
+      }),
+      { target: { value: "Duplicate record created during import" } },
     );
+    fireEvent.click(removeButton);
 
     await waitFor(() =>
-      expect(applicationsClient.deleteApplication).toHaveBeenCalledWith(
-        applicationRecord.id,
-      ),
+      expect(applicationsClient.deleteApplication).toHaveBeenCalledWith({
+        applicationId: applicationRecord.id,
+        reason: "Duplicate record created during import",
+      }),
     );
     expect(
       await screen.findByText("Example Studio was removed."),
