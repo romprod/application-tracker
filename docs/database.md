@@ -197,6 +197,14 @@ links must use one of the bounded evidence types. The database constraint
 rejects unsupported values, while the workspace-unique Message-ID constraint
 continues to make exact retries idempotent.
 
+The thirty-ninth migration expands soft deletion into a supported recovery
+ledger. Every deletion stores a bounded reason, actor, time, optional merge
+lineage, and a relationship-version snapshot. Immutable restoration and merge
+recovery tables retain who recovered which deletion and the optimistic versions
+used. Merge rows gain an optional merge-time recovery snapshot. Recovery never
+updates or removes deletion, merge, event, restoration, or recovery history;
+multi-record restoration and its audit event commit atomically.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

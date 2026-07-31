@@ -2253,7 +2253,7 @@ export function createApplicationMcpServer(
     {
       annotations: deleteAnnotations,
       description:
-        "Soft-delete an application from the bound workspace when this connection has read-and-write access. Pass confirm=true only after the user has explicitly approved this destructive action.",
+        "Soft-delete an application from the bound workspace when this connection has read-and-write access. Requires a 3-500 character reason; pass confirm=true only after the user has explicitly approved this destructive action.",
       inputSchema: deleteApplicationSchema.extend({ confirm: z.literal(true) }),
       outputSchema: deleteApplicationResultSchema,
       title: "Delete application",
@@ -2380,7 +2380,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires an explicit reason and confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

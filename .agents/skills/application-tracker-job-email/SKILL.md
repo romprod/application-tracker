@@ -109,6 +109,18 @@ require:
 - `find_duplicate_applications`; and
 - `merge_applications`.
 
+When the user separately and explicitly asks to inspect or recover deleted
+records, require:
+
+- `list_deleted_applications`;
+- `preview_application_restore` and `restore_application` for a manual
+  deletion; and
+- `recover_application_merge` for a merge deletion.
+
+Recovery is not part of ordinary job-email reconciliation. Never delete or
+restore an application merely to resolve an evidence match, ambiguity, or
+provenance conflict.
+
 When the user asks for an evidence-gap, reconciliation, or data-quality review,
 prefer `query_application_attention`. Keep its page bounded, preserve the
 returned priority order, and report stable reason codes and labels exactly.
@@ -464,7 +476,9 @@ The server consolidates evidence, postings, documents, contacts, and links in
 one transaction, records immutable merge lineage, preserves the source events
 without rewriting or re-parenting them, and marks the source merged only after
 success. An exact retry returns the existing lineage without duplicating
-relationships.
+relationships while that merge remains in effect. After a merge has been
+recovered, a repeat merge fails with `application_already_merged` and requires
+a fresh duplicate review and explicit decision.
 
 After an approved merge, verify the returned survivor, lineage, consolidated
 relationships, and retained source event count. Then rerun
@@ -476,6 +490,37 @@ Do not resolve a provenance conflict through a merge or ordinary update. Read
 the `provenance` assessments returned by `get_application`, report every
 conflicting or stale observation, and ask the user which evidence to verify or
 which application scalar to edit.
+
+### 6a. Recover an explicitly selected deletion
+
+Keep recovery separate from matching and evidence reconciliation. Start with a
+bounded `list_deleted_applications` page. It returns only currently deleted
+records with the immutable reason, actor, deletion time, application snapshot,
+and optional merge target lineage. Normal application reads remain active-only.
+
+For a manual deletion, call `preview_application_restore` with the exact
+`applicationId`. Preview performs no mutation and reports inactive references,
+changed document or Graph assignments, moved or added email and posting
+relationships, stale record state, and `safeToRestore`. Apply only after the
+user explicitly approves the preview. Call `restore_application` with
+`confirm: true`, the previewed `expectedDeletedAt`, and the previewed
+`expectedUpdatedAt`.
+
+For a merge deletion, do not call `restore_application`. Call
+`recover_application_merge` first with `mode: "preview"` and the exact source
+application ID. Apply only after explicit approval with `mode: "apply"`,
+`confirm: true`, and both previewed `updatedAt` values. Recovery keeps merge,
+deletion, restoration, and activity history immutable and reverses only the
+target fields and relationships proven unchanged since the merge.
+
+Treat `application_recovery_not_found`, `application_already_active`,
+`application_already_restored`, `merge_recovery_required`,
+`merge_target_unavailable`, `application_recovery_conflict`,
+`application_restore_unsafe`, and `application_merge_recovery_unsafe` as
+no-retry outcomes until a fresh preview or corrected external state resolves
+the reported conflict. Never use `delete_application` as a recovery probe. If
+the user separately approves deletion, it requires `confirm: true` and a
+specific 3–500 character reason.
 
 ### 7. Reconcile evidence atomically
 
