@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ApplicationActivityCorrectionError,
+  ApplicationActivityEvidenceError,
+  ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
   InvalidOutlookGraphConnectionAssignmentError,
 } from "../../application/applications.js";
@@ -1037,6 +1040,206 @@ describe("SqliteApplicationsRepository", () => {
           .prepare("DELETE FROM application_events WHERE id = ?")
           .run(eventId),
       ).toThrow("application events are immutable");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("appends, retries, paginates, and corrects general activity without changing status", () => {
+    const { database, repository, setup } = createRepository();
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: null,
+        companyName: "Example Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
+        workspaceId: setup.workspace.id,
+      });
+      const input = {
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        correctionReason: null,
+        idempotencyKey: "email:recruiter-screen:1",
+        occurredAt: createdAt,
+        processedAt: "2026-07-18T13:00:00.000Z",
+        sourceEmailEvidenceId: null,
+        sourceEmailMessageId: "<screen@example.com>",
+        summary: "Completed a recruiter screen",
+        supersedesEventId: null,
+        type: "recruiter_screen" as const,
+        workspaceId: setup.workspace.id,
+      };
+
+      const activity = repository.addApplicationActivity(input);
+      expect(activity).toMatchObject({
+        actorDisplayName: "Alex Example",
+        occurredAt: createdAt,
+        processedAt: "2026-07-18T13:00:00.000Z",
+        summary: "Completed a recruiter screen",
+        toStatus: null,
+        type: "recruiter_screen",
+      });
+      expect(repository.addApplicationActivity(input)).toEqual(activity);
+      expect(repository.listApplications(setup.workspace.id)[0]).toEqual(
+        created,
+      );
+      expect(
+        repository.listApplicationEventsPage(setup.workspace.id, created.id, {
+          limit: 1,
+          offset: 0,
+        }),
+      ).toMatchObject({
+        events: [activity],
+        limit: 1,
+        nextOffset: 1,
+        offset: 0,
+        returned: 1,
+        total: 2,
+      });
+
+      const correction = repository.addApplicationActivity({
+        ...input,
+        correctionReason: "Corrected the activity wording",
+        idempotencyKey: "email:recruiter-screen:1:correction",
+        processedAt: "2026-07-18T13:05:00.000Z",
+        summary: "Recruiter screen scheduled",
+        supersedesEventId: activity?.id ?? null,
+        type: "interview_scheduled",
+      });
+      expect(correction).toMatchObject({
+        correctionReason: "Corrected the activity wording",
+        supersedesEventId: activity?.id,
+        type: "interview_scheduled",
+      });
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toEqual(expect.arrayContaining([activity, correction]));
+      expect(() =>
+        repository.addApplicationActivity({
+          ...input,
+          correctionReason: "Second replacement",
+          idempotencyKey: "second-correction",
+          supersedesEventId: activity?.id ?? null,
+        }),
+      ).toThrow(
+        new ApplicationActivityCorrectionError("correction_already_exists"),
+      );
+
+      repository.addApplicationActivity({
+        ...input,
+        idempotencyKey: "later-general-activity",
+        occurredAt: "2026-07-18T16:00:00.000Z",
+        processedAt: "2026-07-18T16:05:00.000Z",
+        sourceEmailMessageId: null,
+        summary: "Recorded a later general note",
+        type: "note",
+      });
+      expect(
+        repository.updateApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          expectedUpdatedAt: created.updatedAt,
+          statusEvent: {
+            effectiveAt: "2026-07-18T15:00:00.000Z",
+            overrideReason: null,
+            sourceEmailMessageId: "<status-after-activity@example.com>",
+          },
+          statusId: referenceId(
+            database,
+            setup.workspace.id,
+            "status",
+            "Applied",
+          ),
+          updatedAt: "2026-07-18T17:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toMatchObject({ status: "Applied" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects mismatched idempotency, evidence, and correction targets", () => {
+    const { database, repository, setup } = createRepository();
+    try {
+      const create = (companyName: string) =>
+        repository.createApplication({
+          appliedOn: null,
+          companyName,
+          createdAt,
+          createdByUserId: setup.administrator.id,
+          location: null,
+          nextAction: null,
+          nextActionDue: null,
+          notes: null,
+          roleTitle: "Engineer",
+          sourceUrl: null,
+          statusId: referenceId(
+            database,
+            setup.workspace.id,
+            "status",
+            "Prospect",
+          ),
+          workspaceId: setup.workspace.id,
+        });
+      const first = create("First Ltd");
+      const second = create("Second Ltd");
+      const common = {
+        actorUserId: setup.administrator.id,
+        applicationId: first.id,
+        correctionReason: null,
+        idempotencyKey: "activity-key",
+        occurredAt: createdAt,
+        processedAt: createdAt,
+        sourceEmailEvidenceId: null,
+        sourceEmailMessageId: null,
+        summary: "Recruiter made contact",
+        supersedesEventId: null,
+        type: "recruiter_contact" as const,
+        workspaceId: setup.workspace.id,
+      };
+      repository.addApplicationActivity(common);
+      expect(() =>
+        repository.addApplicationActivity({
+          ...common,
+          summary: "Different payload",
+        }),
+      ).toThrow(ApplicationActivityIdempotencyConflictError);
+      expect(() =>
+        repository.addApplicationActivity({
+          ...common,
+          idempotencyKey: "invalid-evidence",
+          sourceEmailEvidenceId: "11111111-1111-4111-8111-111111111111",
+        }),
+      ).toThrow(ApplicationActivityEvidenceError);
+      const firstActivity = repository.listApplicationEvents(
+        setup.workspace.id,
+        first.id,
+      )?.[0];
+      expect(() =>
+        repository.addApplicationActivity({
+          ...common,
+          applicationId: second.id,
+          correctionReason: "Wrong application",
+          idempotencyKey: "wrong-correction",
+          supersedesEventId: firstActivity?.id ?? null,
+        }),
+      ).toThrow(
+        new ApplicationActivityCorrectionError("invalid_correction_target"),
+      );
     } finally {
       database.close();
     }

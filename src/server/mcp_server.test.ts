@@ -26,6 +26,7 @@ afterEach(async () => {
 
 function fakeTools(): McpApplicationTools {
   return {
+    addApplicationActivity: vi.fn(),
     addApplicationEvent: vi.fn(),
     auditDuplicateApplications: vi.fn(() => ({
       candidates: [],
@@ -106,6 +107,14 @@ function fakeTools(): McpApplicationTools {
     linkEmailEvidence: vi.fn(),
     listApplications: vi.fn(() => ({
       applications: [],
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      total: 0,
+    })),
+    listApplicationEvents: vi.fn(() => ({
+      events: [],
+      limit: 25,
       nextOffset: null,
       offset: 0,
       returned: 0,
@@ -371,6 +380,7 @@ describe("local MCP server", () => {
       "get_job_search_summary",
       "list_applications",
       "get_application",
+      "list_application_events",
       "list_unlinked_applications",
       "get_application_data_quality",
       "audit_duplicate_applications",
@@ -402,6 +412,7 @@ describe("local MCP server", () => {
       "bulk_update_applications",
       "delete_application",
       "add_application_event",
+      "add_application_activity",
       "reconcile_outlook_graph_connection",
     ]);
     for (const tool of listed.tools) {

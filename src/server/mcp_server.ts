@@ -3,6 +3,9 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
+  ApplicationActivityCorrectionError,
+  ApplicationActivityEvidenceError,
+  ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
   ApplicationEventNoChangeError,
   ApplicationMergeNotFoundError,
@@ -52,11 +55,14 @@ import type {
   McpAuditTransport,
 } from "../application/mcp_audit.js";
 import {
+  addApplicationActivitySchema,
   addApplicationEventSchema,
+  applicationActivityTypeSchema,
   applicationIdSchema,
   applicationMergeFieldSchema,
   auditDuplicateApplicationsSchema,
   createApplicationSchema,
+  listApplicationEventsSchema,
   mergeApplicationsSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
@@ -304,14 +310,33 @@ const bulkApplicationUpdateResultSchema = z.strictObject({
 });
 const applicationEventSchema = z.strictObject({
   actorDisplayName: z.string(),
+  correctionReason: z.string().nullable(),
   fromStatus: z.string().nullable(),
   id: z.string(),
+  idempotencyKey: z.string().nullable(),
   occurredAt: z.iso.datetime(),
   processedAt: z.iso.datetime(),
+  sourceEmailEvidenceId: z.string().nullable(),
   sourceEmailMessageId: z.string().nullable(),
   statusOverrideReason: z.string().nullable(),
-  toStatus: z.string(),
-  type: z.enum(["application_created", "status_changed"]),
+  summary: z.string().min(1).max(1000).nullable(),
+  supersedesEventId: z.string().nullable(),
+  toStatus: z.string().nullable(),
+  type: z.union([
+    z.enum(["application_created", "status_changed"]),
+    applicationActivityTypeSchema,
+  ]),
+});
+const applicationEventsPageSchema = z.strictObject({
+  events: z.array(applicationEventSchema).max(100),
+  limit: z.number().int().min(1).max(100),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative().max(100),
+  total: z.number().int().nonnegative(),
+});
+const applicationEventsPageMetadataSchema = applicationEventsPageSchema.omit({
+  events: true,
 });
 const applicationJobPostingSchema = z.strictObject({
   applicationId: applicationIdSchema,
@@ -336,6 +361,7 @@ const applicationDetailSchema = z.strictObject({
   application: applicationRecordSchema,
   emailEvidence: z.array(applicationEmailEvidenceSchema),
   events: z.array(applicationEventSchema),
+  eventsPage: applicationEventsPageMetadataSchema,
   jobPostings: z.array(applicationJobPostingSchema),
 });
 const outlookEmailClassificationSchema = z.enum([
@@ -1127,6 +1153,19 @@ function executeWriteTool(
         ? failedToolResult("application_event_no_change")
         : failedToolResult("internal_error");
     }
+    const activityErrorCode =
+      error instanceof ApplicationActivityIdempotencyConflictError
+        ? "application_activity_idempotency_conflict"
+        : error instanceof ApplicationActivityEvidenceError
+          ? "invalid_application_activity_evidence"
+          : error instanceof ApplicationActivityCorrectionError
+            ? error.code
+            : undefined;
+    if (activityErrorCode) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(activityErrorCode)
+        : failedToolResult("internal_error");
+    }
     const statusEventErrorCode =
       error instanceof ApplicationStatusStaleError
         ? tool === "add_application_event"
@@ -1307,7 +1346,7 @@ export function createApplicationMcpServer(
     {
       annotations: readOnlyAnnotations,
       description:
-        "Return one application with end company, agency, salary, rating, work arrangement, contacts, links, notes, immutable stage events, and linked email evidence including any stored Outlook web URL.",
+        "Return one application with end company, agency, salary, rating, work arrangement, contacts, links, notes, linked email evidence, and the first bounded page of its unified immutable activity timeline. Use list_application_events for the remaining pages.",
       inputSchema: z.strictObject({ applicationId: applicationIdSchema }),
       outputSchema: applicationDetailSchema,
       title: "Get application",
@@ -1315,6 +1354,26 @@ export function createApplicationMcpServer(
     ({ applicationId }) =>
       executeTool("get_application", "application", logger, options.audit, () =>
         tools.getApplication(applicationId),
+      ),
+  );
+
+  server.registerTool(
+    "list_application_events",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "List one bounded page of immutable stage and general activity events for an application in deterministic effective-time order.",
+      inputSchema: listApplicationEventsSchema,
+      outputSchema: applicationEventsPageSchema,
+      title: "List application events",
+    },
+    (input) =>
+      executeTool(
+        "list_application_events",
+        "application",
+        logger,
+        options.audit,
+        () => tools.listApplicationEvents(input),
       ),
   );
 
@@ -1788,6 +1847,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.addApplicationEvent(input),
+      ),
+  );
+
+  server.registerTool(
+    "add_application_activity",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Append one immutable non-status application activity. The authenticated actor and processedAt are recorded by the server; optional idempotencyKey supports exact retry, and corrections append a replacement using supersedesEventId with correctionReason.",
+      inputSchema: addApplicationActivitySchema,
+      outputSchema: applicationEventSchema,
+      title: "Add application activity",
+    },
+    (input) =>
+      executeWriteTool(
+        "add_application_activity",
+        "application",
+        logger,
+        options.audit,
+        () => tools.addApplicationActivity(input),
       ),
   );
 

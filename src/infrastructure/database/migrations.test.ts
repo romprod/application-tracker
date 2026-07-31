@@ -1,9 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
-import { ApplicationLedgerService } from "../../application/applications.js";
 import { LocalMcpActorProvider } from "../../application/mcp.js";
-import { SqliteApplicationsRepository } from "./applications_repository.js";
 import { SqliteMcpActorRepository } from "./mcp_actor_repository.js";
 import {
   applicationMigrations,
@@ -101,7 +99,35 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name
+             FROM pragma_table_info('application_events')
+             ORDER BY cid`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "id",
+        "workspace_id",
+        "application_id",
+        "actor_user_id",
+        "event_type",
+        "from_status",
+        "to_status",
+        "occurred_at",
+        "processed_at",
+        "summary",
+        "source_email_evidence_id",
+        "source_email_message_id",
+        "status_override_reason",
+        "idempotency_key",
+        "supersedes_event_id",
+        "correction_reason",
+        "sequence",
       ]);
       expect(
         database
@@ -1321,14 +1347,29 @@ describe("migrateDatabase", () => {
       if (typeof statusId !== "string") {
         throw new Error("Expected the default Applied status");
       }
-      const application = new ApplicationLedgerService(
-        new SqliteApplicationsRepository(database),
-        () => new Date("2026-07-31T06:05:00.000Z"),
-      ).createApplication(actor, {
-        companyName: "Legacy Evidence Ltd",
-        roleTitle: "Platform Engineer",
-        statusId,
-      });
+      const applicationId = "legacy-application";
+      database
+        .prepare(
+          `INSERT INTO applications (
+             id, workspace_id, agency, company_name, role_title, legacy_status,
+             status_reference_id, source_reference_id, role_type_reference_id,
+             location, source_url, applied_on, next_action, next_action_due,
+             notes, rating, salary, work_arrangement, created_by_user_id,
+             created_at, updated_at
+           ) VALUES (
+             ?, ?, NULL, 'Legacy Evidence Ltd', 'Platform Engineer',
+             'prospect', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, ?, ?, ?
+           )`,
+        )
+        .run(
+          applicationId,
+          setup.workspace.id,
+          statusId,
+          actor.userId,
+          "2026-07-31T06:05:00.000Z",
+          "2026-07-31T06:05:00.000Z",
+        );
       database
         .prepare(
           `INSERT INTO application_email_evidence
@@ -1339,7 +1380,7 @@ describe("migrateDatabase", () => {
         .run(
           "legacy-evidence",
           setup.workspace.id,
-          application.id,
+          applicationId,
           "<legacy@example.com>",
           "2026-07-31T05:45:00.000Z",
           "2026-07-31T06:06:00.000Z",
@@ -1363,6 +1404,133 @@ describe("migrateDatabase", () => {
           )
           .run("legacy-evidence"),
       ).toThrow();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves legacy event content and row ordering in the activity migration", () => {
+    const database = new Database(":memory:");
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 35));
+      const setup = new SqliteSetupRepository(
+        database,
+      ).createInitialAdministrator({
+        completedAt: "2026-07-31T07:00:00.000Z",
+        displayName: "Alex Example",
+        passwordHash: "scrypt$1024$8$1$salt$hash-value-long-enough",
+        username: "alex",
+        workspaceName: "Applications",
+      });
+      const statusId = database
+        .prepare(
+          `SELECT id FROM reference_values
+           WHERE workspace_id = ? AND category = 'status' AND label = 'Applied'`,
+        )
+        .pluck()
+        .get(setup.workspace.id);
+      if (typeof statusId !== "string") throw new Error("Missing status");
+      database
+        .prepare(
+          `INSERT INTO applications (
+             id, workspace_id, agency, company_name, role_title, legacy_status,
+             status_reference_id, source_reference_id, role_type_reference_id,
+             location, source_url, applied_on, next_action, next_action_due,
+             notes, rating, salary, work_arrangement, created_by_user_id,
+             created_at, updated_at
+           ) VALUES (
+             'legacy-application', ?, NULL, 'Legacy Ltd', 'Engineer',
+             'prospect', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, ?, ?, ?
+           )`,
+        )
+        .run(
+          setup.workspace.id,
+          statusId,
+          setup.administrator.id,
+          "2026-07-31T07:00:00.000Z",
+          "2026-07-31T07:00:00.000Z",
+        );
+      const insertEvent = database.prepare(
+        `INSERT INTO application_events (
+           id, workspace_id, application_id, actor_user_id, event_type,
+           from_status, to_status, occurred_at, processed_at,
+           source_email_message_id, status_override_reason
+         ) VALUES (?, ?, 'legacy-application', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      insertEvent.run(
+        "legacy-event-one",
+        setup.workspace.id,
+        setup.administrator.id,
+        "application_created",
+        null,
+        "Prospect",
+        "2026-07-31T07:00:00.000Z",
+        "2026-07-31T07:00:01.000Z",
+        null,
+        null,
+      );
+      insertEvent.run(
+        "legacy-event-two",
+        setup.workspace.id,
+        setup.administrator.id,
+        "status_changed",
+        "Prospect",
+        "Applied",
+        "2026-07-31T07:00:00.000Z",
+        "2026-07-31T07:00:02.000Z",
+        "<applied@example.com>",
+        "Verified correction",
+      );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT id, event_type AS type, from_status AS fromStatus,
+                    to_status AS toStatus, occurred_at AS occurredAt,
+                    processed_at AS processedAt,
+                    source_email_message_id AS sourceEmailMessageId,
+                    status_override_reason AS statusOverrideReason
+             FROM application_events
+             WHERE application_id = 'legacy-application'
+             ORDER BY occurred_at DESC, sequence DESC`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          fromStatus: "Prospect",
+          id: "legacy-event-two",
+          occurredAt: "2026-07-31T07:00:00.000Z",
+          processedAt: "2026-07-31T07:00:02.000Z",
+          sourceEmailMessageId: "<applied@example.com>",
+          statusOverrideReason: "Verified correction",
+          toStatus: "Applied",
+          type: "status_changed",
+        },
+        {
+          fromStatus: null,
+          id: "legacy-event-one",
+          occurredAt: "2026-07-31T07:00:00.000Z",
+          processedAt: "2026-07-31T07:00:01.000Z",
+          sourceEmailMessageId: null,
+          statusOverrideReason: null,
+          toStatus: "Prospect",
+          type: "application_created",
+        },
+      ]);
+      const auditSql = String(
+        database
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_audit_events'",
+          )
+          .pluck()
+          .get(),
+      );
+      expect(auditSql).toContain("list_application_events");
+      expect(auditSql).toContain("add_application_activity");
     } finally {
       database.close();
     }

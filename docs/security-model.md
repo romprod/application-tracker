@@ -48,7 +48,7 @@
 - Audit events record actor, action, target type, result, and timestamp without
   recording secrets or document content
 - Application removal records its workspace, actor, and timestamp without
-  deleting immutable stage history
+  deleting immutable stage or general activity history
 - Contact and related-link rows inherit application workspace scope through
   composite foreign keys; relation writes share the parent transaction
 

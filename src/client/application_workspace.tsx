@@ -10,8 +10,9 @@ import {
 
 import {
   ApplicationsClientError,
+  type AddApplicationActivityInput,
   type ApplicationEvidence,
-  type ApplicationEvent,
+  type ApplicationEventsPage,
   type ApplicationRecord,
   type ApplicationsClient,
 } from "./applications_client";
@@ -97,8 +98,9 @@ export function ApplicationWorkspace({
   const [deleting, setDeleting] = useState(false);
   const [selectedApplication, setSelectedApplication] =
     useState<ApplicationRecord>();
-  const [events, setEvents] = useState<ApplicationEvent[]>();
+  const [eventsPage, setEventsPage] = useState<ApplicationEventsPage>();
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
   const [eventsError, setEventsError] = useState(false);
   const [evidence, setEvidence] = useState<ApplicationEvidence>();
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -153,7 +155,7 @@ export function ApplicationWorkspace({
     const request = drawerRequest.current + 1;
     drawerRequest.current = request;
     setSelectedApplication(application);
-    setEvents(undefined);
+    setEventsPage(undefined);
     setEventsError(false);
     setEventsLoading(true);
     setEvidence(undefined);
@@ -162,6 +164,7 @@ export function ApplicationWorkspace({
 
     const eventsRequest = applicationsClient.listApplicationEvents(
       application.id,
+      { limit: 25, offset: 0 },
     );
     const evidenceRequest = applicationsClient.getApplicationEvidence(
       application.id,
@@ -169,7 +172,7 @@ export function ApplicationWorkspace({
     void eventsRequest
       .then((loaded) => {
         if (drawerRequest.current !== request) return;
-        setEvents(loaded);
+        setEventsPage(loaded);
         setEventsLoading(false);
       })
       .catch(() => {
@@ -193,12 +196,78 @@ export function ApplicationWorkspace({
   function closeApplication() {
     drawerRequest.current += 1;
     setSelectedApplication(undefined);
-    setEvents(undefined);
+    setEventsPage(undefined);
     setEventsLoading(false);
+    setEventsLoadingMore(false);
     setEventsError(false);
     setEvidence(undefined);
     setEvidenceLoading(false);
     setEvidenceError(false);
+  }
+
+  async function addActivity(input: AddApplicationActivityInput) {
+    if (!selectedApplication) return;
+    const event = await applicationsClient.addApplicationActivity(
+      selectedApplication.id,
+      input,
+    );
+    setEventsPage((current) => {
+      const currentEvents = current?.events ?? [];
+      const events = [
+        event,
+        ...currentEvents.filter((candidate) => candidate.id !== event.id),
+      ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+      const total =
+        Math.max(current?.total ?? 0, currentEvents.length) +
+        (currentEvents.some((candidate) => candidate.id === event.id) ? 0 : 1);
+      return {
+        events,
+        limit: current?.limit ?? 25,
+        nextOffset: events.length < total ? events.length : null,
+        offset: 0,
+        returned: events.length,
+        total,
+      };
+    });
+  }
+
+  async function loadMoreEvents() {
+    if (
+      !selectedApplication ||
+      eventsPage?.nextOffset === null ||
+      eventsLoadingMore
+    ) {
+      return;
+    }
+    const offset = eventsPage?.nextOffset;
+    if (offset === undefined) return;
+    setEventsLoadingMore(true);
+    setEventsError(false);
+    try {
+      const loaded = await applicationsClient.listApplicationEvents(
+        selectedApplication.id,
+        { limit: 25, offset },
+      );
+      setEventsPage((current) => {
+        if (!current) return loaded;
+        const seen = new Set(current.events.map(({ id }) => id));
+        return {
+          ...loaded,
+          events: [
+            ...current.events,
+            ...loaded.events.filter(({ id }) => !seen.has(id)),
+          ],
+          offset: 0,
+          returned:
+            current.events.length +
+            loaded.events.filter(({ id }) => !seen.has(id)).length,
+        };
+      });
+    } catch {
+      setEventsError(true);
+    } finally {
+      setEventsLoadingMore(false);
+    }
   }
 
   function beginCreate() {
@@ -382,9 +451,12 @@ export function ApplicationWorkspace({
           evidence={evidence}
           evidenceError={evidenceError}
           evidenceLoading={evidenceLoading}
-          events={events}
+          events={eventsPage?.events}
           eventsError={eventsError}
           eventsLoading={eventsLoading}
+          eventsLoadingMore={eventsLoadingMore}
+          eventsNextOffset={eventsPage?.nextOffset ?? null}
+          onAddActivity={addActivity}
           onClose={closeApplication}
           onDelete={() => beginDelete(selectedApplication)}
           onEdit={() => {
@@ -392,6 +464,7 @@ export function ApplicationWorkspace({
             closeApplication();
             beginEdit(application);
           }}
+          onLoadMoreEvents={loadMoreEvents}
         />
       )}
       {formMode && (

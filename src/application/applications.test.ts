@@ -17,6 +17,24 @@ const prospectId = "11111111-1111-4111-8111-111111111111";
 const interviewId = "22222222-2222-4222-8222-222222222222";
 
 function repository() {
+  const addApplicationActivity = vi.fn<
+    ApplicationsRepository["addApplicationActivity"]
+  >((input) => ({
+    actorDisplayName: "Alex",
+    correctionReason: input.correctionReason,
+    fromStatus: null,
+    id: "activity-1",
+    idempotencyKey: input.idempotencyKey,
+    occurredAt: input.occurredAt,
+    processedAt: input.processedAt,
+    sourceEmailEvidenceId: input.sourceEmailEvidenceId,
+    sourceEmailMessageId: input.sourceEmailMessageId,
+    statusOverrideReason: null,
+    summary: input.summary,
+    supersedesEventId: input.supersedesEventId,
+    toStatus: null,
+    type: input.type,
+  }));
   const deleteApplication = vi.fn<ApplicationsRepository["deleteApplication"]>(
     () => true,
   );
@@ -52,6 +70,16 @@ function repository() {
   const listApplicationEvents = vi.fn<
     ApplicationsRepository["listApplicationEvents"]
   >(() => []);
+  const listApplicationEventsPage = vi.fn<
+    ApplicationsRepository["listApplicationEventsPage"]
+  >((_workspaceId, _applicationId, input) => ({
+    events: [],
+    limit: input.limit,
+    nextOffset: null,
+    offset: input.offset,
+    returned: 0,
+    total: 0,
+  }));
   const updateApplication = vi.fn<ApplicationsRepository["updateApplication"]>(
     (input) => ({
       appliedOn: null,
@@ -79,14 +107,18 @@ function repository() {
     }),
   );
   return {
+    addApplicationActivity,
     createApplication,
     deleteApplication,
     listApplicationEvents,
+    listApplicationEventsPage,
     listApplications,
     repository: {
+      addApplicationActivity,
       createApplication,
       deleteApplication,
       listApplicationEvents,
+      listApplicationEventsPage,
       listApplications,
       updateApplication,
     },
@@ -313,6 +345,61 @@ describe("ApplicationLedgerService", () => {
     expect(store.listApplicationEvents).toHaveBeenCalledWith(
       "workspace-1",
       "application-1",
+    );
+  });
+
+  it("adds activity with actor attribution and without updating the application", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-18T14:00:00.000Z"),
+    );
+
+    expect(
+      service.addApplicationActivity(actor, {
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        idempotencyKey: "email:screen:1",
+        occurredAt: "2026-07-18T13:30:00.000Z",
+        sourceEmailMessageId: "<screen@example.com>",
+        summary: "Completed recruiter screen",
+        type: "recruiter_screen",
+      }),
+    ).toMatchObject({
+      processedAt: "2026-07-18T14:00:00.000Z",
+      summary: "Completed recruiter screen",
+      type: "recruiter_screen",
+    });
+    expect(store.addApplicationActivity).toHaveBeenCalledWith({
+      actorUserId: actor.userId,
+      applicationId: "11111111-1111-4111-8111-111111111111",
+      correctionReason: null,
+      idempotencyKey: "email:screen:1",
+      occurredAt: "2026-07-18T13:30:00.000Z",
+      processedAt: "2026-07-18T14:00:00.000Z",
+      sourceEmailEvidenceId: null,
+      sourceEmailMessageId: "<screen@example.com>",
+      summary: "Completed recruiter screen",
+      supersedesEventId: null,
+      type: "recruiter_screen",
+      workspaceId: actor.workspaceId,
+    });
+    expect(store.updateApplication).not.toHaveBeenCalled();
+  });
+
+  it("lists a bounded activity page through the actor's workspace", () => {
+    const store = repository();
+    const service = new ApplicationLedgerService(store.repository);
+
+    expect(
+      service.listApplicationEventsPage(actor, "application-1", {
+        limit: 20,
+        offset: 40,
+      }),
+    ).toMatchObject({ limit: 20, offset: 40, returned: 0 });
+    expect(store.listApplicationEventsPage).toHaveBeenCalledWith(
+      actor.workspaceId,
+      "application-1",
+      { limit: 20, offset: 40 },
     );
   });
 

@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 34 tools:
+The local server registers 36 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -65,7 +65,8 @@ The local server registers 34 tools:
 | `get_connector_schema_status`         | Live schema and optional distribution metadata status      |
 | `get_job_search_summary`              | Status totals and due-action counts                        |
 | `list_applications`                   | A bounded, optionally filtered summary page                |
-| `get_application`                     | One full record, events, and job-email evidence            |
+| `get_application`                     | One full record, first activity page, and email evidence   |
+| `list_application_events`             | Bounded unified stage and general activity page            |
 | `list_unlinked_applications`          | Records with no email or posting evidence                  |
 | `get_application_data_quality`        | Bounded deterministic issue-code report                    |
 | `audit_duplicate_applications`        | Bounded deterministic duplicate candidates                 |
@@ -89,6 +90,7 @@ The local server registers 34 tools:
 | `update_application`                  | Update selected fields on one application                  |
 | `bulk_update_applications`            | Atomically update selected fields on up to 25 applications |
 | `add_application_event`               | Concurrency-checked immutable status transition            |
+| `add_application_activity`            | Immutable non-status activity with correction support      |
 | `delete_application`                  | Confirmed, audited soft deletion                           |
 | `upsert_application_from_email`       | Ordered, idempotent application and email reconciliation   |
 | `begin_document_import`               | Begin or resume a bounded document transfer                |

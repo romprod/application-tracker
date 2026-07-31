@@ -44,8 +44,10 @@ chunk SHA-256 digests. Start at offset zero and follow `nextOffset` until
 `complete=true`.
 
 `list_applications` also accepts `limit` and `offset`. Use the returned
-`nextOffset`, then call `get_application` for each full record and its stage
-events. `get_reference_data` supplies the workspace's stable reference IDs.
+`nextOffset`, then call `get_application` for each full record and its first
+activity page. Follow `eventsPage.nextOffset` with `list_application_events`
+to retrieve the remaining unified stage and general activity history.
+`get_reference_data` supplies the workspace's stable reference IDs.
 
 ## Whole-workspace datasets
 

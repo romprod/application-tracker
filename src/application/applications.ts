@@ -1,6 +1,8 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type {
+  AddApplicationActivityInput,
   AddApplicationEventInput,
+  ApplicationActivityType,
   ApplicationContactInput,
   ApplicationLinkInput,
   ApplicationMergeField,
@@ -89,18 +91,67 @@ export interface DeleteApplicationRecord {
   workspaceId: string;
 }
 
-export type ApplicationEventType = "application_created" | "status_changed";
-
-export interface ApplicationEvent {
+interface ApplicationEventBase {
   actorDisplayName: string;
-  fromStatus: string | null;
   id: string;
   occurredAt: string;
   processedAt: string;
   sourceEmailMessageId: string | null;
+}
+
+export interface ApplicationCreatedEvent extends ApplicationEventBase {
+  fromStatus: null;
   statusOverrideReason: string | null;
   toStatus: string;
-  type: ApplicationEventType;
+  type: "application_created";
+}
+
+export interface ApplicationStatusChangedEvent extends ApplicationEventBase {
+  fromStatus: string;
+  statusOverrideReason: string | null;
+  toStatus: string;
+  type: "status_changed";
+}
+
+export interface ApplicationActivityEvent extends ApplicationEventBase {
+  correctionReason: string | null;
+  fromStatus: null;
+  idempotencyKey: string | null;
+  sourceEmailEvidenceId: string | null;
+  statusOverrideReason: null;
+  summary: string;
+  supersedesEventId: string | null;
+  toStatus: null;
+  type: ApplicationActivityType;
+}
+
+export type ApplicationEvent =
+  | ApplicationActivityEvent
+  | ApplicationCreatedEvent
+  | ApplicationStatusChangedEvent;
+
+export interface ApplicationEventsPage {
+  events: ApplicationEvent[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export interface AddApplicationActivityRecord {
+  actorUserId: string;
+  applicationId: string;
+  correctionReason: string | null;
+  idempotencyKey: string | null;
+  occurredAt: string;
+  processedAt: string;
+  sourceEmailEvidenceId: string | null;
+  sourceEmailMessageId: string | null;
+  summary: string;
+  supersedesEventId: string | null;
+  type: ApplicationActivityType;
+  workspaceId: string;
 }
 
 export interface ApplicationStatusEventInput {
@@ -243,6 +294,9 @@ function linkRecord(link: ApplicationLinkInput): ApplicationLink {
 }
 
 export interface ApplicationsRepository {
+  addApplicationActivity(
+    input: AddApplicationActivityRecord,
+  ): ApplicationActivityEvent | undefined;
   auditDuplicateApplications(
     workspaceId: string,
     input: AuditDuplicateApplicationsInput,
@@ -260,6 +314,11 @@ export interface ApplicationsRepository {
     workspaceId: string,
     applicationId: string,
   ): ApplicationEvent[] | undefined;
+  listApplicationEventsPage(
+    workspaceId: string,
+    applicationId: string,
+    input: { limit: number; offset: number },
+  ): ApplicationEventsPage | undefined;
   listApplications(workspaceId: string): ApplicationRecord[];
   updateApplication(
     input: UpdateApplicationRecord,
@@ -321,6 +380,30 @@ export class ApplicationEventNoChangeError extends Error {
   public constructor() {
     super("The requested status is already current");
     this.name = "ApplicationEventNoChangeError";
+  }
+}
+
+export class ApplicationActivityIdempotencyConflictError extends Error {
+  public constructor() {
+    super("The activity idempotency key is already used by another event");
+    this.name = "ApplicationActivityIdempotencyConflictError";
+  }
+}
+
+export class ApplicationActivityCorrectionError extends Error {
+  public constructor(
+    public readonly code:
+      "correction_already_exists" | "invalid_correction_target",
+  ) {
+    super(code);
+    this.name = "ApplicationActivityCorrectionError";
+  }
+}
+
+export class ApplicationActivityEvidenceError extends Error {
+  public constructor() {
+    super("The linked email evidence does not belong to this application");
+    this.name = "ApplicationActivityEvidenceError";
   }
 }
 
@@ -479,6 +562,42 @@ export class ApplicationLedgerService {
     );
     if (!events) throw new ApplicationNotFoundError();
     return events;
+  }
+
+  public listApplicationEventsPage(
+    actor: AuthenticatedActor,
+    applicationId: string,
+    input: { limit: number; offset: number },
+  ): ApplicationEventsPage {
+    const page = this.repository.listApplicationEventsPage(
+      actor.workspaceId,
+      applicationId,
+      input,
+    );
+    if (!page) throw new ApplicationNotFoundError();
+    return page;
+  }
+
+  public addApplicationActivity(
+    actor: AuthenticatedActor,
+    input: AddApplicationActivityInput,
+  ): ApplicationActivityEvent {
+    const event = this.repository.addApplicationActivity({
+      actorUserId: actor.userId,
+      applicationId: input.applicationId,
+      correctionReason: input.correctionReason ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+      occurredAt: input.occurredAt,
+      processedAt: this.clock().toISOString(),
+      sourceEmailEvidenceId: input.sourceEmailEvidenceId ?? null,
+      sourceEmailMessageId: input.sourceEmailMessageId ?? null,
+      summary: input.summary,
+      supersedesEventId: input.supersedesEventId ?? null,
+      type: input.type,
+      workspaceId: actor.workspaceId,
+    });
+    if (!event) throw new ApplicationNotFoundError();
+    return event;
   }
 
   public updateApplication(

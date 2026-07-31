@@ -433,6 +433,26 @@ function createApplicationsClient(
   applications: ApplicationRecord[] = [applicationRecord],
 ) {
   return {
+    addApplicationActivity: vi
+      .fn<ApplicationsClient["addApplicationActivity"]>()
+      .mockImplementation((_applicationId, input) =>
+        Promise.resolve({
+          actorDisplayName: "Alex Example",
+          correctionReason: null,
+          fromStatus: null,
+          id: "77777777-7777-4777-8777-777777777777",
+          idempotencyKey: null,
+          occurredAt: input.occurredAt,
+          processedAt: input.occurredAt,
+          sourceEmailEvidenceId: input.sourceEmailEvidenceId ?? null,
+          sourceEmailMessageId: input.sourceEmailMessageId ?? null,
+          statusOverrideReason: null,
+          summary: input.summary,
+          supersedesEventId: input.supersedesEventId ?? null,
+          toStatus: null,
+          type: input.type,
+        }),
+      ),
     auditDuplicateApplications: vi
       .fn<ApplicationsClient["auditDuplicateApplications"]>()
       .mockResolvedValue({
@@ -456,7 +476,14 @@ function createApplicationsClient(
       .mockResolvedValue(applications),
     listApplicationEvents: vi
       .fn<ApplicationsClient["listApplicationEvents"]>()
-      .mockResolvedValue(applicationEvents),
+      .mockResolvedValue({
+        events: applicationEvents,
+        limit: 25,
+        nextOffset: null,
+        offset: 0,
+        returned: applicationEvents.length,
+        total: applicationEvents.length,
+      }),
     mergeApplications: vi
       .fn<ApplicationsClient["mergeApplications"]>()
       .mockRejectedValue(new Error("Merge response not configured")),
@@ -1931,7 +1958,7 @@ describe("application shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("loads and displays an application's stage history", async () => {
+  it("loads and displays an application's activity timeline", async () => {
     const applicationsClient = createApplicationsClient();
     render(
       <App
@@ -1955,6 +1982,7 @@ describe("application shell", () => {
     await waitFor(() =>
       expect(applicationsClient.listApplicationEvents).toHaveBeenCalledWith(
         applicationRecord.id,
+        { limit: 25, offset: 0 },
       ),
     );
     expect(await screen.findByText("Applied → Interview")).toBeInTheDocument();
@@ -1971,6 +1999,79 @@ describe("application shell", () => {
     expect(
       screen.queryByRole("dialog", { name: "Product Designer" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("records manual activity and loads another bounded timeline page", async () => {
+    const applicationsClient = createApplicationsClient();
+    applicationsClient.listApplicationEvents
+      .mockResolvedValueOnce({
+        events: [applicationEvents[0]!],
+        limit: 25,
+        nextOffset: 1,
+        offset: 0,
+        returned: 1,
+        total: 2,
+      })
+      .mockResolvedValueOnce({
+        events: [applicationEvents[1]!],
+        limit: 25,
+        nextOffset: null,
+        offset: 1,
+        returned: 1,
+        total: 2,
+      });
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    expect(await screen.findByText("Applied → Interview")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more activity" }));
+    expect(await screen.findByText("Application created")).toBeInTheDocument();
+    expect(applicationsClient.listApplicationEvents).toHaveBeenLastCalledWith(
+      applicationRecord.id,
+      { limit: 25, offset: 1 },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Record activity" }));
+    fireEvent.change(screen.getByLabelText("Activity type"), {
+      target: { value: "recruiter_contact" },
+    });
+    fireEvent.change(screen.getByLabelText("Concise summary"), {
+      target: { value: "Recruiter called to discuss the role" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Record activity" }));
+
+    await waitFor(() =>
+      expect(applicationsClient.addApplicationActivity).toHaveBeenCalledWith(
+        applicationRecord.id,
+        expect.objectContaining({
+          summary: "Recruiter called to discuss the role",
+          type: "recruiter_contact",
+        }),
+      ),
+    );
+    expect(
+      applicationsClient.addApplicationActivity.mock.calls.at(-1)?.[1]
+        .occurredAt,
+    ).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(
+      await screen.findByText("Recruiter called to discuss the role"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Activity recorded.")).toBeInTheDocument();
   });
 
   it("displays linked source email and canonical job-posting evidence", async () => {
@@ -2025,6 +2126,7 @@ describe("application shell", () => {
       );
       expect(applicationsClient.listApplicationEvents).toHaveBeenCalledWith(
         applicationRecord.id,
+        { limit: 25, offset: 0 },
       );
     });
     expect(

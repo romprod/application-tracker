@@ -234,22 +234,76 @@ describe("browserApplicationsClient", () => {
 
   it("lists application history without caching the response", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ events }), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify({
+          events,
+          limit: 25,
+          nextOffset: null,
+          offset: 0,
+          returned: 2,
+          total: 2,
+        }),
+        {
+          status: 200,
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       browserApplicationsClient.listApplicationEvents(application.id),
-    ).resolves.toEqual(events);
+    ).resolves.toEqual({
+      events,
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 2,
+      total: 2,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/applications/${application.id}/events`,
+      `/api/applications/${application.id}/events?limit=25&offset=0`,
       {
         cache: "no-store",
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       },
+    );
+  });
+
+  it("adds a general application activity", async () => {
+    const activity = {
+      actorDisplayName: "Alex Example",
+      correctionReason: null,
+      fromStatus: null,
+      id: "44444444-4444-4444-8444-444444444444",
+      idempotencyKey: null,
+      occurredAt: "2026-07-18T14:00:00.000Z",
+      processedAt: "2026-07-18T14:05:00.000Z",
+      sourceEmailEvidenceId: null,
+      sourceEmailMessageId: null,
+      statusOverrideReason: null,
+      summary: "Recruiter called to discuss the role",
+      supersedesEventId: null,
+      toStatus: null,
+      type: "recruiter_contact",
+    } as const;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ event: activity }), { status: 201 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.addApplicationActivity(application.id, {
+        occurredAt: activity.occurredAt,
+        summary: activity.summary,
+        type: activity.type,
+      }),
+    ).resolves.toEqual(activity);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/applications/${application.id}/events`,
+      expect.objectContaining({ method: "POST" }),
     );
   });
 

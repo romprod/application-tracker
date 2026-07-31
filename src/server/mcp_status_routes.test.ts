@@ -210,7 +210,7 @@ describe("MCP status route", () => {
           auditEvents: true,
           clientCredentials: true,
           oauthVerification: false,
-          registeredTools: 34,
+          registeredTools: 36,
         },
         clients: {
           actors: [

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 
 import {
+  type ApplicationActivityEvent,
   type AddApplicationEventResult,
   ApplicationNotFoundError,
   type ApplicationDuplicateAudit,
   type ApplicationEvent,
+  type ApplicationEventsPage,
   type ApplicationMergeResult,
   type ApplicationRecord,
 } from "./applications.js";
@@ -32,6 +34,7 @@ import {
   type McpDocumentImportProgress,
 } from "./mcp_document_imports.js";
 import type {
+  AddApplicationActivityInput,
   AddApplicationEventInput,
   AuditDuplicateApplicationsInput,
   CreateApplicationInput,
@@ -82,7 +85,7 @@ import type {
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 17;
+export const applicationMcpSchemaVersion = 18;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -92,6 +95,7 @@ export const applicationMcpToolNames = [
   "get_job_search_summary",
   "list_applications",
   "get_application",
+  "list_application_events",
   "list_unlinked_applications",
   "get_application_data_quality",
   "audit_duplicate_applications",
@@ -115,6 +119,7 @@ export const applicationMcpToolNames = [
   "update_application",
   "bulk_update_applications",
   "add_application_event",
+  "add_application_activity",
   "delete_application",
   "upsert_application_from_email",
   "begin_document_import",
@@ -200,10 +205,19 @@ export interface McpApplicationsReader {
     actor: AuthenticatedActor,
     applicationId: string,
   ): ApplicationEvent[];
+  listApplicationEventsPage(
+    actor: AuthenticatedActor,
+    applicationId: string,
+    input: { limit: number; offset: number },
+  ): ApplicationEventsPage;
   listApplications(actor: AuthenticatedActor): ApplicationRecord[];
 }
 
 export interface McpApplicationsService extends McpApplicationsReader {
+  addApplicationActivity(
+    actor: AuthenticatedActor,
+    input: AddApplicationActivityInput,
+  ): ApplicationActivityEvent;
   addApplicationEvent(
     actor: AuthenticatedActor,
     input: AddApplicationEventInput,
@@ -360,6 +374,7 @@ export interface McpApplicationDetail {
   application: ApplicationRecord;
   emailEvidence: ApplicationEmailEvidence[];
   events: ApplicationEvent[];
+  eventsPage: Omit<ApplicationEventsPage, "events">;
   jobPostings: ApplicationJobPosting[];
 }
 
@@ -411,6 +426,9 @@ export interface McpDocumentChunk {
 }
 
 export interface McpApplicationTools {
+  addApplicationActivity(
+    input: AddApplicationActivityInput,
+  ): ApplicationActivityEvent;
   addApplicationEvent(
     input: AddApplicationEventInput,
   ): AddApplicationEventResult;
@@ -463,6 +481,11 @@ export interface McpApplicationTools {
     input: LinkEmailEvidenceInput,
   ): LinkApplicationEvidenceResult;
   listApplications(input: ListMcpApplicationsInput): McpApplicationList;
+  listApplicationEvents(input: {
+    applicationId: string;
+    limit: number;
+    offset: number;
+  }): ApplicationEventsPage;
   listDocuments(input: { limit: number; offset: number }): McpDocumentList;
   listUnlinkedApplications(input: {
     limit: number;
@@ -699,12 +722,37 @@ export class ApplicationMcpService implements McpApplicationTools {
       actor,
       applicationId,
     ) ?? { emailEvidence: [], jobPostings: [] };
+    const eventsPage = this.applications.listApplicationEventsPage(
+      actor,
+      applicationId,
+      { limit: 20, offset: 0 },
+    );
     return {
       application,
       emailEvidence: evidence.emailEvidence,
-      events: this.applications.listApplicationEvents(actor, applicationId),
+      events: eventsPage.events,
+      eventsPage: {
+        limit: eventsPage.limit,
+        nextOffset: eventsPage.nextOffset,
+        offset: eventsPage.offset,
+        returned: eventsPage.returned,
+        total: eventsPage.total,
+      },
       jobPostings: evidence.jobPostings,
     };
+  }
+
+  public listApplicationEvents(input: {
+    applicationId: string;
+    limit: number;
+    offset: number;
+  }): ApplicationEventsPage {
+    const actor = this.actorProvider.getActor();
+    return this.applications.listApplicationEventsPage(
+      actor,
+      input.applicationId,
+      { limit: input.limit, offset: input.offset },
+    );
   }
 
   public listUnlinkedApplications(input: {
@@ -1052,6 +1100,14 @@ export class ApplicationMcpService implements McpApplicationTools {
     const actor = this.actorProvider.getActor();
     this.accessPolicy.requireWriteAccess(actor);
     return this.applications.addApplicationEvent(actor, input);
+  }
+
+  public addApplicationActivity(
+    input: AddApplicationActivityInput,
+  ): ApplicationActivityEvent {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.addApplicationActivity(actor, input);
   }
 
   public updateApplication(

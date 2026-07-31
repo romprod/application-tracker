@@ -414,6 +414,40 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await expect(appliedOpportunity).toContainText("Hybrid");
   await expect(appliedOpportunity).toContainText("In pipeline");
 
+  await appliedOpportunity
+    .getByRole("button", { name: "Open Example Studio" })
+    .click();
+  const applicationDrawer = page.getByRole("dialog", {
+    name: "Product Designer",
+  });
+  await expect(
+    applicationDrawer.getByRole("heading", { name: "Activity" }),
+  ).toBeVisible();
+  await expect(
+    applicationDrawer.getByText("Application created"),
+  ).toBeVisible();
+  await applicationDrawer
+    .getByRole("button", { name: "Record activity" })
+    .click();
+  await applicationDrawer
+    .getByLabel("Activity type")
+    .selectOption("recruiter_contact");
+  await applicationDrawer
+    .getByLabel("Concise summary")
+    .fill("Recruiter called to discuss the position");
+  await applicationDrawer
+    .getByRole("button", { name: "Record activity" })
+    .click();
+  await expect(
+    applicationDrawer.getByText("Recruiter called to discuss the position"),
+  ).toBeVisible();
+  await expect(applicationDrawer.getByText("Activity recorded.")).toBeVisible();
+  await applicationDrawer
+    .getByRole("button", { name: "Close application details" })
+    .click();
+  await expect(applicationDrawer).toBeHidden();
+  await expect(appliedOpportunity).toContainText("In pipeline");
+
   // Android Chrome leaves a 320 × 458 CSS-pixel content viewport on a
   // 320 × 568 device while its browser chrome is visible.
   await page.setViewportSize({ width: 320, height: 458 });

@@ -37,6 +37,7 @@ import { outlookConnectionReconciliationMigration } from "./migrations/032_outlo
 import { mcpOutlookJobDigestAuditMigration } from "./migrations/033_mcp_outlook_job_digest_audit.js";
 import { mcpOutlookJobDigestSearchAuditMigration } from "./migrations/034_mcp_outlook_job_digest_search_audit.js";
 import { applicationEmailEvidenceTypesMigration } from "./migrations/035_application_email_evidence_types.js";
+import { applicationActivityTimelineMigration } from "./migrations/036_application_activity_timeline.js";
 
 export interface Migration {
   name: string;
@@ -93,6 +94,7 @@ export const applicationMigrations: readonly Migration[] = [
   mcpOutlookJobDigestAuditMigration,
   mcpOutlookJobDigestSearchAuditMigration,
   applicationEmailEvidenceTypesMigration,
+  applicationActivityTimelineMigration,
 ];
 
 const createMigrationTable = `

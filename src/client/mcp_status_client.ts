@@ -77,6 +77,7 @@ export interface McpCredentialResult {
 
 export interface McpAuditEvent {
   action:
+    | "add_application_activity"
     | "add_application_event"
     | "append_document_chunk"
     | "audit_duplicate_applications"
@@ -99,6 +100,7 @@ export interface McpAuditEvent {
     | "inspect_job_posting"
     | "link_email_evidence"
     | "list_applications"
+    | "list_application_events"
     | "list_documents"
     | "list_unlinked_applications"
     | "match_job_application_email"
@@ -183,7 +185,8 @@ function isMcpEndpoint(value: unknown): value is string | null {
 function parseAuditEvent(value: unknown): McpAuditEvent {
   if (
     !isRecord(value) ||
-    (value.action !== "add_application_event" &&
+    (value.action !== "add_application_activity" &&
+      value.action !== "add_application_event" &&
       value.action !== "append_document_chunk" &&
       value.action !== "audit_duplicate_applications" &&
       value.action !== "begin_document_import" &&
@@ -205,6 +208,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "inspect_job_posting" &&
       value.action !== "link_email_evidence" &&
       value.action !== "list_applications" &&
+      value.action !== "list_application_events" &&
       value.action !== "list_documents" &&
       value.action !== "list_unlinked_applications" &&
       value.action !== "match_job_application_email" &&
