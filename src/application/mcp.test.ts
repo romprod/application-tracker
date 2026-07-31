@@ -275,6 +275,20 @@ describe("ApplicationMcpService", () => {
       listApplicationFieldProvenance: vi.fn().mockReturnValue([]),
       listApplications: vi.fn().mockReturnValue(applications),
       mergeApplications: vi.fn(),
+      queryApplicationAttention: vi.fn().mockReturnValue({
+        applications: [],
+        limit: 25,
+        nextOffset: null,
+        offset: 0,
+        returned: 0,
+        summary: {
+          byReason: [],
+          byState: [],
+          queuedApplications: 0,
+          totalApplications: 3,
+        },
+        total: 0,
+      }),
       updateApplication: vi.fn(),
     };
     const referenceReader = {
@@ -380,6 +394,26 @@ describe("ApplicationMcpService", () => {
       provenance: [],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
+    expect(
+      service.queryApplicationAttention({
+        attentionOnly: true,
+        lifecycle: "all",
+        limit: 25,
+        offset: 0,
+      }),
+    ).toMatchObject({
+      applications: [],
+      summary: { totalApplications: 3 },
+    });
+    expect(applicationService.queryApplicationAttention).toHaveBeenCalledWith(
+      actor,
+      {
+        attentionOnly: true,
+        lifecycle: "all",
+        limit: 25,
+        offset: 0,
+      },
+    );
     expect(
       service.auditDuplicateApplications({ limit: 25, offset: 0 }),
     ).toEqual({

@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -11,6 +12,7 @@ import {
 import {
   ApplicationsClientError,
   type AddApplicationActivityInput,
+  type ApplicationAttentionPage,
   type ApplicationEvidence,
   type ApplicationEventsPage,
   type ApplicationFieldProvenanceAssessment,
@@ -81,6 +83,9 @@ export function ApplicationWorkspace({
   session: AuthenticatedSession;
 }) {
   const [applications, setApplications] = useState<ApplicationRecord[]>();
+  const [attentionPage, setAttentionPage] =
+    useState<ApplicationAttentionPage>();
+  const [attentionError, setAttentionError] = useState(false);
   const [referenceValues, setReferenceValues] = useState<ReferenceValue[]>();
   const [referenceLoadError, setReferenceLoadError] = useState(false);
   const [outlookConnections, setOutlookConnections] =
@@ -114,6 +119,19 @@ export function ApplicationWorkspace({
   const [reviewingDuplicates, setReviewingDuplicates] = useState(false);
   const drawerRequest = useRef(0);
 
+  const refreshAttention = useCallback(() => {
+    setAttentionError(false);
+    return applicationsClient
+      .queryApplicationAttention({
+        attentionOnly: true,
+        lifecycle: "all",
+        limit: 25,
+        offset: 0,
+      })
+      .then(setAttentionPage)
+      .catch(() => setAttentionError(true));
+  }, [applicationsClient]);
+
   useEffect(() => {
     let active = true;
     void loadCachedApplications(applicationsClient)
@@ -122,6 +140,26 @@ export function ApplicationWorkspace({
       })
       .catch(() => {
         if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applicationsClient]);
+
+  useEffect(() => {
+    let active = true;
+    void applicationsClient
+      .queryApplicationAttention({
+        attentionOnly: true,
+        lifecycle: "all",
+        limit: 25,
+        offset: 0,
+      })
+      .then((page) => {
+        if (active) setAttentionPage(page);
+      })
+      .catch(() => {
+        if (active) setAttentionError(true);
       });
     return () => {
       active = false;
@@ -376,6 +414,7 @@ export function ApplicationWorkspace({
         setDeletionTarget(undefined);
         setNotice(`${removing.companyName} was removed.`);
         setDeleting(false);
+        void refreshAttention();
       })
       .catch(() => {
         setDeleteError("The application could not be removed. Try again.");
@@ -413,6 +452,7 @@ export function ApplicationWorkspace({
         setEditingApplication(undefined);
         setConflictApplication(undefined);
         setSubmitting(false);
+        void refreshAttention();
         if (editingId && selectedApplication?.id === editingId) {
           openApplication(saved);
         }
@@ -472,6 +512,8 @@ export function ApplicationWorkspace({
       {page === "overview" ? (
         <DashboardView
           applications={applications}
+          attentionError={attentionError}
+          attentionPage={attentionPage}
           loadError={loadError}
           onAdd={beginCreate}
           onOpen={openApplication}
@@ -573,6 +615,7 @@ export function ApplicationWorkspace({
               setApplications((current) => includeSurvivor(current ?? []));
               updateCachedApplications(applicationsClient, includeSurvivor);
               setReviewingDuplicates(false);
+              void refreshAttention();
               setNotice(
                 `${survivor.companyName} duplicates were merged safely.`,
               );
@@ -586,6 +629,8 @@ export function ApplicationWorkspace({
 
 function DashboardView({
   applications,
+  attentionError,
+  attentionPage,
   loadError,
   onAdd,
   onOpen,
@@ -594,6 +639,8 @@ function DashboardView({
   session,
 }: {
   applications: ApplicationRecord[] | undefined;
+  attentionError: boolean;
+  attentionPage: ApplicationAttentionPage | undefined;
   loadError: boolean;
   onAdd: () => void;
   onOpen: (application: ApplicationRecord) => void;
@@ -626,9 +673,6 @@ function DashboardView({
   const weekEnd = new Date(today);
   weekEnd.setDate(weekEnd.getDate() + 7);
   const weekEndKey = localDateKey(weekEnd);
-  const attention = activeFocus.filter(
-    ({ nextActionDue }) => nextActionDue !== null && nextActionDue <= todayKey,
-  );
   const thisWeek = activeFocus.filter(
     ({ nextActionDue }) =>
       nextActionDue !== null &&
@@ -652,12 +696,11 @@ function DashboardView({
     month: "long",
     weekday: "long",
   }).format(today);
-  const attentionSummary =
-    attention.length === 0
-      ? "Nothing is overdue or due today."
-      : `${attention.length} ${
-          attention.length === 1 ? "action needs" : "actions need"
-        } attention.`;
+  const attentionSummary = attentionError
+    ? "The attention queue could not be loaded."
+    : attentionPage
+      ? `${attentionPage.summary.queuedApplications} of ${attentionPage.summary.totalApplications} applications need attention.`
+      : "Building the attention queue.";
   const weekSummary =
     thisWeek.length === 0
       ? "No other actions are due in the next seven days."
@@ -697,13 +740,10 @@ function DashboardView({
         <>
           <div className="today-layout">
             <div className="today-primary">
-              <TodayActionSection
-                applications={attention}
-                empty="Nothing is overdue or due today."
-                eyebrow="Immediate"
+              <AttentionQueueSection
+                error={attentionError}
+                page={attentionPage}
                 onOpen={onOpen}
-                title="Needs attention"
-                tone="attention"
               />
               <TodayActionSection
                 applications={thisWeek}
@@ -946,6 +986,74 @@ function TodayActionSection({
               </li>
             );
           })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function AttentionQueueSection({
+  error,
+  onOpen,
+  page,
+}: {
+  error: boolean;
+  onOpen: (application: ApplicationRecord) => void;
+  page: ApplicationAttentionPage | undefined;
+}) {
+  const applications = page?.applications ?? [];
+  return (
+    <section
+      className="today-card today-actions attention"
+      aria-labelledby="today-needs-attention"
+    >
+      <header className="today-card-heading">
+        <div>
+          <span className="eyebrow">Reconciliation and data quality</span>
+          <h2 id="today-needs-attention">Needs attention</h2>
+        </div>
+        <span>{page?.summary.queuedApplications ?? 0}</span>
+      </header>
+      {error ? (
+        <div className="today-empty" role="alert">
+          <span aria-hidden="true">!</span>
+          <p>The attention queue could not be loaded. Reload to try again.</p>
+        </div>
+      ) : !page ? (
+        <p className="tracker-loading" role="status">
+          Building the attention queue…
+        </p>
+      ) : applications.length === 0 ? (
+        <div className="today-empty">
+          <span aria-hidden="true">◎</span>
+          <p>No application currently matches an attention reason.</p>
+        </div>
+      ) : (
+        <ol className="today-action-list tracker-attention-queue">
+          {applications.slice(0, 6).map(({ application, reasons }) => (
+            <li key={application.id}>
+              <button type="button" onClick={() => onOpen(application)}>
+                <span className="today-action-copy">
+                  <strong>
+                    {application.nextAction ?? application.roleTitle}
+                  </strong>
+                  <small>
+                    <span>{applicationReference(application.id)}</span>
+                    {application.companyName} · {application.roleTitle}
+                  </small>
+                  <small className="tracker-attention-reasons">
+                    {reasons.map(({ label }) => label).join(" · ")}
+                  </small>
+                </span>
+                <span className="tracker-due-label due">
+                  {reasons.length} {reasons.length === 1 ? "reason" : "reasons"}
+                </span>
+                <span className="today-open-label">
+                  Open <span aria-hidden="true">→</span>
+                </span>
+              </button>
+            </li>
+          ))}
         </ol>
       )}
     </section>

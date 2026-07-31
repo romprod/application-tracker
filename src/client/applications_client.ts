@@ -159,6 +159,85 @@ export interface ApplicationFieldProvenanceAssessment {
   stale: number;
 }
 
+export type ApplicationAttentionFieldState =
+  | "conflicting"
+  | "inferred_unverified"
+  | "missing"
+  | "not_applicable"
+  | "not_disclosed"
+  | "stale";
+export type ApplicationAttentionReasonCode =
+  | "application_confirmation_missing"
+  | "applied_date_missing"
+  | "contacts_missing"
+  | "duplicate_risk"
+  | "email_evidence_missing"
+  | "field_conflicting"
+  | "field_inferred_unverified"
+  | "field_not_applicable"
+  | "field_not_disclosed"
+  | "field_stale"
+  | "location_missing"
+  | "next_action_missing"
+  | "next_action_overdue"
+  | "original_advert_missing"
+  | "salary_missing"
+  | "source_url_missing"
+  | "work_arrangement_missing";
+export interface ApplicationAttentionReason {
+  code: ApplicationAttentionReasonCode;
+  field: ApplicationFieldName | null;
+  label: string;
+  state: ApplicationAttentionFieldState | null;
+}
+export interface ApplicationAttentionPage {
+  applications: {
+    application: ApplicationRecord;
+    reasons: ApplicationAttentionReason[];
+  }[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  summary: {
+    byReason: {
+      code: ApplicationAttentionReasonCode;
+      count: number;
+      label: string;
+    }[];
+    byState: { count: number; state: ApplicationAttentionFieldState }[];
+    queuedApplications: number;
+    totalApplications: number;
+  };
+  total: number;
+}
+export interface ApplicationAttentionQuery {
+  appliedFrom?: string;
+  appliedTo?: string;
+  attentionOnly?: boolean;
+  duplicateRisk?: boolean;
+  fieldStates?: ApplicationAttentionFieldState[];
+  lifecycle?: "active" | "all" | "terminal";
+  limit?: number;
+  missingEvidence?: ("application_confirmation" | "original_advert")[];
+  missingFields?: (
+    | "applied_date"
+    | "contacts"
+    | "email_evidence"
+    | "location"
+    | "salary"
+    | "source_url"
+    | "work_arrangement"
+  )[];
+  nextAction?: "missing" | "overdue";
+  offset?: number;
+  query?: string;
+  reasonCodes?: ApplicationAttentionReasonCode[];
+  statusIds?: string[];
+  updatedFrom?: string;
+  updatedTo?: string;
+}
+
 export type ApplicationActivityType =
   | "follow_up_sent"
   | "interview_completed"
@@ -403,6 +482,9 @@ export interface ApplicationsClient {
   mergeApplications(
     input: MergeApplicationsInput,
   ): Promise<ApplicationMergeResult>;
+  queryApplicationAttention(
+    input?: ApplicationAttentionQuery,
+  ): Promise<ApplicationAttentionPage>;
   recordApplicationFieldProvenance(
     applicationId: string,
     input: Omit<
@@ -757,6 +839,163 @@ function parseApplicationFieldProvenanceAssessment(
     records,
     selected,
     stale: value.stale,
+  };
+}
+
+const applicationAttentionReasonCodes = new Set<ApplicationAttentionReasonCode>(
+  [
+    "application_confirmation_missing",
+    "applied_date_missing",
+    "contacts_missing",
+    "duplicate_risk",
+    "email_evidence_missing",
+    "field_conflicting",
+    "field_inferred_unverified",
+    "field_not_applicable",
+    "field_not_disclosed",
+    "field_stale",
+    "location_missing",
+    "next_action_missing",
+    "next_action_overdue",
+    "original_advert_missing",
+    "salary_missing",
+    "source_url_missing",
+    "work_arrangement_missing",
+  ],
+);
+const applicationAttentionFieldStates = new Set<ApplicationAttentionFieldState>(
+  [
+    "conflicting",
+    "inferred_unverified",
+    "missing",
+    "not_applicable",
+    "not_disclosed",
+    "stale",
+  ],
+);
+const applicationAttentionFields = new Set<ApplicationFieldName>([
+  "agency",
+  "appliedOn",
+  "companyName",
+  "location",
+  "roleTitle",
+  "salary",
+  "sourceUrl",
+  "workArrangement",
+]);
+
+function parseApplicationAttentionReason(
+  value: unknown,
+): ApplicationAttentionReason {
+  if (
+    !isRecord(value) ||
+    typeof value.code !== "string" ||
+    !applicationAttentionReasonCodes.has(
+      value.code as ApplicationAttentionReasonCode,
+    ) ||
+    (value.field !== null &&
+      (typeof value.field !== "string" ||
+        !applicationAttentionFields.has(
+          value.field as ApplicationFieldName,
+        ))) ||
+    typeof value.label !== "string" ||
+    value.label.length === 0 ||
+    value.label.length > 160 ||
+    (value.state !== null &&
+      (typeof value.state !== "string" ||
+        !applicationAttentionFieldStates.has(
+          value.state as ApplicationAttentionFieldState,
+        )))
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    code: value.code as ApplicationAttentionReasonCode,
+    field: value.field as ApplicationFieldName | null,
+    label: value.label,
+    state: value.state as ApplicationAttentionFieldState | null,
+  };
+}
+
+function parseApplicationAttentionPage(
+  value: unknown,
+): ApplicationAttentionPage {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.applications) ||
+    !isNonNegativeInteger(value.limit) ||
+    value.limit < 1 ||
+    value.limit > 100 ||
+    (value.nextOffset !== null && !isNonNegativeInteger(value.nextOffset)) ||
+    !isNonNegativeInteger(value.offset) ||
+    !isNonNegativeInteger(value.returned) ||
+    !isNonNegativeInteger(value.total) ||
+    !isRecord(value.summary) ||
+    !Array.isArray(value.summary.byReason) ||
+    !Array.isArray(value.summary.byState) ||
+    !isNonNegativeInteger(value.summary.queuedApplications) ||
+    !isNonNegativeInteger(value.summary.totalApplications)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  const applications = value.applications.map((item) => {
+    if (!isRecord(item) || !Array.isArray(item.reasons)) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return {
+      application: parseApplication(item.application),
+      reasons: item.reasons.map(parseApplicationAttentionReason),
+    };
+  });
+  const byReason = value.summary.byReason.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.code !== "string" ||
+      !applicationAttentionReasonCodes.has(
+        entry.code as ApplicationAttentionReasonCode,
+      ) ||
+      !isNonNegativeInteger(entry.count) ||
+      typeof entry.label !== "string" ||
+      entry.label.length === 0 ||
+      entry.label.length > 160
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return {
+      code: entry.code as ApplicationAttentionReasonCode,
+      count: entry.count,
+      label: entry.label,
+    };
+  });
+  const byState = value.summary.byState.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      !isNonNegativeInteger(entry.count) ||
+      typeof entry.state !== "string" ||
+      !applicationAttentionFieldStates.has(
+        entry.state as ApplicationAttentionFieldState,
+      )
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return {
+      count: entry.count,
+      state: entry.state as ApplicationAttentionFieldState,
+    };
+  });
+  return {
+    applications,
+    limit: value.limit,
+    nextOffset: value.nextOffset,
+    offset: value.offset,
+    returned: value.returned,
+    summary: {
+      byReason,
+      byState,
+      queuedApplications: value.summary.queuedApplications,
+      totalApplications: value.summary.totalApplications,
+    },
+    total: value.total,
   };
 }
 
@@ -1227,6 +1466,45 @@ export const browserApplicationsClient: ApplicationsClient = {
       throw new ApplicationsClientError("invalid_response");
     }
     return body.applications.map(parseApplication);
+  },
+
+  async queryApplicationAttention(input = {}) {
+    const query = new URLSearchParams();
+    const append = (
+      name: string,
+      value: boolean | number | string | undefined,
+    ) => {
+      if (value !== undefined) query.append(name, String(value));
+    };
+    const appendAll = (name: string, values: readonly string[] | undefined) => {
+      for (const value of values ?? []) query.append(name, value);
+    };
+    append("appliedFrom", input.appliedFrom);
+    append("appliedTo", input.appliedTo);
+    append("attentionOnly", input.attentionOnly);
+    append("duplicateRisk", input.duplicateRisk);
+    appendAll("fieldStates", input.fieldStates);
+    append("lifecycle", input.lifecycle);
+    append("limit", input.limit);
+    appendAll("missingEvidence", input.missingEvidence);
+    appendAll("missingFields", input.missingFields);
+    append("nextAction", input.nextAction);
+    append("offset", input.offset);
+    append("query", input.query);
+    appendAll("reasonCodes", input.reasonCodes);
+    appendAll("statusIds", input.statusIds);
+    append("updatedFrom", input.updatedFrom);
+    append("updatedTo", input.updatedTo);
+    const queryString = query.toString();
+    const response = await browserApiFetch(
+      `/api/applications/attention${queryString ? `?${queryString}` : ""}`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    return parseApplicationAttentionPage(await successfulBody(response));
   },
 
   async createApplication(input) {

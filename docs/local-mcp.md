@@ -57,13 +57,14 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 38 tools:
+The local server registers 39 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
 | `get_tracker_context`                 | Bound actor, workspace, role, and access mode              |
 | `get_connector_schema_status`         | Live schema and optional distribution metadata status      |
 | `get_job_search_summary`              | Status totals and due-action counts                        |
+| `query_application_attention`         | Bounded priority queue with reason codes and counts        |
 | `list_applications`                   | A bounded, optionally filtered summary page                |
 | `get_application`                     | One full record, first activity page, and email evidence   |
 | `list_application_events`             | Bounded unified stage and general activity page            |

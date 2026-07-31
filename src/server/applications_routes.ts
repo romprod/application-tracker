@@ -22,6 +22,7 @@ import {
   JobEmailEvidenceConflictError,
   type JobEmailReconciliationService,
 } from "../application/job_email_reconciliation.js";
+import { applicationAttentionQuerySchema } from "../domain/application_attention.js";
 import {
   addApplicationActivitySchema,
   applicationIdSchema,
@@ -45,6 +46,24 @@ function hasSameHostOrigin(request: Request): boolean {
   } catch {
     return false;
   }
+}
+
+function queryList(value: unknown): unknown {
+  if (typeof value === "string") return value.split(",").filter(Boolean);
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value.flatMap((item) => item.split(",")).filter(Boolean);
+  }
+  return value;
+}
+
+function queryBoolean(value: unknown): unknown {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}
+
+function queryNumber(value: unknown): unknown {
+  return typeof value === "string" ? Number(value) : value;
 }
 
 export function createApplicationsRouter(
@@ -83,6 +102,71 @@ export function createApplicationsRouter(
     response.json({
       applications: applicationsService.listApplications(actor),
     });
+  });
+
+  router.get("/attention", (request, response) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = applicationAttentionQuerySchema.safeParse({
+      ...(request.query.appliedFrom === undefined
+        ? {}
+        : { appliedFrom: request.query.appliedFrom }),
+      ...(request.query.appliedTo === undefined
+        ? {}
+        : { appliedTo: request.query.appliedTo }),
+      ...(request.query.attentionOnly === undefined
+        ? {}
+        : { attentionOnly: queryBoolean(request.query.attentionOnly) }),
+      ...(request.query.duplicateRisk === undefined
+        ? {}
+        : { duplicateRisk: queryBoolean(request.query.duplicateRisk) }),
+      ...(request.query.fieldStates === undefined
+        ? {}
+        : { fieldStates: queryList(request.query.fieldStates) }),
+      ...(request.query.lifecycle === undefined
+        ? {}
+        : { lifecycle: request.query.lifecycle }),
+      ...(request.query.limit === undefined
+        ? {}
+        : { limit: queryNumber(request.query.limit) }),
+      ...(request.query.missingEvidence === undefined
+        ? {}
+        : { missingEvidence: queryList(request.query.missingEvidence) }),
+      ...(request.query.missingFields === undefined
+        ? {}
+        : { missingFields: queryList(request.query.missingFields) }),
+      ...(request.query.nextAction === undefined
+        ? {}
+        : { nextAction: request.query.nextAction }),
+      ...(request.query.offset === undefined
+        ? {}
+        : { offset: queryNumber(request.query.offset) }),
+      ...(request.query.query === undefined
+        ? {}
+        : { query: request.query.query }),
+      ...(request.query.reasonCodes === undefined
+        ? {}
+        : { reasonCodes: queryList(request.query.reasonCodes) }),
+      ...(request.query.statusIds === undefined
+        ? {}
+        : { statusIds: queryList(request.query.statusIds) }),
+      ...(request.query.updatedFrom === undefined
+        ? {}
+        : { updatedFrom: request.query.updatedFrom }),
+      ...(request.query.updatedTo === undefined
+        ? {}
+        : { updatedTo: request.query.updatedTo }),
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    response.json(
+      applicationsService.queryApplicationAttention(actor, parsed.data),
+    );
   });
 
   router.post("/", (request, response, next) => {

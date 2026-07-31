@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedActor } from "./auth.js";
 import {
+  applicationAttentionReasons,
   ApplicationLedgerService,
   type ApplicationsRepository,
 } from "./applications.js";
@@ -15,6 +16,60 @@ const actor: AuthenticatedActor = {
 };
 const prospectId = "11111111-1111-4111-8111-111111111111";
 const interviewId = "22222222-2222-4222-8222-222222222222";
+
+describe("applicationAttentionReasons", () => {
+  it("keeps missing, undisclosed, conflicting, stale, and inferred states distinct", () => {
+    expect(
+      applicationAttentionReasons({
+        applicationConfirmationMissing: true,
+        appliedDateMissing: true,
+        contactsMissing: false,
+        duplicateRisk: true,
+        emailEvidenceMissing: false,
+        fieldConflicting: ["salary"],
+        fieldInferredUnverified: ["location"],
+        fieldNotApplicable: ["workArrangement"],
+        fieldNotDisclosed: ["salary"],
+        fieldStale: ["companyName"],
+        locationMissing: false,
+        nextActionMissing: false,
+        nextActionOverdue: true,
+        originalAdvertMissing: false,
+        salaryMissing: true,
+        sourceUrlMissing: false,
+        workArrangementMissing: false,
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "salary_missing",
+          field: "salary",
+          state: "missing",
+        }),
+        expect.objectContaining({
+          code: "field_not_disclosed",
+          field: "salary",
+          state: "not_disclosed",
+        }),
+        expect.objectContaining({
+          code: "field_conflicting",
+          field: "salary",
+          state: "conflicting",
+        }),
+        expect.objectContaining({
+          code: "field_stale",
+          field: "companyName",
+          state: "stale",
+        }),
+        expect.objectContaining({
+          code: "field_inferred_unverified",
+          field: "location",
+          state: "inferred_unverified",
+        }),
+      ]),
+    );
+  });
+});
 
 function repository() {
   const addApplicationActivity = vi.fn<
@@ -80,6 +135,16 @@ function repository() {
     returned: 0,
     total: 0,
   }));
+  const queryApplicationAttention = vi.fn<
+    ApplicationsRepository["queryApplicationAttention"]
+  >(() => ({
+    items: [],
+    queuedApplications: 0,
+    reasonCounts: {},
+    stateCounts: {},
+    total: 0,
+    totalApplications: 0,
+  }));
   const updateApplication = vi.fn<ApplicationsRepository["updateApplication"]>(
     (input) => ({
       appliedOn: null,
@@ -120,13 +185,62 @@ function repository() {
       listApplicationEvents,
       listApplicationEventsPage,
       listApplications,
+      queryApplicationAttention,
       updateApplication,
     },
+    queryApplicationAttention,
     updateApplication,
   };
 }
 
 describe("ApplicationLedgerService", () => {
+  it("queries the shared attention model with a server-owned as-of date", () => {
+    const store = repository();
+    store.queryApplicationAttention.mockReturnValue({
+      items: [],
+      queuedApplications: 3,
+      reasonCounts: { duplicate_risk: 2 },
+      stateCounts: { conflicting: 1 },
+      total: 0,
+      totalApplications: 5,
+    });
+    const service = new ApplicationLedgerService(
+      store.repository,
+      () => new Date("2026-07-31T12:00:00.000Z"),
+    );
+
+    expect(
+      service.queryApplicationAttention(actor, {
+        attentionOnly: true,
+        lifecycle: "active",
+        limit: 25,
+        offset: 0,
+      }),
+    ).toMatchObject({
+      applications: [],
+      summary: {
+        byReason: [
+          {
+            code: "duplicate_risk",
+            count: 2,
+            label: "Possible duplicate",
+          },
+        ],
+        byState: [{ count: 1, state: "conflicting" }],
+        queuedApplications: 3,
+        totalApplications: 5,
+      },
+    });
+    expect(store.queryApplicationAttention).toHaveBeenCalledWith({
+      asOfDate: "2026-07-31",
+      attentionOnly: true,
+      lifecycle: "active",
+      limit: 25,
+      offset: 0,
+      workspaceId: actor.workspaceId,
+    });
+  });
+
   it("creates an application inside the actor's workspace", () => {
     const store = repository();
     const service = new ApplicationLedgerService(

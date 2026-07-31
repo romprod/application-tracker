@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   type ApplicationActivityEvent,
+  type ApplicationAttentionPage,
   type AddApplicationEventResult,
   ApplicationNotFoundError,
   type ApplicationDuplicateAudit,
@@ -45,6 +46,7 @@ import type {
   UpdateApplicationInput,
   VerifyApplicationFieldProvenanceInput,
 } from "../domain/applications.js";
+import type { ApplicationAttentionQueryInput } from "../domain/application_attention.js";
 import type { McpAccessMode } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
 import {
@@ -89,7 +91,7 @@ import type {
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 19;
+export const applicationMcpSchemaVersion = 20;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -97,6 +99,7 @@ export const applicationMcpToolNames = [
   "get_tracker_context",
   "get_connector_schema_status",
   "get_job_search_summary",
+  "query_application_attention",
   "list_applications",
   "get_application",
   "list_application_events",
@@ -217,6 +220,10 @@ export interface McpApplicationsReader {
     input: { limit: number; offset: number },
   ): ApplicationEventsPage;
   listApplications(actor: AuthenticatedActor): ApplicationRecord[];
+  queryApplicationAttention(
+    actor: AuthenticatedActor,
+    input: ApplicationAttentionQueryInput,
+  ): ApplicationAttentionPage;
   listApplicationFieldProvenance(
     actor: AuthenticatedActor,
     applicationId: string,
@@ -493,6 +500,9 @@ export interface McpApplicationTools {
     maxDocumentChunkBytes: number;
   };
   getJobSearchSummary(): McpJobSearchSummary;
+  queryApplicationAttention(
+    input: ApplicationAttentionQueryInput,
+  ): ApplicationAttentionPage;
   getReferenceData(): McpReferenceData;
   getTrackerContext(): LocalMcpTrackerContext;
   inspectJobPosting(
@@ -716,6 +726,15 @@ export class ApplicationMcpService implements McpApplicationTools {
       terminalApplications: applications.length - open.length,
       totalApplications: applications.length,
     };
+  }
+
+  public queryApplicationAttention(
+    input: ApplicationAttentionQueryInput,
+  ): ApplicationAttentionPage {
+    return this.applications.queryApplicationAttention(
+      this.actorProvider.getActor(),
+      input,
+    );
   }
 
   public listApplications(input: ListMcpApplicationsInput): McpApplicationList {

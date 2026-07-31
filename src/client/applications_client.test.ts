@@ -120,6 +120,74 @@ describe("browserApplicationsClient", () => {
     });
   });
 
+  it("queries and validates the shared bounded attention queue", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          applications: [
+            {
+              application,
+              reasons: [
+                {
+                  code: "salary_missing",
+                  field: "salary",
+                  label: "Salary is missing",
+                  state: "missing",
+                },
+              ],
+            },
+          ],
+          limit: 10,
+          nextOffset: null,
+          offset: 0,
+          returned: 1,
+          summary: {
+            byReason: [
+              {
+                code: "salary_missing",
+                count: 1,
+                label: "Salary missing",
+              },
+            ],
+            byState: [{ count: 1, state: "missing" }],
+            queuedApplications: 1,
+            totalApplications: 1,
+          },
+          total: 1,
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.queryApplicationAttention({
+        fieldStates: ["missing"],
+        lifecycle: "active",
+        limit: 10,
+        missingFields: ["salary", "location"],
+        offset: 0,
+        query: "platform engineer",
+      }),
+    ).resolves.toMatchObject({
+      applications: [
+        {
+          application: { id: application.id },
+          reasons: [{ code: "salary_missing", state: "missing" }],
+        },
+      ],
+      total: 1,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/applications/attention?fieldStates=missing&lifecycle=active&limit=10&missingFields=salary&missingFields=location&offset=0&query=platform+engineer",
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+  });
+
   it("creates through the same-origin JSON endpoint", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

@@ -614,6 +614,83 @@ describe("application ledger routes", () => {
     expect(listedBody).toEqual({ applications: [application] });
   });
 
+  it("returns one bounded attention queue with combined HTTP filters", async () => {
+    const { app, references } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send({
+        companyName: "Attention Example",
+        nextAction: "Follow up",
+        nextActionDue: "2026-07-17",
+        roleTitle: "Platform Engineer",
+        statusId: references.applied,
+      })
+      .expect(201);
+    const application = createdApplication(created);
+    const secondCreated = await sameOrigin(
+      request(app).post("/api/applications"),
+    )
+      .set("Cookie", cookie)
+      .send({
+        companyName: "Attention Second",
+        nextAction: "Call recruiter",
+        nextActionDue: "2026-07-16",
+        roleTitle: "Platform Engineer",
+        statusId: references.applied,
+      })
+      .expect(201);
+    const secondApplication = createdApplication(secondCreated);
+    if (
+      typeof application.id !== "string" ||
+      typeof secondApplication.id !== "string"
+    ) {
+      throw new Error("Expected application IDs");
+    }
+
+    const response = await request(app)
+      .get("/api/applications/attention")
+      .query({
+        fieldStates: "missing",
+        lifecycle: "active",
+        limit: "1",
+        missingFields: ["salary", "location"],
+        nextAction: "overdue",
+        query: "platform attention",
+      })
+      .set("Cookie", cookie)
+      .expect(200);
+    const body = responseBody(response);
+    const attentionItems = objectArrayProperty(body, "applications");
+    expect(attentionItems).toHaveLength(1);
+    const attentionItem = attentionItems[0];
+    if (!attentionItem) throw new Error("Expected one attention item");
+    const returnedApplication = objectProperty(attentionItem, "application");
+    if (typeof returnedApplication.id !== "string") {
+      throw new Error("Expected an attention application ID");
+    }
+    expect([application.id, secondApplication.id]).toContain(
+      returnedApplication.id,
+    );
+    expect(objectArrayProperty(attentionItem, "reasons")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "next_action_overdue" }),
+        expect.objectContaining({ code: "salary_missing", state: "missing" }),
+        expect.objectContaining({ code: "location_missing", state: "missing" }),
+      ]),
+    );
+    expect(objectProperty(body, "summary")).toMatchObject({
+      queuedApplications: 2,
+      totalApplications: 2,
+    });
+    expect(body).toMatchObject({ nextOffset: 1, returned: 1, total: 2 });
+    await request(app)
+      .get("/api/applications/attention")
+      .query({ limit: "101" })
+      .set("Cookie", cookie)
+      .expect(400, { error: { code: "validation_error" } });
+  });
+
   it("rejects unsafe links, unknown fields, and oversized bodies", async () => {
     const { app, references } = await createApplicationsApp();
     const input = applicationInput(references);
