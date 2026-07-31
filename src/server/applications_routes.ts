@@ -1,6 +1,9 @@
 import { Router, type Request } from "express";
 
 import {
+  ApplicationActivityCorrectionError,
+  ApplicationActivityEvidenceError,
+  ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
@@ -17,9 +20,11 @@ import {
   type JobEmailReconciliationService,
 } from "../application/job_email_reconciliation.js";
 import {
+  addApplicationActivitySchema,
   applicationIdSchema,
   auditDuplicateApplicationsSchema,
   createApplicationSchema,
+  listApplicationEventsSchema,
   mergeApplicationsSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
@@ -275,17 +280,72 @@ export function createApplicationsRouter(
     const parsedId = applicationIdSchema.safeParse(
       request.params.applicationId,
     );
-    if (!parsedId.success) {
+    const parsedPage = listApplicationEventsSchema.safeParse({
+      applicationId: request.params.applicationId,
+      ...(request.query.limit === undefined
+        ? {}
+        : { limit: Number(request.query.limit) }),
+      ...(request.query.offset === undefined
+        ? {}
+        : { offset: Number(request.query.offset) }),
+    });
+    if (!parsedId.success || !parsedPage.success) {
       response.status(400).json({ error: { code: "validation_error" } });
       return;
     }
     try {
-      response.json({
-        events: applicationsService.listApplicationEvents(actor, parsedId.data),
+      response.json(
+        applicationsService.listApplicationEventsPage(actor, parsedId.data, {
+          limit: parsedPage.data.limit,
+          offset: parsedPage.data.offset,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/:applicationId/events", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = addApplicationActivitySchema.safeParse({
+      ...request.body,
+      applicationId: request.params.applicationId,
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.status(201).json({
+        event: applicationsService.addApplicationActivity(actor, parsed.data),
       });
     } catch (error) {
       if (error instanceof ApplicationNotFoundError) {
         response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationActivityEvidenceError) {
+        response
+          .status(400)
+          .json({ error: { code: "invalid_application_activity_evidence" } });
+        return;
+      }
+      if (error instanceof ApplicationActivityIdempotencyConflictError) {
+        response.status(409).json({
+          error: { code: "application_activity_idempotency_conflict" },
+        });
+        return;
+      }
+      if (error instanceof ApplicationActivityCorrectionError) {
+        response.status(409).json({ error: { code: error.code } });
         return;
       }
       next(error);

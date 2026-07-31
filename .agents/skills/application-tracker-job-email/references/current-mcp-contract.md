@@ -529,8 +529,9 @@ direct entry point to the same `match_or_create` behavior.
 
 ## Immutable application events
 
-`add_application_event` does not accept arbitrary event types, notes, actors,
-or historical rows. It permits only one status transition and requires:
+`add_application_event` remains status-transition-only. It does not accept
+general activity types, notes, actors, or arbitrary historical rows. It
+requires:
 
 - `applicationId`;
 - an active target `statusId`;
@@ -548,13 +549,34 @@ event failures are `application_event_no_change`, `application_event_stale`,
 `application_event_regression`, `application_event_conflict`, and
 `application_conflict`.
 
+`add_application_activity` appends a non-status event without changing the
+application status or `updatedAt`. It requires `applicationId`, one supported
+general activity `type`, effective `occurredAt`, and a concise `summary`. The
+server records the bound actor and later `processedAt`. Optional source
+provenance is either one linked `sourceEmailEvidenceId` or one stable
+`sourceEmailMessageId`, never both. An optional `idempotencyKey` makes an exact
+retry return the existing row; reusing it for different input returns
+`application_activity_idempotency_conflict`.
+
+Corrections are append-only general activity rows. Supply both
+`supersedesEventId` and a bounded `correctionReason`. The original remains
+visible, one direct replacement is allowed, and a later correction chain must
+supersede the newest replacement. Stable failures include
+`invalid_application_activity_evidence`, `invalid_correction_target`, and
+`correction_already_exists`.
+
+`list_application_events` accepts `applicationId`, `limit` from 1 through 100,
+and a non-negative `offset`. Follow `nextOffset` to read the unified timeline
+in deterministic `occurredAt` and insertion-sequence order.
+
 ## Application detail evidence
 
 `get_application` returns:
 
 - `application` with normal contacts, links, notes, source, and status fields;
-- immutable stage `events`, including effective `occurredAt`, `processedAt`,
-  the source email Message-ID when applicable, and any override reason;
+- the first 20 immutable unified `events`, including stage changes and general
+  activity, plus `eventsPage` metadata; follow `eventsPage.nextOffset` with
+  `list_application_events` for the remaining history;
 - `jobPostings`; and
 - `emailEvidence`.
 

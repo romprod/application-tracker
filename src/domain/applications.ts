@@ -218,8 +218,68 @@ export const addApplicationEventSchema = z.strictObject({
     .optional(),
 });
 
+export const applicationActivityTypeSchema = z.enum([
+  "recruiter_contact",
+  "recruiter_screen",
+  "interview_scheduled",
+  "interview_completed",
+  "follow_up_sent",
+  "salary_discussion",
+  "offer",
+  "rejection",
+  "withdrawal",
+  "role_closed",
+  "note",
+  "other",
+]);
+
+export const addApplicationActivitySchema = z
+  .strictObject({
+    applicationId: applicationIdSchema,
+    correctionReason: optionalText(500),
+    idempotencyKey: optionalText(200),
+    occurredAt: z.iso.datetime(),
+    sourceEmailEvidenceId: applicationIdSchema.optional(),
+    sourceEmailMessageId: optionalText(998),
+    summary: z.string().trim().min(1).max(1000),
+    supersedesEventId: applicationIdSchema.optional(),
+    type: applicationActivityTypeSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.sourceEmailEvidenceId && input.sourceEmailMessageId) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Choose linked email evidence or a stable Message-ID, not both",
+        path: ["sourceEmailEvidenceId"],
+      });
+    }
+    if (Boolean(input.supersedesEventId) !== Boolean(input.correctionReason)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "supersedesEventId and correctionReason must be supplied together",
+        path: input.supersedesEventId
+          ? ["correctionReason"]
+          : ["supersedesEventId"],
+      });
+    }
+  });
+
+export const listApplicationEventsSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  limit: z.number().int().min(1).max(100).default(25),
+  offset: z.number().int().nonnegative().default(0),
+});
+
 export type AddApplicationEventInput = z.infer<
   typeof addApplicationEventSchema
+>;
+export type AddApplicationActivityInput = z.infer<
+  typeof addApplicationActivitySchema
+>;
+export type ApplicationActivityType = z.infer<
+  typeof applicationActivityTypeSchema
 >;
 export type ApplicationContactInput = z.infer<typeof applicationContactSchema>;
 export type ApplicationLinkInput = z.infer<typeof applicationLinkSchema>;
@@ -233,5 +293,8 @@ export type AuditDuplicateApplicationsInput = z.infer<
 >;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type MergeApplicationsInput = z.infer<typeof mergeApplicationsSchema>;
+export type ListApplicationEventsInput = z.infer<
+  typeof listApplicationEventsSchema
+>;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;
 export type WorkArrangement = z.infer<typeof workArrangementSchema>;

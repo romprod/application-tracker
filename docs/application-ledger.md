@@ -49,9 +49,11 @@ rating, and work arrangement. Their compact table pattern is reused for recent
 dashboard records.
 
 Selecting a row opens a detail drawer. The drawer presents the current record,
-next action, source link, notes, and stage history without navigating away from
-the table. Application intake and editing use a modal form. Saving updates the
-record's current fields and update time; optional fields can be cleared.
+next action, source link, notes, and unified activity timeline without
+navigating away from the table. Members can record non-status activity and
+optionally associate existing linked email evidence in the drawer. Application
+intake and editing use a modal form. Saving updates the record's current fields
+and update time; optional fields can be cleared.
 
 Contacts and related links appear in numbered drawer sections that match the
 established application-file layout. Email addresses and phone numbers use
@@ -69,12 +71,22 @@ The table, drawer, and modal are keyboard operable. Sort buttons expose
 `aria-sort`, rows open with Enter or Space, Escape closes overlays, and focus is
 contained and restored while a dialog is open.
 
-## Stage history
+## Activity timeline
 
-Each application has an immutable timeline with two event types:
+Each application has an immutable timeline containing the existing stage
+events:
 
 - `application_created`, with the stage selected at creation; and
 - `status_changed`, with the previous and new stages.
+
+It also accepts general recruiter contact, recruiter screen, interview,
+follow-up, salary discussion, offer, rejection, withdrawal, role closure, note,
+and other activity. General activity stores an effective and processing time,
+concise summary, actor, and optional linked email evidence or stable Message-ID.
+It does not change application status or `updatedAt`. An optional idempotency
+key supports exact machine retry. Corrections append one replacement with a
+reason and preserve the superseded row; correction chains supersede the latest
+replacement.
 
 Changing an end company, agency, role, date, location, work arrangement, salary,
 rating, source link, note, or next action does not create a timeline event.
@@ -102,7 +114,9 @@ members may use them:
   evidence;
 - `POST /api/applications/:applicationId/evidence` idempotently links one typed
   email evidence record without changing application fields or status; and
-- `GET /api/applications/:applicationId/events` lists its timeline.
+- `GET /api/applications/:applicationId/events` lists a bounded timeline page;
+  and
+- `POST /api/applications/:applicationId/events` appends general activity.
 
 The evidence-link request body contains `email.messageId`,
 `email.receivedAt`, optional `email.webUrl`, and one bounded `evidenceType`.

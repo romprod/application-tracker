@@ -4,6 +4,9 @@ import { isDeepStrictEqual } from "node:util";
 import type Database from "better-sqlite3";
 
 import {
+  ApplicationActivityCorrectionError,
+  ApplicationActivityEvidenceError,
+  ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
@@ -14,11 +17,14 @@ import {
   ApplicationStatusStaleError,
   InvalidApplicationReferenceError,
   InvalidOutlookGraphConnectionAssignmentError,
+  type AddApplicationActivityRecord,
+  type ApplicationActivityEvent,
   type ApplicationDuplicateAudit,
   type ApplicationDuplicateCandidate,
   type ApplicationDuplicateReason,
   type ApplicationContact,
   type ApplicationEvent,
+  type ApplicationEventsPage,
   type ApplicationLink,
   type ApplicationMergeFieldConflict,
   type ApplicationMergeFieldValue,
@@ -426,13 +432,18 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
            events.to_status AS toStatus,
            events.occurred_at AS occurredAt,
            events.processed_at AS processedAt,
+           events.summary,
+           events.source_email_evidence_id AS sourceEmailEvidenceId,
            events.source_email_message_id AS sourceEmailMessageId,
            events.status_override_reason AS statusOverrideReason,
+           events.idempotency_key AS idempotencyKey,
+           events.supersedes_event_id AS supersedesEventId,
+           events.correction_reason AS correctionReason,
            actors.display_name AS actorDisplayName
          FROM application_events AS events
          JOIN users AS actors ON actors.id = events.actor_user_id
          WHERE events.workspace_id = ? AND events.application_id = ?
-         ORDER BY events.occurred_at DESC, events.rowid DESC`,
+         ORDER BY events.occurred_at DESC, events.sequence DESC`,
       )
       .all(workspaceId, applicationId) as ApplicationEvent[];
   }
@@ -1088,8 +1099,11 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             `INSERT INTO application_events
                (id, workspace_id, application_id, actor_user_id, event_type,
                 from_status, to_status, occurred_at, processed_at,
-                source_email_message_id, status_override_reason)
-             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, NULL, NULL)`,
+                source_email_message_id, status_override_reason, sequence)
+             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, NULL, NULL,
+               (SELECT COALESCE(MAX(sequence), 0) + 1
+                FROM application_events
+                WHERE workspace_id = ? AND application_id = ?))`,
           )
           .run(
             randomUUID(),
@@ -1100,6 +1114,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             survivor.status,
             input.mergedAt,
             input.mergedAt,
+            input.workspaceId,
+            target.id,
           );
       }
 
@@ -1393,9 +1409,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           `INSERT INTO application_events
              (id, workspace_id, application_id, actor_user_id, event_type,
               from_status, to_status, occurred_at, processed_at,
-              source_email_message_id, status_override_reason)
+              source_email_message_id, status_override_reason, sequence)
            VALUES (?, ?, ?, ?, 'application_created', NULL, ?, ?, ?, NULL,
-                   NULL)`,
+                   NULL, 1)`,
         )
         .run(
           eventId,
@@ -1500,15 +1516,267 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
          events.to_status AS toStatus,
          events.occurred_at AS occurredAt,
          events.processed_at AS processedAt,
+         events.summary,
+         events.source_email_evidence_id AS sourceEmailEvidenceId,
          events.source_email_message_id AS sourceEmailMessageId,
          events.status_override_reason AS statusOverrideReason,
+         events.idempotency_key AS idempotencyKey,
+         events.supersedes_event_id AS supersedesEventId,
+         events.correction_reason AS correctionReason,
          actors.display_name AS actorDisplayName
          FROM application_events AS events
          JOIN users AS actors ON actors.id = events.actor_user_id
          WHERE events.workspace_id = ? AND events.application_id = ?
-         ORDER BY events.occurred_at DESC, events.rowid DESC`,
+         ORDER BY events.occurred_at DESC, events.sequence DESC`,
       )
       .all(workspaceId, applicationId) as ApplicationEvent[];
+  }
+
+  public listApplicationEventsPage(
+    workspaceId: string,
+    applicationId: string,
+    input: { limit: number; offset: number },
+  ): ApplicationEventsPage | undefined {
+    const applicationExists = this.database
+      .prepare(
+        `SELECT 1 FROM applications
+         WHERE workspace_id = ? AND id = ?
+           AND (
+             deleted_at IS NULL OR EXISTS (
+               SELECT 1 FROM application_merges
+               WHERE application_merges.workspace_id = applications.workspace_id
+                 AND application_merges.source_application_id = applications.id
+             )
+           )`,
+      )
+      .pluck()
+      .get(workspaceId, applicationId);
+    if (applicationExists === undefined) return undefined;
+    const total = this.database
+      .prepare(
+        `SELECT count(*) FROM application_events
+         WHERE workspace_id = ? AND application_id = ?`,
+      )
+      .pluck()
+      .get(workspaceId, applicationId) as number;
+    const events = this.database
+      .prepare(
+        `SELECT
+           events.id,
+           events.event_type AS type,
+           events.from_status AS fromStatus,
+           events.to_status AS toStatus,
+           events.occurred_at AS occurredAt,
+           events.processed_at AS processedAt,
+           events.summary,
+           events.source_email_evidence_id AS sourceEmailEvidenceId,
+           events.source_email_message_id AS sourceEmailMessageId,
+           events.status_override_reason AS statusOverrideReason,
+           events.idempotency_key AS idempotencyKey,
+           events.supersedes_event_id AS supersedesEventId,
+           events.correction_reason AS correctionReason,
+           actors.display_name AS actorDisplayName
+         FROM application_events AS events
+         JOIN users AS actors ON actors.id = events.actor_user_id
+         WHERE events.workspace_id = ? AND events.application_id = ?
+         ORDER BY events.occurred_at DESC, events.sequence DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(
+        workspaceId,
+        applicationId,
+        input.limit,
+        input.offset,
+      ) as ApplicationEvent[];
+    const returned = events.length;
+    return {
+      events,
+      limit: input.limit,
+      nextOffset:
+        input.offset + returned < total ? input.offset + returned : null,
+      offset: input.offset,
+      returned,
+      total,
+    };
+  }
+
+  public addApplicationActivity(
+    input: AddApplicationActivityRecord,
+  ): ApplicationActivityEvent | undefined {
+    const add = this.database.transaction(() => {
+      const applicationExists = this.database
+        .prepare(
+          `SELECT 1 FROM applications
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
+        )
+        .pluck()
+        .get(input.workspaceId, input.applicationId);
+      if (applicationExists === undefined) return undefined;
+
+      if (input.idempotencyKey) {
+        const existing = this.database
+          .prepare(
+            `SELECT
+               id,
+               application_id AS applicationId,
+               actor_user_id AS actorUserId,
+               event_type AS type,
+               occurred_at AS occurredAt,
+               summary,
+               source_email_evidence_id AS sourceEmailEvidenceId,
+               source_email_message_id AS sourceEmailMessageId,
+               supersedes_event_id AS supersedesEventId,
+               correction_reason AS correctionReason
+             FROM application_events
+             WHERE workspace_id = ? AND idempotency_key = ?`,
+          )
+          .get(input.workspaceId, input.idempotencyKey) as
+          | (Omit<
+              AddApplicationActivityRecord,
+              "idempotencyKey" | "processedAt" | "workspaceId"
+            > & {
+              id: string;
+            })
+          | undefined;
+        if (existing) {
+          const exactRetry =
+            existing.actorUserId === input.actorUserId &&
+            existing.applicationId === input.applicationId &&
+            existing.correctionReason === input.correctionReason &&
+            existing.occurredAt === input.occurredAt &&
+            existing.sourceEmailEvidenceId === input.sourceEmailEvidenceId &&
+            existing.sourceEmailMessageId === input.sourceEmailMessageId &&
+            existing.summary === input.summary &&
+            existing.supersedesEventId === input.supersedesEventId &&
+            existing.type === input.type;
+          if (!exactRetry) {
+            throw new ApplicationActivityIdempotencyConflictError();
+          }
+          const event = this.applicationActivityById(
+            input.workspaceId,
+            existing.id,
+          );
+          if (!event) throw new Error("Activity retry could not be read back");
+          return event;
+        }
+      }
+
+      if (input.sourceEmailEvidenceId) {
+        const evidenceExists = this.database
+          .prepare(
+            `SELECT 1 FROM application_email_evidence
+             WHERE workspace_id = ? AND application_id = ? AND id = ?`,
+          )
+          .pluck()
+          .get(
+            input.workspaceId,
+            input.applicationId,
+            input.sourceEmailEvidenceId,
+          );
+        if (evidenceExists === undefined) {
+          throw new ApplicationActivityEvidenceError();
+        }
+      }
+
+      if (input.supersedesEventId) {
+        const target = this.database
+          .prepare(
+            `SELECT application_id AS applicationId, event_type AS type
+             FROM application_events
+             WHERE workspace_id = ? AND id = ?`,
+          )
+          .get(input.workspaceId, input.supersedesEventId) as
+          { applicationId: string; type: string } | undefined;
+        if (
+          !target ||
+          target.applicationId !== input.applicationId ||
+          target.type === "application_created" ||
+          target.type === "status_changed"
+        ) {
+          throw new ApplicationActivityCorrectionError(
+            "invalid_correction_target",
+          );
+        }
+        const superseded = this.database
+          .prepare(
+            `SELECT 1 FROM application_events
+             WHERE workspace_id = ? AND supersedes_event_id = ?`,
+          )
+          .pluck()
+          .get(input.workspaceId, input.supersedesEventId);
+        if (superseded !== undefined) {
+          throw new ApplicationActivityCorrectionError(
+            "correction_already_exists",
+          );
+        }
+      }
+
+      const id = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO application_events (
+             id, workspace_id, application_id, actor_user_id, event_type,
+             from_status, to_status, occurred_at, processed_at, summary,
+             source_email_evidence_id, source_email_message_id,
+             status_override_reason, idempotency_key, supersedes_event_id,
+             correction_reason, sequence
+           )
+           SELECT ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?,
+             COALESCE(MAX(sequence), 0) + 1
+           FROM application_events
+           WHERE workspace_id = ? AND application_id = ?`,
+        )
+        .run(
+          id,
+          input.workspaceId,
+          input.applicationId,
+          input.actorUserId,
+          input.type,
+          input.occurredAt,
+          input.processedAt,
+          input.summary,
+          input.sourceEmailEvidenceId,
+          input.sourceEmailMessageId,
+          input.idempotencyKey,
+          input.supersedesEventId,
+          input.correctionReason,
+          input.workspaceId,
+          input.applicationId,
+        );
+      const event = this.applicationActivityById(input.workspaceId, id);
+      if (!event) throw new Error("Created activity could not be read back");
+      return event;
+    });
+    return add.immediate();
+  }
+
+  private applicationActivityById(
+    workspaceId: string,
+    eventId: string,
+  ): ApplicationActivityEvent | undefined {
+    return this.database
+      .prepare(
+        `SELECT
+           events.id,
+           events.event_type AS type,
+           events.from_status AS fromStatus,
+           events.to_status AS toStatus,
+           events.occurred_at AS occurredAt,
+           events.processed_at AS processedAt,
+           events.summary,
+           events.source_email_evidence_id AS sourceEmailEvidenceId,
+           events.source_email_message_id AS sourceEmailMessageId,
+           events.status_override_reason AS statusOverrideReason,
+           events.idempotency_key AS idempotencyKey,
+           events.supersedes_event_id AS supersedesEventId,
+           events.correction_reason AS correctionReason,
+           actors.display_name AS actorDisplayName
+         FROM application_events AS events
+         JOIN users AS actors ON actors.id = events.actor_user_id
+         WHERE events.workspace_id = ? AND events.id = ?
+           AND events.event_type NOT IN ('application_created', 'status_changed')`,
+      )
+      .get(workspaceId, eventId) as ApplicationActivityEvent | undefined;
   }
 
   public updateApplication(
@@ -1571,7 +1839,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             `SELECT occurred_at AS occurredAt
              FROM application_events
              WHERE workspace_id = ? AND application_id = ?
-             ORDER BY occurred_at DESC, rowid DESC
+               AND event_type IN ('application_created', 'status_changed')
+             ORDER BY occurred_at DESC, sequence DESC
              LIMIT 1`,
           )
           .get(input.workspaceId, input.applicationId) as
@@ -1700,8 +1969,11 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             `INSERT INTO application_events
                (id, workspace_id, application_id, actor_user_id, event_type,
                 from_status, to_status, occurred_at, processed_at,
-                source_email_message_id, status_override_reason)
-             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, ?, ?)`,
+                source_email_message_id, status_override_reason, sequence)
+             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, ?, ?,
+               (SELECT COALESCE(MAX(sequence), 0) + 1
+                FROM application_events
+                WHERE workspace_id = ? AND application_id = ?))`,
           )
           .run(
             randomUUID(),
@@ -1714,6 +1986,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
             input.updatedAt,
             input.statusEvent?.sourceEmailMessageId ?? null,
             input.statusEvent?.overrideReason ?? null,
+            input.workspaceId,
+            input.applicationId,
           );
       }
       const updatedStored = this.findStoredApplication(

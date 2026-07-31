@@ -669,7 +669,7 @@ describe("application ledger routes", () => {
       .expect(400, { error: { code: "invalid_application_reference" } });
   });
 
-  it("edits an application and returns its immutable stage history", async () => {
+  it("edits an application and returns its immutable activity timeline", async () => {
     const { app, references } = await createApplicationsApp();
     const input = applicationInput(references);
     const cookie = await login(app, "alex", "correct horse battery staple");
@@ -741,10 +741,73 @@ describe("application ledger routes", () => {
           type: "application_created",
         }),
       ],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 2,
+      total: 2,
     });
     expect(JSON.stringify(history.body)).not.toMatch(
       /actorUserId|workspaceId|password|token/i,
     );
+
+    const activity = await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/events`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        idempotencyKey: "manual:recruiter-screen:1",
+        occurredAt: "2026-07-18T12:10:00.000Z",
+        summary: "Completed the recruiter screen",
+        type: "recruiter_screen",
+      })
+      .expect(201);
+    expect(activity.body).toMatchObject({
+      event: {
+        actorDisplayName: "Alex Example",
+        summary: "Completed the recruiter screen",
+        type: "recruiter_screen",
+      },
+    });
+    const activityRetry = await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/events`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        idempotencyKey: "manual:recruiter-screen:1",
+        occurredAt: "2026-07-18T12:10:00.000Z",
+        summary: "Completed the recruiter screen",
+        type: "recruiter_screen",
+      })
+      .expect(201);
+    expect(activityRetry.body).toEqual(activity.body);
+    const activityEvent = responseObject(activity, "event");
+    const activityEventId = activityEvent["id"];
+    if (typeof activityEventId !== "string") {
+      throw new Error("Expected an activity event ID");
+    }
+    const firstPage = await request(app)
+      .get(`/api/applications/${applicationId}/events?limit=2&offset=0`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(firstPage.body).toMatchObject({
+      limit: 2,
+      nextOffset: 2,
+      offset: 0,
+      returned: 2,
+      total: 3,
+    });
+    const secondPage = await request(app)
+      .get(`/api/applications/${applicationId}/events?limit=2&offset=2`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(secondPage.body).toMatchObject({
+      events: [expect.objectContaining({ id: activityEventId })],
+      nextOffset: null,
+      offset: 2,
+      returned: 1,
+      total: 3,
+    });
   });
 
   it("validates update paths and hides missing applications", async () => {

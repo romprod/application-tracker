@@ -1209,6 +1209,76 @@ describe("MCP write integration", () => {
         type: "text",
       },
     ]);
+    const activityInput = {
+      applicationId: unlinkedApplicationId,
+      idempotencyKey: "mcp:recruiter-screen:1",
+      occurredAt: "2026-07-21T18:40:00.000Z",
+      sourceEmailMessageId: "<recruiter-screen@example.com>",
+      summary: "Completed recruiter screen",
+      type: "recruiter_screen",
+    };
+    const addedActivity = await client.callTool({
+      arguments: activityInput,
+      name: "add_application_activity",
+    });
+    const addedActivityRetry = await client.callTool({
+      arguments: activityInput,
+      name: "add_application_activity",
+    });
+    expect(addedActivity.structuredContent).toMatchObject({
+      actorDisplayName: "Alex Example",
+      idempotencyKey: activityInput.idempotencyKey,
+      occurredAt: activityInput.occurredAt,
+      sourceEmailMessageId: activityInput.sourceEmailMessageId,
+      summary: activityInput.summary,
+      type: "recruiter_screen",
+    });
+    expect(addedActivityRetry.structuredContent).toEqual(
+      addedActivity.structuredContent,
+    );
+    const originalActivityId = String(addedActivity.structuredContent?.id);
+    const correction = await client.callTool({
+      arguments: {
+        applicationId: unlinkedApplicationId,
+        correctionReason: "The call was scheduled, not completed",
+        occurredAt: activityInput.occurredAt,
+        summary: "Recruiter screen scheduled",
+        supersedesEventId: originalActivityId,
+        type: "interview_scheduled",
+      },
+      name: "add_application_activity",
+    });
+    expect(correction.structuredContent).toMatchObject({
+      correctionReason: "The call was scheduled, not completed",
+      supersedesEventId: originalActivityId,
+      type: "interview_scheduled",
+    });
+    const activityPage = await client.callTool({
+      arguments: {
+        applicationId: unlinkedApplicationId,
+        limit: 2,
+        offset: 0,
+      },
+      name: "list_application_events",
+    });
+    const pageContent = activityPage.structuredContent as {
+      events: Record<string, unknown>[];
+    };
+    expect(pageContent.events.some(({ id }) => id === originalActivityId)).toBe(
+      true,
+    );
+    expect(
+      pageContent.events.some(
+        ({ supersedesEventId }) => supersedesEventId === originalActivityId,
+      ),
+    ).toBe(true);
+    expect(activityPage.structuredContent).toMatchObject({
+      limit: 2,
+      nextOffset: 2,
+      offset: 0,
+      returned: 2,
+      total: 4,
+    });
     const reconciledCreate = await client.callTool({
       arguments: {
         mode: "match_or_create",
@@ -1275,17 +1345,21 @@ describe("MCP write integration", () => {
              'get_application_data_quality',
              'link_email_evidence',
              'reconcile_application_from_evidence',
-             'add_application_event'
+             'add_application_event',
+             'add_application_activity',
+             'list_application_events'
            )
            ORDER BY action`,
         )
         .pluck()
         .all(),
     ).toEqual([
+      "add_application_activity",
       "add_application_event",
       "find_duplicate_applications",
       "get_application_data_quality",
       "link_email_evidence",
+      "list_application_events",
       "list_unlinked_applications",
       "reconcile_application_from_evidence",
     ]);

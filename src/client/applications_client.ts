@@ -95,16 +95,67 @@ export interface UpdateApplicationInput {
   workArrangement?: WorkArrangement | null;
 }
 
-export interface ApplicationEvent {
+export type ApplicationActivityType =
+  | "follow_up_sent"
+  | "interview_completed"
+  | "interview_scheduled"
+  | "note"
+  | "offer"
+  | "other"
+  | "recruiter_contact"
+  | "recruiter_screen"
+  | "rejection"
+  | "role_closed"
+  | "salary_discussion"
+  | "withdrawal";
+
+interface ApplicationEventBase {
   actorDisplayName: string;
-  fromStatus: ApplicationStatus | null;
   id: string;
   occurredAt: string;
   processedAt: string;
   sourceEmailMessageId: string | null;
+}
+
+export interface ApplicationStageEvent extends ApplicationEventBase {
+  fromStatus: ApplicationStatus | null;
   statusOverrideReason: string | null;
   toStatus: ApplicationStatus;
   type: "application_created" | "status_changed";
+}
+
+export interface ApplicationActivityEvent extends ApplicationEventBase {
+  correctionReason: string | null;
+  fromStatus: null;
+  idempotencyKey: string | null;
+  sourceEmailEvidenceId: string | null;
+  statusOverrideReason: null;
+  summary: string;
+  supersedesEventId: string | null;
+  toStatus: null;
+  type: ApplicationActivityType;
+}
+
+export type ApplicationEvent = ApplicationActivityEvent | ApplicationStageEvent;
+
+export interface ApplicationEventsPage {
+  events: ApplicationEvent[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export interface AddApplicationActivityInput {
+  correctionReason?: string;
+  idempotencyKey?: string;
+  occurredAt: string;
+  sourceEmailEvidenceId?: string;
+  sourceEmailMessageId?: string;
+  summary: string;
+  supersedesEventId?: string;
+  type: ApplicationActivityType;
 }
 
 export interface ApplicationEmailEvidence {
@@ -273,7 +324,14 @@ export interface ApplicationsClient {
   createApplication(input: CreateApplicationInput): Promise<ApplicationRecord>;
   deleteApplication(applicationId: string): Promise<void>;
   getApplicationEvidence(applicationId: string): Promise<ApplicationEvidence>;
-  listApplicationEvents(applicationId: string): Promise<ApplicationEvent[]>;
+  addApplicationActivity(
+    applicationId: string,
+    input: AddApplicationActivityInput,
+  ): Promise<ApplicationActivityEvent>;
+  listApplicationEvents(
+    applicationId: string,
+    input?: { limit: number; offset: number },
+  ): Promise<ApplicationEventsPage>;
   listApplications(): Promise<ApplicationRecord[]>;
   mergeApplications(
     input: MergeApplicationsInput,
@@ -501,6 +559,20 @@ function parseApplication(value: unknown): ApplicationRecord {
 }
 
 function parseApplicationEvent(value: unknown): ApplicationEvent {
+  const activityTypes = new Set<string>([
+    "recruiter_contact",
+    "recruiter_screen",
+    "interview_scheduled",
+    "interview_completed",
+    "follow_up_sent",
+    "salary_discussion",
+    "offer",
+    "rejection",
+    "withdrawal",
+    "role_closed",
+    "note",
+    "other",
+  ]);
   if (
     !isRecord(value) ||
     typeof value.actorDisplayName !== "string" ||
@@ -511,6 +583,45 @@ function parseApplicationEvent(value: unknown): ApplicationEvent {
       typeof value.sourceEmailMessageId !== "string") ||
     (value.statusOverrideReason !== null &&
       typeof value.statusOverrideReason !== "string") ||
+    typeof value.type !== "string"
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  if (activityTypes.has(value.type)) {
+    if (
+      value.fromStatus !== null ||
+      value.toStatus !== null ||
+      value.statusOverrideReason !== null ||
+      typeof value.summary !== "string" ||
+      (value.sourceEmailEvidenceId !== null &&
+        typeof value.sourceEmailEvidenceId !== "string") ||
+      (value.idempotencyKey !== null &&
+        typeof value.idempotencyKey !== "string") ||
+      (value.supersedesEventId !== null &&
+        typeof value.supersedesEventId !== "string") ||
+      (value.correctionReason !== null &&
+        typeof value.correctionReason !== "string")
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return {
+      actorDisplayName: value.actorDisplayName,
+      correctionReason: value.correctionReason,
+      fromStatus: null,
+      id: value.id,
+      idempotencyKey: value.idempotencyKey,
+      occurredAt: value.occurredAt,
+      processedAt: value.processedAt,
+      sourceEmailEvidenceId: value.sourceEmailEvidenceId,
+      sourceEmailMessageId: value.sourceEmailMessageId,
+      statusOverrideReason: null,
+      summary: value.summary,
+      supersedesEventId: value.supersedesEventId,
+      toStatus: null,
+      type: value.type as ApplicationActivityType,
+    };
+  }
+  if (
     !isReferenceLabel(value.toStatus) ||
     (value.type !== "application_created" && value.type !== "status_changed")
   ) {
@@ -977,10 +1088,11 @@ export const browserApplicationsClient: ApplicationsClient = {
     };
   },
 
-  async listApplicationEvents(applicationId) {
+  async listApplicationEvents(applicationId, input) {
+    const page = input ?? { limit: 25, offset: 0 };
     const encodedId = encodeURIComponent(applicationId);
     const response = await browserApiFetch(
-      `/api/applications/${encodedId}/events`,
+      `/api/applications/${encodedId}/events?limit=${String(page.limit)}&offset=${String(page.offset)}`,
       {
         cache: "no-store",
         credentials: "same-origin",
@@ -988,10 +1100,53 @@ export const browserApplicationsClient: ApplicationsClient = {
       },
     );
     const body = await successfulBody(response);
-    if (!isRecord(body) || !Array.isArray(body.events)) {
+    if (
+      !isRecord(body) ||
+      !Array.isArray(body.events) ||
+      !isNonNegativeInteger(body.limit) ||
+      !isNonNegativeInteger(body.offset) ||
+      !isNonNegativeInteger(body.returned) ||
+      !isNonNegativeInteger(body.total) ||
+      (body.nextOffset !== null && !isNonNegativeInteger(body.nextOffset))
+    ) {
       throw new ApplicationsClientError("invalid_response");
     }
-    return body.events.map(parseApplicationEvent);
+    return {
+      events: body.events.map(parseApplicationEvent),
+      limit: body.limit,
+      nextOffset: body.nextOffset,
+      offset: body.offset,
+      returned: body.returned,
+      total: body.total,
+    };
+  },
+
+  async addApplicationActivity(applicationId, input) {
+    const encodedId = encodeURIComponent(applicationId);
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/events`,
+      {
+        body: JSON.stringify(input),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body)) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    const event = parseApplicationEvent(body.event);
+    if (
+      event.type === "application_created" ||
+      event.type === "status_changed"
+    ) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return event as ApplicationActivityEvent;
   },
 
   async mergeApplications(input) {

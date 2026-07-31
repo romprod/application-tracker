@@ -7,6 +7,9 @@ import {
 } from "react";
 
 import type {
+  AddApplicationActivityInput,
+  ApplicationActivityEvent,
+  ApplicationActivityType,
   ApplicationEvidence,
   ApplicationEvent,
   ApplicationRecord,
@@ -209,18 +212,50 @@ function applicationForm(application: ApplicationRecord): ApplicationFormState {
 }
 
 function eventHeading(event: ApplicationEvent): string {
-  return event.type === "application_created"
-    ? "Application created"
-    : `${event.fromStatus ?? ""} → ${event.toStatus}`;
+  if (event.type === "application_created") return "Application created";
+  if (event.type === "status_changed") {
+    return `${event.fromStatus} → ${event.toStatus}`;
+  }
+  return isActivityEvent(event) ? activityTypeLabels[event.type] : "Activity";
 }
 
 function eventDetail(event: ApplicationEvent): string {
   if (event.type === "application_created") return `Filed in ${event.toStatus}`;
+  if (isActivityEvent(event)) return event.summary;
   if (!event.sourceEmailMessageId) return "Stage changed";
   const processingDetail = `Email status · processed ${formatDateTime(event.processedAt)}`;
   return event.statusOverrideReason
     ? `${processingDetail} · Override: ${event.statusOverrideReason}`
     : processingDetail;
+}
+
+function isActivityEvent(
+  event: ApplicationEvent,
+): event is ApplicationActivityEvent {
+  return (
+    event.type !== "application_created" && event.type !== "status_changed"
+  );
+}
+
+const activityTypeLabels: Record<ApplicationActivityType, string> = {
+  follow_up_sent: "Follow-up sent",
+  interview_completed: "Interview completed",
+  interview_scheduled: "Interview scheduled",
+  note: "Note",
+  offer: "Offer",
+  other: "Other activity",
+  recruiter_contact: "Recruiter contact",
+  recruiter_screen: "Recruiter screen",
+  rejection: "Rejection",
+  role_closed: "Role closed",
+  salary_discussion: "Salary discussion",
+  withdrawal: "Withdrawal",
+};
+
+function localDateTimeValue(date = new Date()): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
 }
 
 function linkHost(value: string): string {
@@ -336,9 +371,13 @@ export function ApplicationDrawer({
   events,
   eventsError,
   eventsLoading,
+  eventsLoadingMore,
+  eventsNextOffset,
+  onAddActivity,
   onClose,
   onDelete,
   onEdit,
+  onLoadMoreEvents,
 }: {
   application: ApplicationRecord;
   evidence: ApplicationEvidence | undefined;
@@ -347,13 +386,34 @@ export function ApplicationDrawer({
   events: ApplicationEvent[] | undefined;
   eventsError: boolean;
   eventsLoading: boolean;
+  eventsLoadingMore: boolean;
+  eventsNextOffset: number | null;
+  onAddActivity: (input: AddApplicationActivityInput) => Promise<void>;
   onClose: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  onLoadMoreEvents: () => Promise<void>;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityType, setActivityType] =
+    useState<ApplicationActivityType>("recruiter_contact");
+  const [activityOccurredAt, setActivityOccurredAt] =
+    useState(localDateTimeValue);
+  const [activitySummary, setActivitySummary] = useState("");
+  const [activityEvidenceId, setActivityEvidenceId] = useState("");
+  const [activitySubmitting, setActivitySubmitting] = useState(false);
+  const [activityError, setActivityError] = useState<string>();
+  const [activityNotice, setActivityNotice] = useState<string>();
   const nextActionDue = dueLabel(application.nextActionDue);
   const applicationRelatedLinks = relatedLinks(application, evidence);
+  const supersededEventIds = new Set(
+    (events ?? []).flatMap((event) =>
+      isActivityEvent(event) && event.supersedesEventId
+        ? [event.supersedesEventId]
+        : [],
+    ),
+  );
   useDialogFocus(drawerRef, ".tracker-drawer-close");
   return (
     <div
@@ -574,8 +634,131 @@ export function ApplicationDrawer({
           >
             <div className="tracker-drawer-section-heading">
               <span>04</span>
-              <h3 id="history-title">Stage history</h3>
+              <h3 id="history-title">Activity</h3>
             </div>
+            <div className="tracker-activity-actions">
+              <button
+                className="tracker-button tracker-button-quiet"
+                type="button"
+                aria-expanded={activityOpen}
+                aria-controls="application-activity-form"
+                onClick={() => {
+                  setActivityError(undefined);
+                  setActivityNotice(undefined);
+                  setActivityOpen((open) => !open);
+                }}
+              >
+                {activityOpen ? "Cancel activity" : "Record activity"}
+              </button>
+            </div>
+            {activityOpen && (
+              <form
+                className="tracker-activity-form"
+                id="application-activity-form"
+                onSubmit={(submitEvent) => {
+                  submitEvent.preventDefault();
+                  setActivitySubmitting(true);
+                  setActivityError(undefined);
+                  setActivityNotice(undefined);
+                  void onAddActivity({
+                    occurredAt: new Date(activityOccurredAt).toISOString(),
+                    ...(activityEvidenceId
+                      ? { sourceEmailEvidenceId: activityEvidenceId }
+                      : {}),
+                    summary: activitySummary,
+                    type: activityType,
+                  })
+                    .then(() => {
+                      setActivitySummary("");
+                      setActivityEvidenceId("");
+                      setActivityOccurredAt(localDateTimeValue());
+                      setActivityOpen(false);
+                      setActivityNotice("Activity recorded.");
+                    })
+                    .catch(() => {
+                      setActivityError(
+                        "Activity could not be recorded. Check the details and try again.",
+                      );
+                    })
+                    .finally(() => setActivitySubmitting(false));
+                }}
+              >
+                <label>
+                  <span>Activity type</span>
+                  <select
+                    value={activityType}
+                    onChange={(changeEvent) =>
+                      setActivityType(
+                        changeEvent.target.value as ApplicationActivityType,
+                      )
+                    }
+                  >
+                    {Object.entries(activityTypeLabels).map(
+                      ([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+                <label>
+                  <span>When it happened</span>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={activityOccurredAt}
+                    onChange={(changeEvent) =>
+                      setActivityOccurredAt(changeEvent.target.value)
+                    }
+                  />
+                </label>
+                <label className="tracker-activity-summary-field">
+                  <span>Concise summary</span>
+                  <textarea
+                    maxLength={1000}
+                    required
+                    rows={3}
+                    value={activitySummary}
+                    onChange={(changeEvent) =>
+                      setActivitySummary(changeEvent.target.value)
+                    }
+                  />
+                </label>
+                {evidence && evidence.emailEvidence.length > 0 && (
+                  <label className="tracker-activity-summary-field">
+                    <span>Linked email evidence (optional)</span>
+                    <select
+                      value={activityEvidenceId}
+                      onChange={(changeEvent) =>
+                        setActivityEvidenceId(changeEvent.target.value)
+                      }
+                    >
+                      <option value="">No linked email</option>
+                      {evidence.emailEvidence.map((email) => (
+                        <option key={email.id} value={email.id}>
+                          {email.evidenceType.replaceAll("_", " ")} ·{" "}
+                          {formatDateTime(email.receivedAt)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {activityError && (
+                  <p className="tracker-load-error" role="alert">
+                    {activityError}
+                  </p>
+                )}
+                <button
+                  className="tracker-button tracker-button-primary"
+                  disabled={activitySubmitting}
+                  type="submit"
+                >
+                  {activitySubmitting ? "Recording…" : "Record activity"}
+                </button>
+              </form>
+            )}
+            {activityNotice && <p role="status">{activityNotice}</p>}
             {eventsLoading && (
               <p className="tracker-loading">Opening history…</p>
             )}
@@ -587,11 +770,28 @@ export function ApplicationDrawer({
             {events && (
               <ol className="tracker-timeline">
                 {events.map((event) => (
-                  <li key={event.id}>
+                  <li
+                    key={event.id}
+                    className={
+                      supersededEventIds.has(event.id)
+                        ? "tracker-timeline-superseded"
+                        : undefined
+                    }
+                  >
                     <span aria-hidden="true" />
                     <div>
                       <strong>{eventHeading(event)}</strong>
                       <small>{eventDetail(event)}</small>
+                      {isActivityEvent(event) && event.supersedesEventId && (
+                        <small>Correction · {event.correctionReason}</small>
+                      )}
+                      {supersededEventIds.has(event.id) && (
+                        <small>Superseded by a later correction</small>
+                      )}
+                      {isActivityEvent(event) &&
+                        event.sourceEmailEvidenceId && (
+                          <small>Linked email evidence</small>
+                        )}
                     </div>
                     <p>
                       <span>{event.actorDisplayName}</span>
@@ -602,6 +802,16 @@ export function ApplicationDrawer({
                   </li>
                 ))}
               </ol>
+            )}
+            {eventsNextOffset !== null && (
+              <button
+                className="tracker-button tracker-button-quiet tracker-load-more-activity"
+                disabled={eventsLoadingMore}
+                type="button"
+                onClick={() => void onLoadMoreEvents()}
+              >
+                {eventsLoadingMore ? "Loading more…" : "Load more activity"}
+              </button>
             )}
           </section>
         </div>

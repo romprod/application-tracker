@@ -86,7 +86,11 @@ When a trustworthy message must only be linked to a known record, also require
 `interview_invitation`, `rejection`, `offer`, `withdrawal`, `follow_up`, or
 `other`. Use `add_application_event` only for an explicitly requested
 standalone status transition; ordinary email-driven transitions belong inside
-`reconcile_application_from_evidence`.
+`reconcile_application_from_evidence`. Use `add_application_activity` only
+when the user explicitly wants a meaningful non-status interaction recorded;
+do not turn every linked email into a general activity automatically. Use
+`list_application_events` to page beyond the bounded activity page embedded by
+`get_application`.
 
 When the user explicitly includes duplicate detection or consolidation, also
 require:
@@ -467,6 +471,7 @@ time. The server rejects stale, lower-order, or conflicting events. Do not
 retry those failures with a different timestamp. Use `statusOverride` only
 after the user has explicitly verified the transition, and record a concrete
 reason; the server preserves that reason with immutable stage history.
+Do not use that status update as a substitute for a general activity row.
 
 Use `Applied` only for clear submission or acknowledgement evidence. Use
 `Prospect` for a worthwhile posting-only opportunity the user explicitly asked

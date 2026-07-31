@@ -251,6 +251,23 @@ describe("ApplicationMcpService", () => {
           type: "application_created" as const,
         },
       ]),
+      listApplicationEventsPage: vi.fn().mockReturnValue({
+        events: [
+          {
+            actorDisplayName: "Alex Example",
+            fromStatus: null,
+            id: "event-1",
+            occurredAt: "2026-01-01T00:00:00.000Z",
+            toStatus: "Applied",
+            type: "application_created" as const,
+          },
+        ],
+        limit: 20,
+        nextOffset: null,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      }),
       listApplications: vi.fn().mockReturnValue(applications),
       mergeApplications: vi.fn(),
       updateApplication: vi.fn(),
@@ -347,6 +364,13 @@ describe("ApplicationMcpService", () => {
           type: "application_created",
         },
       ],
+      eventsPage: {
+        limit: 20,
+        nextOffset: null,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      },
       jobPostings: [],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
