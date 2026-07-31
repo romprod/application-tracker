@@ -105,11 +105,15 @@ export interface McpAuditEvent {
     | "list_unlinked_applications"
     | "match_job_application_email"
     | "merge_applications"
+    | "list_deleted_applications"
     | "process_outlook_job_digest"
+    | "preview_application_restore"
     | "query_application_attention"
     | "record_application_field_provenance"
+    | "recover_application_merge"
     | "reconcile_application_from_evidence"
     | "reconcile_outlook_graph_connection"
+    | "restore_application"
     | "search_outlook_job_digests"
     | "resolve_job_links"
     | "sync_outlook_email_evidence"
@@ -216,11 +220,15 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "list_unlinked_applications" &&
       value.action !== "match_job_application_email" &&
       value.action !== "merge_applications" &&
+      value.action !== "list_deleted_applications" &&
       value.action !== "process_outlook_job_digest" &&
+      value.action !== "preview_application_restore" &&
       value.action !== "query_application_attention" &&
       value.action !== "record_application_field_provenance" &&
+      value.action !== "recover_application_merge" &&
       value.action !== "reconcile_application_from_evidence" &&
       value.action !== "reconcile_outlook_graph_connection" &&
+      value.action !== "restore_application" &&
       value.action !== "search_outlook_job_digests" &&
       value.action !== "resolve_job_links" &&
       value.action !== "sync_outlook_email_evidence" &&

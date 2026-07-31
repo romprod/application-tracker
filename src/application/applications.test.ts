@@ -122,6 +122,16 @@ function repository() {
   const listApplications = vi.fn<ApplicationsRepository["listApplications"]>(
     () => [],
   );
+  const listDeletedApplications = vi.fn<
+    ApplicationsRepository["listDeletedApplications"]
+  >((_workspaceId, input) => ({
+    applications: [],
+    limit: input.limit,
+    nextOffset: null,
+    offset: input.offset,
+    returned: 0,
+    total: 0,
+  }));
   const listApplicationEvents = vi.fn<
     ApplicationsRepository["listApplicationEvents"]
   >(() => []);
@@ -145,6 +155,14 @@ function repository() {
     total: 0,
     totalApplications: 0,
   }));
+  const previewApplicationMergeRecovery =
+    vi.fn<ApplicationsRepository["previewApplicationMergeRecovery"]>();
+  const previewApplicationRestore =
+    vi.fn<ApplicationsRepository["previewApplicationRestore"]>();
+  const recoverApplicationMerge =
+    vi.fn<ApplicationsRepository["recoverApplicationMerge"]>();
+  const restoreApplication =
+    vi.fn<ApplicationsRepository["restoreApplication"]>();
   const updateApplication = vi.fn<ApplicationsRepository["updateApplication"]>(
     (input) => ({
       appliedOn: null,
@@ -178,6 +196,7 @@ function repository() {
     listApplicationEvents,
     listApplicationEventsPage,
     listApplications,
+    listDeletedApplications,
     repository: {
       addApplicationActivity,
       createApplication,
@@ -185,7 +204,12 @@ function repository() {
       listApplicationEvents,
       listApplicationEventsPage,
       listApplications,
+      listDeletedApplications,
+      previewApplicationMergeRecovery,
+      previewApplicationRestore,
       queryApplicationAttention,
+      recoverApplicationMerge,
+      restoreApplication,
       updateApplication,
     },
     queryApplicationAttention,
@@ -526,12 +550,16 @@ describe("ApplicationLedgerService", () => {
       () => new Date("2026-07-18T15:00:00.000Z"),
     );
 
-    service.deleteApplication(actor, "application-1");
+    service.deleteApplication(actor, {
+      applicationId: "11111111-1111-4111-8111-111111111111",
+      reason: "Duplicate record created during import.",
+    });
 
     expect(store.deleteApplication).toHaveBeenCalledWith({
       actorUserId: "user-1",
-      applicationId: "application-1",
+      applicationId: "11111111-1111-4111-8111-111111111111",
       deletedAt: "2026-07-18T15:00:00.000Z",
+      reason: "Duplicate record created during import.",
       workspaceId: "workspace-1",
     });
   });
@@ -542,7 +570,10 @@ describe("ApplicationLedgerService", () => {
     const service = new ApplicationLedgerService(store.repository);
 
     expect(() =>
-      service.deleteApplication(actor, "missing-application"),
+      service.deleteApplication(actor, {
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        reason: "Record should not exist in this workspace.",
+      }),
     ).toThrow("Application not found");
   });
 });

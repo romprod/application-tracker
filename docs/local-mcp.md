@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 39 tools:
+The local server registers 43 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -66,6 +66,8 @@ The local server registers 39 tools:
 | `get_job_search_summary`              | Status totals and due-action counts                        |
 | `query_application_attention`         | Bounded priority queue with reason codes and counts        |
 | `list_applications`                   | A bounded, optionally filtered summary page                |
+| `list_deleted_applications`           | Bounded deletion ledger with actor, reason, and lineage    |
+| `preview_application_restore`         | Read-only relationship and reference conflict proof        |
 | `get_application`                     | One full record, first activity page, and email evidence   |
 | `list_application_events`             | Bounded unified stage and general activity page            |
 | `list_unlinked_applications`          | Records with no email or posting evidence                  |
@@ -73,6 +75,7 @@ The local server registers 39 tools:
 | `audit_duplicate_applications`        | Bounded deterministic duplicate candidates                 |
 | `find_duplicate_applications`         | Exact-name wrapper over the duplicate audit                |
 | `merge_applications`                  | Preview or apply one explicit audited merge                |
+| `recover_application_merge`           | Preview or safely reverse one unchanged merge              |
 | `match_job_application_email`         | Deterministic posting, email, or company match             |
 | `link_email_evidence`                 | Idempotently link one typed Message-ID to an existing row  |
 | `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
@@ -94,7 +97,8 @@ The local server registers 39 tools:
 | `add_application_activity`            | Immutable non-status activity with correction support      |
 | `record_application_field_provenance` | Store one immutable normalized-field observation           |
 | `verify_application_field_provenance` | Manually verify one provenance observation                 |
-| `delete_application`                  | Confirmed, audited soft deletion                           |
+| `restore_application`                 | Confirmed optimistic restore for one manual deletion       |
+| `delete_application`                  | Reasoned, confirmed, audited soft deletion                 |
 | `upsert_application_from_email`       | Ordered, idempotent application and email reconciliation   |
 | `begin_document_import`               | Begin or resume a bounded document transfer                |
 | `append_document_chunk`               | Append or replay one hash-verified chunk                   |
@@ -115,7 +119,12 @@ inspector, and digest processor are open-world because they make tightly
 constrained external HTTPS or Graph reads; every other read tool is
 closed-world.
 Application mutations are non-read-only and non-idempotent; deletion is also
-destructive and requires `confirm=true`. Evidence linking, reconciliation,
+destructive and requires `confirm=true` plus a 3–500 character reason.
+Deleted records stay out of normal reads. Use `list_deleted_applications` and
+`preview_application_restore` for bounded read-only recovery inspection.
+Manual restore requires `confirm=true` with the previewed deletion and record
+versions. Merge recovery additionally requires both previewed record versions
+and refuses to reverse relationships changed since the merge. Evidence linking, reconciliation,
 job-email upsert, one-application Outlook synchronization, merging, and
 document-transfer mutations are non-read-only and idempotent. Connection-wide
 Outlook reconciliation is non-idempotent because every success advances its

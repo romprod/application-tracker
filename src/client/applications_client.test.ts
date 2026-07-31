@@ -288,16 +288,106 @@ describe("browserApplicationsClient", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      browserApplicationsClient.deleteApplication(application.id),
+      browserApplicationsClient.deleteApplication({
+        applicationId: application.id,
+        reason: "Duplicate record created during import.",
+      }),
     ).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/applications/${application.id}`,
       {
+        body: JSON.stringify({
+          reason: "Duplicate record created during import.",
+        }),
         credentials: "same-origin",
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
         method: "DELETE",
       },
     );
+  });
+
+  it("lists, previews, and restores a deleted application with concurrency values", async () => {
+    const deleted = {
+      actorDisplayName: "Alex Example",
+      application: { ...application, updatedAt: "2026-07-18T13:00:00.000Z" },
+      deletedAt: "2026-07-18T13:00:00.000Z",
+      id: "22222222-2222-4222-8222-222222222222",
+      merge: null,
+      reason: "Duplicate record created during import.",
+    };
+    const preview = {
+      application: deleted.application,
+      conflicts: [],
+      deletion: deleted,
+      relationships: {
+        contacts: 1,
+        documents: 0,
+        emailEvidence: 1,
+        jobPostings: 1,
+        links: 1,
+        outlookGraphConnectionId: null,
+      },
+      safeToRestore: true,
+    };
+    const restoredAt = "2026-07-18T13:05:00.000Z";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            applications: [deleted],
+            limit: 25,
+            nextOffset: null,
+            offset: 0,
+            returned: 1,
+            total: 1,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ preview }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            restoration: {
+              application: { ...application, updatedAt: restoredAt },
+              restoration: {
+                actorDisplayName: "Alex Example",
+                applicationId: application.id,
+                deletionId: deleted.id,
+                id: "33333333-3333-4333-8333-333333333333",
+                recoveryType: "manual",
+                restoredAt,
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      browserApplicationsClient.listDeletedApplications(),
+    ).resolves.toMatchObject({ returned: 1, total: 1 });
+    await expect(
+      browserApplicationsClient.previewApplicationRestore(application.id),
+    ).resolves.toMatchObject({ safeToRestore: true });
+    await expect(
+      browserApplicationsClient.restoreApplication({
+        applicationId: application.id,
+        confirm: true,
+        expectedDeletedAt: deleted.deletedAt,
+        expectedUpdatedAt: deleted.application.updatedAt,
+      }),
+    ).resolves.toMatchObject({
+      application: { id: application.id },
+      restoration: { recoveryType: "manual" },
+    });
   });
 
   it("lists application history without caching the response", async () => {

@@ -17,6 +17,7 @@ this reference.
 - [Evidence gaps and data quality](#evidence-gaps-and-data-quality)
 - [Attention queue](#attention-queue)
 - [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
+- [Deletion and merge recovery](#deletion-and-merge-recovery)
 - [Evidence linking and atomic reconciliation](#evidence-linking-and-atomic-reconciliation)
 - [Immutable application events](#immutable-application-events)
 - [Field provenance and normalized values](#field-provenance-and-normalized-values)
@@ -73,11 +74,20 @@ When duplicate consolidation is explicitly in scope, call
 before any approved apply. Rerun `match_job_application_email` after a
 successful merge and before the evidence reconciliation.
 
+When deletion recovery is separately and explicitly in scope, start with
+`list_deleted_applications`. Use `preview_application_restore` followed by an
+approved `restore_application` for a manual deletion, or preview and apply
+`recover_application_merge` for a merge deletion. Recovery is never an
+implicit response to an ambiguous job-email match.
+
 Application Tracker is consumed directly as an MCP server. Its schema version
 and generated manifest describe that live contract. Optional publication
 through an external managed distribution channel is separate from this
 contract and requires an explicit user request; schema drift alone is not
 authorization to register or submit a plugin.
+
+The current direct MCP contract is schema version 21 with 43 tools. This
+reference does not represent optional externally managed publication state.
 
 ## Server-side one-application Outlook sync
 
@@ -459,7 +469,10 @@ posting and email evidence identities, replaces the survivor's bounded
 contacts and links with the resolved result, records a target status event when
 needed, inserts lineage, and finally marks the source merged. Existing source
 events are never updated, deleted, or re-parented. Repeating the same completed
-source-to-target merge returns the existing lineage.
+source-to-target merge returns the existing lineage while the merge remains in
+effect. After recovery, a repeat merge fails safely with
+`application_already_merged`; run a fresh duplicate review before any new
+consolidation decision.
 
 Stable merge errors are:
 
@@ -472,6 +485,64 @@ Stable merge errors are:
 
 Do not retry with guessed IDs, timestamps, or resolutions. Refresh the audit or
 preview and obtain user approval for any changed decision.
+
+## Deletion and merge recovery
+
+`delete_application` requires `applicationId`, `confirm: true`, and a trimmed
+reason from 3 through 500 characters. It soft-deletes the record and writes an
+immutable deletion row with the bound actor, reason, time, recovery snapshot,
+and optional merge lineage. Job-email reconciliation never authorizes this
+tool.
+
+`list_deleted_applications` is read-only and accepts `limit` from 1 through 100
+and a non-negative `offset` no greater than 1,000,000. It returns only currently
+deleted records, bounded pagination, the stored application, deletion actor,
+reason, time, and optional merge target. Normal application list and detail
+tools remain active-only.
+
+For a manual deletion, `preview_application_restore` accepts one
+`applicationId` and performs no mutation. Its result contains the application,
+immutable deletion record, relationship counts, every current conflict, and
+`safeToRestore`. Conflicts cover stale application state, inactive status,
+source, or role-type references, changed document and Graph assignments, moved
+or added email evidence, moved or added posting evidence, and a merge deletion
+that requires the separate merge-recovery path.
+
+`restore_application` requires `applicationId`, `confirm: true`, and the exact
+`expectedDeletedAt` and `expectedUpdatedAt` returned by the preview. It restores
+only a safe non-merge deletion, preserves immutable application events and
+deletion history, appends an immutable restoration record, and commits all
+changes atomically.
+
+For a merge deletion, `recover_application_merge` is discriminated by `mode`:
+
+- `preview` requires the exact `sourceApplicationId` and is read-only; and
+- `apply` additionally requires `confirm: true`,
+  `expectedSourceUpdatedAt`, and `expectedTargetUpdatedAt` from that preview.
+
+The preview uses the merge-time snapshot to prove that the source, active
+target, document associations, moved email and posting identities, references,
+and original Graph connections remain recoverable. Legacy merges without a
+snapshot, missing or deleted targets, inactive references, missing Graph
+connections, and any changed relationship make the preview unsafe. Apply
+restores the original source and target relationships only when the whole proof
+still holds, and records immutable merge-recovery and restoration rows in the
+same transaction. It never deletes merge, deletion, event, or audit history.
+
+Stable recovery errors are:
+
+- `application_recovery_not_found`;
+- `application_already_active`;
+- `application_already_restored`;
+- `merge_recovery_required`;
+- `merge_target_unavailable`;
+- `application_recovery_conflict`;
+- `application_restore_unsafe`; and
+- `application_merge_recovery_unsafe`.
+
+Do not retry with guessed versions or by bypassing the preview. Re-read the
+bounded deletion page and fresh preview after the underlying conflict has been
+resolved.
 
 ## Evidence linking and atomic reconciliation
 

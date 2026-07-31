@@ -7,7 +7,10 @@ import {
   ApplicationConflictError,
   ApplicationFieldProvenanceIdempotencyConflictError,
   ApplicationFieldProvenanceSourceError,
+  ApplicationRecoveryVersionConflictError,
+  ApplicationRestoreUnsafeError,
   InvalidOutlookGraphConnectionAssignmentError,
+  type ApplicationRecoveryStateError,
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
@@ -865,6 +868,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T13:00:00.000Z",
+          reason: "Wrong workspace test deletion.",
           workspaceId: "workspace-00002",
         }),
       ).toBe(false);
@@ -908,6 +912,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T15:00:00.000Z",
+          reason: "Duplicate record created during import.",
           workspaceId: setup.workspace.id,
         }),
       ).toBe(true);
@@ -951,9 +956,273 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: setup.administrator.id,
           applicationId: created.id,
           deletedAt: "2026-07-18T17:00:00.000Z",
+          reason: "Second deletion attempt.",
           workspaceId: setup.workspace.id,
         }),
       ).toBe(false);
+      expect(
+        repository.listDeletedApplications(setup.workspace.id, {
+          limit: 1,
+          offset: 0,
+        }),
+      ).toMatchObject({
+        applications: [
+          {
+            actorDisplayName: "Alex Example",
+            application: { id: created.id },
+            deletedAt: "2026-07-18T15:00:00.000Z",
+            merge: null,
+            reason: "Duplicate record created during import.",
+          },
+        ],
+        nextOffset: null,
+        returned: 1,
+        total: 1,
+      });
+      const preview = repository.previewApplicationRestore(
+        setup.workspace.id,
+        created.id,
+      );
+      expect(preview).toMatchObject({
+        application: { id: created.id, status: "Prospect" },
+        conflicts: [],
+        safeToRestore: true,
+      });
+      expect(() =>
+        repository.restoreApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          expectedDeletedAt: preview.deletion.deletedAt,
+          expectedUpdatedAt: created.updatedAt,
+          restoredAt: "2026-07-18T18:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationRecoveryVersionConflictError);
+      const restored = repository.restoreApplication({
+        actorUserId: setup.administrator.id,
+        applicationId: created.id,
+        expectedDeletedAt: preview.deletion.deletedAt,
+        expectedUpdatedAt: preview.application.updatedAt,
+        restoredAt: "2026-07-18T18:00:00.000Z",
+        workspaceId: setup.workspace.id,
+      });
+      expect(restored).toMatchObject({
+        application: { id: created.id, updatedAt: "2026-07-18T18:00:00.000Z" },
+        restoration: {
+          actorDisplayName: "Alex Example",
+          recoveryType: "manual",
+        },
+      });
+      expect(repository.listApplications(setup.workspace.id)).toHaveLength(1);
+      expect(
+        repository.listApplicationEvents(setup.workspace.id, created.id),
+      ).toHaveLength(1);
+      expect(() =>
+        repository.previewApplicationRestore(setup.workspace.id, created.id),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "application_already_restored",
+        }) as ApplicationRecoveryStateError,
+      );
+      expect(
+        database
+          .prepare(
+            "SELECT count(*) FROM application_deletions WHERE application_id = ?",
+          )
+          .pluck()
+          .get(created.id),
+      ).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("reports every relationship and reference conflict added after deletion", () => {
+    const { database, repository, setup } = createRepository();
+    const statusId = referenceId(
+      database,
+      setup.workspace.id,
+      "status",
+      "Applied",
+    );
+
+    try {
+      const created = repository.createApplication({
+        appliedOn: "2026-07-18",
+        companyName: "Conflict Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Product Designer",
+        sourceUrl: null,
+        statusId,
+        workspaceId: setup.workspace.id,
+      });
+      const movedEvidenceId = "77777777-7777-4777-8777-777777777777";
+      database
+        .prepare(
+          `INSERT INTO application_email_evidence
+             (id, workspace_id, application_id, message_id, web_url,
+              received_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+        )
+        .run(
+          movedEvidenceId,
+          setup.workspace.id,
+          created.id,
+          "<before-deletion@example.com>",
+          createdAt,
+          createdAt,
+          createdAt,
+        );
+      const movedPostingId = "88888888-8888-4888-8888-888888888888";
+      database
+        .prepare(
+          `INSERT INTO application_job_postings
+             (id, workspace_id, application_id, provider,
+              external_posting_id, canonical_url, created_at, updated_at)
+           VALUES (?, ?, ?, 'linkedin', 'before-deletion', NULL, ?, ?)`,
+        )
+        .run(
+          movedPostingId,
+          setup.workspace.id,
+          created.id,
+          createdAt,
+          createdAt,
+        );
+      const other = repository.createApplication({
+        appliedOn: null,
+        companyName: "Other Studio",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: null,
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Engineer",
+        sourceUrl: null,
+        statusId,
+        workspaceId: setup.workspace.id,
+      });
+      const deletedAt = "2026-07-18T15:00:00.000Z";
+      expect(
+        repository.deleteApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          deletedAt,
+          reason: "Conflict detection test.",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toBe(true);
+      database
+        .prepare(
+          `UPDATE application_email_evidence
+           SET application_id = ?, updated_at = ?
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(
+          other.id,
+          "2026-07-18T15:30:00.000Z",
+          setup.workspace.id,
+          movedEvidenceId,
+        );
+      database
+        .prepare(
+          `UPDATE application_job_postings
+           SET application_id = ?, updated_at = ?
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(
+          other.id,
+          "2026-07-18T15:30:00.000Z",
+          setup.workspace.id,
+          movedPostingId,
+        );
+      const evidenceId = "55555555-5555-4555-8555-555555555555";
+      database
+        .prepare(
+          `INSERT INTO application_email_evidence
+             (id, workspace_id, application_id, message_id, web_url,
+              received_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+        )
+        .run(
+          evidenceId,
+          setup.workspace.id,
+          created.id,
+          "<after-deletion@example.com>",
+          deletedAt,
+          deletedAt,
+          deletedAt,
+        );
+      const postingId = "66666666-6666-4666-8666-666666666666";
+      database
+        .prepare(
+          `INSERT INTO application_job_postings
+             (id, workspace_id, application_id, provider,
+              external_posting_id, canonical_url, created_at, updated_at)
+           VALUES (?, ?, ?, 'linkedin', 'after-deletion', NULL, ?, ?)`,
+        )
+        .run(postingId, setup.workspace.id, created.id, deletedAt, deletedAt);
+      database
+        .prepare(
+          `UPDATE reference_values SET is_active = 0
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .run(setup.workspace.id, statusId);
+
+      const preview = repository.previewApplicationRestore(
+        setup.workspace.id,
+        created.id,
+      );
+      expect(preview.safeToRestore).toBe(false);
+      expect(preview.conflicts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "email_evidence_moved",
+            recordId: movedEvidenceId,
+          }),
+          expect.objectContaining({
+            code: "posting_moved",
+            recordId: movedPostingId,
+          }),
+          expect.objectContaining({
+            code: "source_relationship_changed",
+            recordId: evidenceId,
+          }),
+          expect.objectContaining({
+            code: "source_relationship_changed",
+            recordId: postingId,
+          }),
+          expect.objectContaining({
+            code: "reference_inactive",
+            field: "status",
+            recordId: statusId,
+          }),
+        ]),
+      );
+      expect(() =>
+        repository.restoreApplication({
+          actorUserId: setup.administrator.id,
+          applicationId: created.id,
+          expectedDeletedAt: preview.deletion.deletedAt,
+          expectedUpdatedAt: preview.application.updatedAt,
+          restoredAt: "2026-07-18T16:00:00.000Z",
+          workspaceId: setup.workspace.id,
+        }),
+      ).toThrow(ApplicationRestoreUnsafeError);
+      expect(repository.listApplications(setup.workspace.id)).toEqual([
+        expect.objectContaining({ id: other.id }),
+      ]);
+      expect(
+        database
+          .prepare("SELECT count(*) FROM application_restorations")
+          .pluck()
+          .get(),
+      ).toBe(0);
     } finally {
       database.close();
     }
@@ -988,6 +1257,7 @@ describe("SqliteApplicationsRepository", () => {
           actorUserId: "missing-user",
           applicationId: created.id,
           deletedAt: "2026-07-18T15:00:00.000Z",
+          reason: "Missing actor rollback test.",
           workspaceId: setup.workspace.id,
         }),
       ).toThrow();

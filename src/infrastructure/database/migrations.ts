@@ -40,6 +40,7 @@ import { applicationEmailEvidenceTypesMigration } from "./migrations/035_applica
 import { applicationActivityTimelineMigration } from "./migrations/036_application_activity_timeline.js";
 import { applicationFieldProvenanceMigration } from "./migrations/037_application_field_provenance.js";
 import { applicationAttentionQueueMigration } from "./migrations/038_application_attention_queue.js";
+import { applicationRecoveryMigration } from "./migrations/039_application_recovery.js";
 
 export interface Migration {
   name: string;
@@ -99,6 +100,7 @@ export const applicationMigrations: readonly Migration[] = [
   applicationActivityTimelineMigration,
   applicationFieldProvenanceMigration,
   applicationAttentionQueueMigration,
+  applicationRecoveryMigration,
 ];
 
 const createMigrationTable = `

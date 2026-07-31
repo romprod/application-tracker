@@ -993,9 +993,10 @@ export function DeleteApplicationDialog({
   deleting: boolean;
   error: string | undefined;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (reason: string) => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const [reason, setReason] = useState("");
   useDialogFocus(dialogRef, ".tracker-delete-cancel");
   const title = `Remove ${application.companyName}?`;
 
@@ -1027,8 +1028,21 @@ export function DeleteApplicationDialog({
           <span aria-hidden="true">×</span>
           <p id="application-delete-description">
             This removes {application.roleTitle} from the workspace. Its audit
-            history remains stored.
+            history and deletion reason remain stored.
           </p>
+          <label className="tracker-field">
+            <span>Reason for deletion</span>
+            <textarea
+              autoComplete="off"
+              disabled={deleting}
+              maxLength={500}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="For example: duplicate record created during import"
+              required
+              rows={3}
+              value={reason}
+            />
+          </label>
           {error && (
             <p className="form-error" role="alert">
               {error}
@@ -1036,7 +1050,9 @@ export function DeleteApplicationDialog({
           )}
         </div>
         <footer className="tracker-modal-footer">
-          <p>You cannot restore the record from the application.</p>
+          <p>
+            You can review and restore this record from Deleted applications.
+          </p>
           <div>
             <button
               className="tracker-button tracker-button-quiet tracker-delete-cancel"
@@ -1048,8 +1064,8 @@ export function DeleteApplicationDialog({
             </button>
             <button
               className="tracker-button tracker-button-danger-solid"
-              disabled={deleting}
-              onClick={onConfirm}
+              disabled={deleting || reason.trim().length < 3}
+              onClick={() => onConfirm(reason.trim())}
               type="button"
             >
               {deleting ? "Removing…" : "Remove application"}

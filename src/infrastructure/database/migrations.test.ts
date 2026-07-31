@@ -100,6 +100,7 @@ describe("migrateDatabase", () => {
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+        39,
       ]);
       expect(
         database
@@ -1607,6 +1608,98 @@ describe("migrateDatabase", () => {
       );
       expect(auditSql).toContain("list_application_events");
       expect(auditSql).toContain("add_application_activity");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades deletion history for immutable restore and merge recovery", () => {
+    const database = new Database(":memory:");
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, 38));
+      const setup = new SqliteSetupRepository(
+        database,
+      ).createInitialAdministrator({
+        completedAt: "2026-07-31T08:00:00.000Z",
+        displayName: "Alex Example",
+        passwordHash: "scrypt$1024$8$1$salt$hash-value-long-enough",
+        username: "alex",
+        workspaceName: "Applications",
+      });
+      const statusId = database
+        .prepare(
+          `SELECT id FROM reference_values
+           WHERE workspace_id = ? AND category = 'status' AND label = 'Applied'`,
+        )
+        .pluck()
+        .get(setup.workspace.id);
+      if (typeof statusId !== "string") throw new Error("Missing status");
+      const applicationId = "legacy-deleted-application";
+      database
+        .prepare(
+          `INSERT INTO applications
+             (id, workspace_id, company_name, role_title, legacy_status,
+              status_reference_id, created_by_user_id, created_at, updated_at,
+              deleted_at)
+           VALUES (?, ?, 'Legacy Deleted Ltd', 'Engineer', 'prospect', ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          applicationId,
+          setup.workspace.id,
+          statusId,
+          setup.administrator.id,
+          "2026-07-31T08:00:00.000Z",
+          "2026-07-31T08:05:00.000Z",
+          "2026-07-31T08:05:00.000Z",
+        );
+      database
+        .prepare(
+          `INSERT INTO application_deletions
+             (application_id, workspace_id, actor_user_id, deleted_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          applicationId,
+          setup.workspace.id,
+          setup.administrator.id,
+          "2026-07-31T08:05:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            `SELECT id, reason, merge_id AS mergeId,
+                    json_extract(recovery_snapshot_json, '$.version') AS version
+             FROM application_deletions WHERE application_id = ?`,
+          )
+          .get(applicationId),
+      ).toEqual({
+        id: applicationId,
+        mergeId: null,
+        reason: "Deletion reason was not recorded by the earlier schema.",
+        version: 1,
+      });
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE application_deletions SET reason = 'Changed' WHERE id = ?",
+          )
+          .run(applicationId),
+      ).toThrow("application deletions are immutable");
+      const auditSql = String(
+        database
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_audit_events'",
+          )
+          .pluck()
+          .get(),
+      );
+      expect(auditSql).toContain("list_deleted_applications");
+      expect(auditSql).toContain("recover_application_merge");
+      expect(auditSql).toContain("restore_application");
     } finally {
       database.close();
     }

@@ -717,8 +717,13 @@ describe("ApplicationMcpService", () => {
       ],
       updated: 1,
     });
-    expect(service.deleteApplication("application-created")).toEqual({
-      applicationId: "application-created",
+    expect(
+      service.deleteApplication({
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        reason: "Duplicate record created during import.",
+      }),
+    ).toEqual({
+      applicationId: "11111111-1111-4111-8111-111111111111",
       deleted: true,
     });
     expect(
@@ -752,9 +757,9 @@ describe("ApplicationMcpService", () => {
         notes: "Bulk update",
       },
     );
-    expect(applications.deleteApplication).toHaveBeenCalledWith(
-      actor,
-      "application-created",
-    );
+    expect(applications.deleteApplication).toHaveBeenCalledWith(actor, {
+      applicationId: "11111111-1111-4111-8111-111111111111",
+      reason: "Duplicate record created during import.",
+    });
   });
 });

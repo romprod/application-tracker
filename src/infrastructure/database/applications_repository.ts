@@ -12,9 +12,14 @@ import {
   ApplicationFieldProvenanceSourceError,
   ApplicationFieldProvenanceVerificationConflictError,
   ApplicationMergeNotFoundError,
+  ApplicationMergeRecoveryUnsafeError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
+  ApplicationRecoveryNotFoundError,
+  ApplicationRecoveryStateError,
+  ApplicationRecoveryVersionConflictError,
+  ApplicationRestoreUnsafeError,
   ApplicationStatusEventConflictError,
   ApplicationStatusRegressionError,
   ApplicationStatusStaleError,
@@ -37,15 +42,27 @@ import {
   type ApplicationMergeFieldValue,
   type ApplicationMergeLineage,
   type ApplicationMergePreview,
+  type ApplicationMergeRecoveryPreview,
+  type ApplicationMergeRecoveryRecord,
+  type ApplicationMergeRecoveryResult,
   type ApplicationMergeRelationshipPreview,
   type ApplicationMergeResult,
+  type ApplicationRecoveryConflict,
+  type ApplicationRecoveryRelationshipSummary,
   type ApplicationRecord,
+  type ApplicationRestorationRecord,
+  type ApplicationRestorePreview,
+  type ApplicationRestoreResult,
   type ApplyApplicationMergeRecord,
   type ApplicationsRepository,
   type CreateApplicationRecord,
+  type DeletedApplicationRecord,
+  type DeletedApplicationsPage,
   type DeleteApplicationRecord,
   type QueryApplicationAttentionRecord,
+  type RecoverApplicationMergeRecord,
   type RecordApplicationFieldProvenanceRecord,
+  type RestoreApplicationRecord,
   type UpdateApplicationRecord,
   type VerifyApplicationFieldProvenanceRecord,
 } from "../../application/applications.js";
@@ -68,6 +85,7 @@ import {
   type ApplicationMergeResolutions,
   type AuditDuplicateApplicationsInput,
 } from "../../domain/applications.js";
+import type { ListDeletedApplicationsInput } from "../../domain/application_recovery.js";
 
 interface StoredApplicationRecord extends Omit<
   ApplicationRecord,
@@ -112,7 +130,49 @@ type StoredContact = ApplicationContact & { applicationId: string };
 type StoredLink = ApplicationLink & { applicationId: string };
 
 interface StoredApplicationMerge extends ApplicationMergeLineage {
+  actorUserId: string;
+  recoverySnapshotJson: string | null;
   resolutionsJson: string;
+}
+
+interface StoredApplicationDeletion {
+  actorDisplayName: string;
+  actorUserId: string;
+  applicationId: string;
+  deletedAt: string;
+  id: string;
+  mergeId: string | null;
+  reason: string;
+  recoverySnapshotJson: string;
+  targetApplicationId: string | null;
+  targetCompanyName: string | null;
+  targetRoleTitle: string | null;
+  workspaceId: string;
+}
+
+interface ApplicationRelationshipVersion {
+  id: string;
+  updatedAt: string;
+}
+
+interface ApplicationDeletionRecoverySnapshot {
+  applicationUpdatedAt: string;
+  documentIds: string[];
+  emailEvidence: ApplicationRelationshipVersion[];
+  jobPostings: ApplicationRelationshipVersion[];
+  outlookGraphConnectionId: string | null;
+  version: 1;
+}
+
+interface ApplicationMergeRecoverySnapshot {
+  sourceBefore: ApplicationRecord;
+  sourceDocumentIds: string[];
+  sourceEmailEvidence: ApplicationRelationshipVersion[];
+  sourceJobPostings: ApplicationRelationshipVersion[];
+  targetAfter: ApplicationRecord;
+  targetBefore: ApplicationRecord;
+  targetDocumentIds: string[];
+  version: 1;
 }
 
 type StoredMergeDocument = Omit<DocumentRecord, "applications">;
@@ -152,6 +212,74 @@ const provenanceSourcePrecedence: Record<
   imported: 100,
   job_posting: 400,
 };
+
+function recoveryObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function recoveryStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+function recoveryVersions(
+  value: unknown,
+): value is ApplicationRelationshipVersion[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        recoveryObject(item) &&
+        typeof item.id === "string" &&
+        typeof item.updatedAt === "string",
+    )
+  );
+}
+
+function parseDeletionRecoverySnapshot(
+  value: string,
+): ApplicationDeletionRecoverySnapshot | undefined {
+  const parsed: unknown = JSON.parse(value);
+  if (
+    !recoveryObject(parsed) ||
+    parsed.version !== 1 ||
+    typeof parsed.applicationUpdatedAt !== "string" ||
+    !recoveryStringArray(parsed.documentIds) ||
+    !recoveryVersions(parsed.emailEvidence) ||
+    !recoveryVersions(parsed.jobPostings) ||
+    (parsed.outlookGraphConnectionId !== null &&
+      typeof parsed.outlookGraphConnectionId !== "string")
+  ) {
+    return undefined;
+  }
+  return parsed as unknown as ApplicationDeletionRecoverySnapshot;
+}
+
+function parseMergeRecoverySnapshot(
+  value: string | null,
+): ApplicationMergeRecoverySnapshot | undefined {
+  if (value === null) return undefined;
+  const parsed: unknown = JSON.parse(value);
+  if (
+    !recoveryObject(parsed) ||
+    parsed.version !== 1 ||
+    !recoveryObject(parsed.sourceBefore) ||
+    !recoveryObject(parsed.targetBefore) ||
+    !recoveryObject(parsed.targetAfter) ||
+    !recoveryStringArray(parsed.sourceDocumentIds) ||
+    !recoveryStringArray(parsed.targetDocumentIds) ||
+    !recoveryVersions(parsed.sourceEmailEvidence) ||
+    !recoveryVersions(parsed.sourceJobPostings)
+  ) {
+    return undefined;
+  }
+  return parsed as unknown as ApplicationMergeRecoverySnapshot;
+}
+
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
 const duplicateCandidatePairsSql = `
   WITH candidate_pairs AS (
     SELECT first.id AS firstId, second.id AS secondId
@@ -762,7 +890,9 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
            merges.source_updated_at AS sourceUpdatedAt,
            merges.target_updated_at AS targetUpdatedAt,
            merges.resolutions_json AS resolutionsJson,
+           merges.recovery_snapshot_json AS recoverySnapshotJson,
            merges.merged_at AS mergedAt,
+           merges.actor_user_id AS actorUserId,
            actors.display_name AS actorDisplayName
          FROM application_merges AS merges
          JOIN users AS actors ON actors.id = merges.actor_user_id
@@ -770,6 +900,219 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       )
       .get(workspaceId, sourceApplicationId) as
       StoredApplicationMerge | undefined;
+  }
+
+  private findCurrentApplicationDeletion(
+    workspaceId: string,
+    applicationId: string,
+  ): StoredApplicationDeletion | undefined {
+    return this.database
+      .prepare(
+        `SELECT
+           deletions.id,
+           deletions.application_id AS applicationId,
+           deletions.workspace_id AS workspaceId,
+           deletions.actor_user_id AS actorUserId,
+           actors.display_name AS actorDisplayName,
+           deletions.reason,
+           deletions.deleted_at AS deletedAt,
+           deletions.merge_id AS mergeId,
+           deletions.recovery_snapshot_json AS recoverySnapshotJson,
+           merges.target_application_id AS targetApplicationId,
+           targets.company_name AS targetCompanyName,
+           targets.role_title AS targetRoleTitle
+         FROM applications
+         JOIN application_deletions AS deletions
+           ON deletions.workspace_id = applications.workspace_id
+          AND deletions.application_id = applications.id
+          AND deletions.deleted_at = applications.deleted_at
+         JOIN users AS actors ON actors.id = deletions.actor_user_id
+         LEFT JOIN application_merges AS merges
+           ON merges.workspace_id = deletions.workspace_id
+          AND merges.id = deletions.merge_id
+         LEFT JOIN applications AS targets
+           ON targets.workspace_id = merges.workspace_id
+          AND targets.id = merges.target_application_id
+         WHERE applications.workspace_id = ? AND applications.id = ?
+           AND applications.deleted_at IS NOT NULL`,
+      )
+      .get(workspaceId, applicationId) as StoredApplicationDeletion | undefined;
+  }
+
+  private publicApplicationDeletion(
+    stored: StoredApplicationDeletion,
+    application: ApplicationRecord,
+  ): DeletedApplicationRecord {
+    return {
+      actorDisplayName: stored.actorDisplayName,
+      application,
+      deletedAt: stored.deletedAt,
+      id: stored.id,
+      merge:
+        stored.mergeId === null ||
+        stored.targetApplicationId === null ||
+        stored.targetCompanyName === null ||
+        stored.targetRoleTitle === null
+          ? null
+          : {
+              id: stored.mergeId,
+              targetApplicationId: stored.targetApplicationId,
+              targetCompanyName: stored.targetCompanyName,
+              targetRoleTitle: stored.targetRoleTitle,
+            },
+      reason: stored.reason,
+    };
+  }
+
+  private deletionRecoverySnapshot(
+    workspaceId: string,
+    application: ApplicationRecord,
+  ): ApplicationDeletionRecoverySnapshot {
+    return {
+      applicationUpdatedAt: application.updatedAt,
+      documentIds: sortedUnique(
+        this.listApplicationDocuments(workspaceId, application.id).map(
+          ({ id }) => id,
+        ),
+      ),
+      emailEvidence: this.listEmailEvidence(workspaceId, application.id)
+        .map(({ id, updatedAt }) => ({ id, updatedAt }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      jobPostings: this.listJobPostings(workspaceId, application.id)
+        .map(({ id, updatedAt }) => ({ id, updatedAt }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      outlookGraphConnectionId: application.outlookGraphConnectionId,
+      version: 1,
+    };
+  }
+
+  private mergeRecoverySnapshot(
+    workspaceId: string,
+    source: ApplicationRecord,
+    target: ApplicationRecord,
+    survivor: ApplicationRecord,
+    mergedAt: string,
+  ): ApplicationMergeRecoverySnapshot {
+    return {
+      sourceBefore: source,
+      sourceDocumentIds: sortedUnique(
+        this.listApplicationDocuments(workspaceId, source.id).map(
+          ({ id }) => id,
+        ),
+      ),
+      sourceEmailEvidence: this.listEmailEvidence(workspaceId, source.id)
+        .map(({ id, updatedAt }) => ({ id, updatedAt }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      sourceJobPostings: this.listJobPostings(workspaceId, source.id)
+        .map(({ id, updatedAt }) => ({ id, updatedAt }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      targetAfter: { ...survivor, updatedAt: mergedAt },
+      targetBefore: target,
+      targetDocumentIds: sortedUnique(
+        this.listApplicationDocuments(workspaceId, target.id).map(
+          ({ id }) => id,
+        ),
+      ),
+      version: 1,
+    };
+  }
+
+  private applicationRecoveryRelationships(
+    workspaceId: string,
+    application: ApplicationRecord,
+  ): ApplicationRecoveryRelationshipSummary {
+    return {
+      contacts: application.contacts.length,
+      documents: this.listApplicationDocuments(workspaceId, application.id)
+        .length,
+      emailEvidence: this.listEmailEvidence(workspaceId, application.id).length,
+      jobPostings: this.listJobPostings(workspaceId, application.id).length,
+      links: application.links.length,
+      outlookGraphConnectionId: application.outlookGraphConnectionId,
+    };
+  }
+
+  private inactiveReferenceConflicts(
+    workspaceId: string,
+    applications: ApplicationRecord[],
+  ): ApplicationRecoveryConflict[] {
+    const conflicts: ApplicationRecoveryConflict[] = [];
+    const seen = new Set<string>();
+    const references = applications.flatMap((application) => [
+      {
+        field: "status" as const,
+        id: application.statusId,
+        label: `Status “${application.status}”`,
+      },
+      ...(application.sourceId === null
+        ? []
+        : [
+            {
+              field: "source" as const,
+              id: application.sourceId,
+              label: `Source “${application.source ?? application.sourceId}”`,
+            },
+          ]),
+      ...(application.roleTypeId === null
+        ? []
+        : [
+            {
+              field: "role_type" as const,
+              id: application.roleTypeId,
+              label: `Role type “${application.roleType ?? application.roleTypeId}”`,
+            },
+          ]),
+    ]);
+    for (const reference of references) {
+      const key = `${reference.field}:${reference.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const active = this.database
+        .prepare(
+          `SELECT is_active FROM reference_values
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, reference.id);
+      if (active !== 1) {
+        conflicts.push({
+          code: "reference_inactive",
+          field: reference.field,
+          message: `${reference.label} is no longer active.`,
+          recordId: reference.id,
+        });
+      }
+    }
+    return conflicts;
+  }
+
+  private missingOutlookGraphConnectionConflicts(
+    workspaceId: string,
+    applications: ApplicationRecord[],
+  ): ApplicationRecoveryConflict[] {
+    const conflicts: ApplicationRecoveryConflict[] = [];
+    const seen = new Set<string>();
+    for (const application of applications) {
+      const connectionId = application.outlookGraphConnectionId;
+      if (connectionId === null || seen.has(connectionId)) continue;
+      seen.add(connectionId);
+      const exists = this.database
+        .prepare(
+          `SELECT 1 FROM outlook_graph_connections
+           WHERE workspace_id = ? AND id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, connectionId);
+      if (exists !== 1) {
+        conflicts.push({
+          code: "outlook_connection_changed",
+          field: null,
+          message: `The Microsoft Graph connection required by ${application.companyName} is no longer available.`,
+          recordId: connectionId,
+        });
+      }
+    }
+    return conflicts;
   }
 
   private applicationForMerge(
@@ -1318,6 +1661,16 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         input.sourceApplicationId,
       );
       if (existing) {
+        const recovered = this.database
+          .prepare(
+            `SELECT 1 FROM application_merge_recoveries
+             WHERE workspace_id = ? AND merge_id = ?`,
+          )
+          .pluck()
+          .get(input.workspaceId, existing.id);
+        if (recovered === 1) {
+          throw new ApplicationMergeStateError("application_already_merged");
+        }
         if (existing.targetApplicationId !== input.targetApplicationId) {
           throw new ApplicationMergeStateError("application_already_merged");
         }
@@ -1370,6 +1723,13 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       }
 
       const survivor = preview.survivor;
+      const recoverySnapshot = this.mergeRecoverySnapshot(
+        input.workspaceId,
+        source,
+        target,
+        survivor,
+        input.mergedAt,
+      );
       if (survivor.statusId !== target.statusId) {
         this.activeReference(input.workspaceId, survivor.statusId, "status");
       }
@@ -1541,8 +1901,8 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           `INSERT INTO application_merges
              (id, workspace_id, source_application_id, target_application_id,
               actor_user_id, source_updated_at, target_updated_at,
-              resolutions_json, merged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              resolutions_json, merged_at, recovery_snapshot_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           lineageId,
@@ -1554,6 +1914,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.expectedTargetUpdatedAt,
           JSON.stringify(input.resolutions),
           input.mergedAt,
+          JSON.stringify(recoverySnapshot),
         );
       const sourceUpdate = this.database
         .prepare(
@@ -1572,6 +1933,41 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       if (sourceUpdate.changes !== 1) {
         throw new ApplicationMergeVersionConflictError(source, target);
       }
+
+      const deletedStored = this.findStoredApplicationIncludingDeleted(
+        input.workspaceId,
+        source.id,
+      );
+      if (!deletedStored) {
+        throw new Error("Merged source could not be read for deletion history");
+      }
+      const [deletedSource] = this.hydrateApplications(input.workspaceId, [
+        deletedStored,
+      ]);
+      if (!deletedSource) {
+        throw new Error(
+          "Merged source could not be hydrated for deletion history",
+        );
+      }
+      this.database
+        .prepare(
+          `INSERT INTO application_deletions
+             (id, application_id, workspace_id, actor_user_id, reason,
+              deleted_at, merge_id, recovery_snapshot_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          source.id,
+          input.workspaceId,
+          input.actorUserId,
+          "Merged into another application.",
+          input.mergedAt,
+          lineageId,
+          JSON.stringify(
+            this.deletionRecoverySnapshot(input.workspaceId, deletedSource),
+          ),
+        );
 
       const updatedStored = this.findStoredApplication(
         input.workspaceId,
@@ -1615,6 +2011,477 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       };
     });
     return merge.immediate();
+  }
+
+  public previewApplicationMergeRecovery(
+    workspaceId: string,
+    sourceApplicationId: string,
+  ): ApplicationMergeRecoveryPreview {
+    const storedSource = this.findStoredApplicationIncludingDeleted(
+      workspaceId,
+      sourceApplicationId,
+    );
+    if (!storedSource) throw new ApplicationRecoveryNotFoundError();
+    const merge = this.findApplicationMerge(workspaceId, sourceApplicationId);
+    if (!merge) throw new ApplicationRecoveryNotFoundError();
+    const deletedAt = this.applicationDeletedAt(
+      workspaceId,
+      sourceApplicationId,
+    );
+    if (deletedAt === null) {
+      const recovered = this.database
+        .prepare(
+          `SELECT 1 FROM application_merge_recoveries
+           WHERE workspace_id = ? AND merge_id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, merge.id);
+      throw new ApplicationRecoveryStateError(
+        recovered === 1
+          ? "application_already_restored"
+          : "application_already_active",
+      );
+    }
+    const deletion = this.findCurrentApplicationDeletion(
+      workspaceId,
+      sourceApplicationId,
+    );
+    if (!deletion || deletion.mergeId !== merge.id) {
+      throw new ApplicationRecoveryNotFoundError();
+    }
+    const [source] = this.hydrateApplications(workspaceId, [storedSource]);
+    if (!source) throw new ApplicationRecoveryNotFoundError();
+    const storedTarget = this.findStoredApplication(
+      workspaceId,
+      merge.targetApplicationId,
+    );
+    const [target] = storedTarget
+      ? this.hydrateApplications(workspaceId, [storedTarget])
+      : [];
+    const conflicts: ApplicationRecoveryConflict[] = [];
+    const snapshot = parseMergeRecoverySnapshot(merge.recoverySnapshotJson);
+    if (!snapshot) {
+      conflicts.push({
+        code: "legacy_merge_snapshot_unavailable",
+        field: null,
+        message:
+          "This merge predates recovery snapshots and cannot be reversed automatically.",
+        recordId: merge.id,
+      });
+    }
+    if (!target) {
+      conflicts.push({
+        code: "target_unavailable",
+        field: null,
+        message: "The merge target is missing or deleted.",
+        recordId: merge.targetApplicationId,
+      });
+    }
+    if (snapshot) {
+      const expectedSource: ApplicationRecord = {
+        ...snapshot.sourceBefore,
+        outlookGraphConnectionId: null,
+        outlookGraphConnectionName: null,
+        updatedAt: merge.mergedAt,
+      };
+      if (!isDeepStrictEqual(source, expectedSource)) {
+        conflicts.push({
+          code: "source_relationship_changed",
+          field: null,
+          message: "The merged source changed after the merge.",
+          recordId: source.id,
+        });
+      }
+      if (target && !isDeepStrictEqual(target, snapshot.targetAfter)) {
+        conflicts.push({
+          code: "target_changed",
+          field: null,
+          message: "The merge target changed after the merge.",
+          recordId: target.id,
+        });
+      }
+      const sourceDocumentIds = sortedUnique(
+        this.listApplicationDocuments(workspaceId, source.id).map(
+          ({ id }) => id,
+        ),
+      );
+      const targetDocumentIds = target
+        ? sortedUnique(
+            this.listApplicationDocuments(workspaceId, target.id).map(
+              ({ id }) => id,
+            ),
+          )
+        : [];
+      if (
+        !isDeepStrictEqual(sourceDocumentIds, snapshot.sourceDocumentIds) ||
+        (target &&
+          !isDeepStrictEqual(
+            targetDocumentIds,
+            sortedUnique([
+              ...snapshot.sourceDocumentIds,
+              ...snapshot.targetDocumentIds,
+            ]),
+          ))
+      ) {
+        conflicts.push({
+          code: "document_relationship_changed",
+          field: null,
+          message: "Document relationships changed after the merge.",
+          recordId: null,
+        });
+      }
+      if (target) {
+        const evidence = this.database.prepare(
+          `SELECT application_id AS applicationId, updated_at AS updatedAt
+           FROM application_email_evidence
+           WHERE workspace_id = ? AND id = ?`,
+        );
+        for (const expected of snapshot.sourceEmailEvidence) {
+          const current = evidence.get(workspaceId, expected.id) as
+            { applicationId: string; updatedAt: string } | undefined;
+          if (
+            !current ||
+            current.applicationId !== target.id ||
+            current.updatedAt !== merge.mergedAt
+          ) {
+            conflicts.push({
+              code: "email_evidence_moved",
+              field: null,
+              message: "Merged email evidence changed after the merge.",
+              recordId: expected.id,
+            });
+          }
+        }
+        const postings = this.database.prepare(
+          `SELECT application_id AS applicationId, updated_at AS updatedAt
+           FROM application_job_postings
+           WHERE workspace_id = ? AND id = ?`,
+        );
+        for (const expected of snapshot.sourceJobPostings) {
+          const current = postings.get(workspaceId, expected.id) as
+            { applicationId: string; updatedAt: string } | undefined;
+          if (
+            !current ||
+            current.applicationId !== target.id ||
+            current.updatedAt !== merge.mergedAt
+          ) {
+            conflicts.push({
+              code: "posting_moved",
+              field: null,
+              message: "Merged job-posting evidence changed after the merge.",
+              recordId: expected.id,
+            });
+          }
+        }
+      }
+      conflicts.push(
+        ...this.inactiveReferenceConflicts(workspaceId, [
+          snapshot.sourceBefore,
+          snapshot.targetBefore,
+        ]),
+        ...this.missingOutlookGraphConnectionConflicts(workspaceId, [
+          snapshot.sourceBefore,
+          snapshot.targetBefore,
+        ]),
+      );
+    }
+    return {
+      conflicts,
+      deletion: this.publicApplicationDeletion(deletion, source),
+      merge: this.publicApplicationMerge(merge),
+      safeToRecover: conflicts.length === 0,
+      source,
+      target: target ?? null,
+    };
+  }
+
+  public recoverApplicationMerge(
+    input: RecoverApplicationMergeRecord,
+  ): ApplicationMergeRecoveryResult {
+    const recover = this.database.transaction(() => {
+      const preview = this.previewApplicationMergeRecovery(
+        input.workspaceId,
+        input.sourceApplicationId,
+      );
+      if (!preview.target) {
+        throw new ApplicationRecoveryStateError("merge_target_unavailable");
+      }
+      if (
+        preview.source.updatedAt !== input.expectedSourceUpdatedAt ||
+        preview.target.updatedAt !== input.expectedTargetUpdatedAt
+      ) {
+        throw new ApplicationRecoveryVersionConflictError();
+      }
+      if (!preview.safeToRecover) {
+        throw new ApplicationMergeRecoveryUnsafeError(preview);
+      }
+      const merge = this.findApplicationMerge(
+        input.workspaceId,
+        input.sourceApplicationId,
+      );
+      if (!merge) throw new ApplicationRecoveryNotFoundError();
+      const snapshot = parseMergeRecoverySnapshot(merge.recoverySnapshotJson);
+      if (!snapshot) throw new ApplicationMergeRecoveryUnsafeError(preview);
+      const target = snapshot.targetBefore;
+
+      const targetUpdate = this.database
+        .prepare(
+          `UPDATE applications
+           SET agency = ?, company_name = ?, role_title = ?, legacy_status = ?,
+               status_reference_id = ?, source_reference_id = ?,
+               role_type_reference_id = ?, location = ?, source_url = ?,
+               applied_on = ?, next_action = ?, next_action_due = ?, notes = ?,
+               rating = ?, salary = ?, salary_minimum_amount = ?,
+               salary_maximum_amount = ?, salary_currency = ?, salary_period = ?,
+               salary_disclosed = ?, salary_negotiable = ?, work_arrangement = ?,
+               work_arrangement_text = ?, office_days_per_week = ?,
+               remote_days_per_week = ?, updated_at = ?
+           WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+             AND updated_at = ?`,
+        )
+        .run(
+          target.agency,
+          target.companyName,
+          target.roleTitle,
+          target.statusIsTerminal ? "closed" : "prospect",
+          target.statusId,
+          target.sourceId,
+          target.roleTypeId,
+          target.location,
+          target.sourceUrl,
+          target.appliedOn,
+          target.nextAction,
+          target.nextActionDue,
+          target.notes,
+          target.rating,
+          target.salary,
+          target.salaryDetails?.minimum ?? null,
+          target.salaryDetails?.maximum ?? null,
+          target.salaryDetails?.currency ?? null,
+          target.salaryDetails?.period ?? null,
+          target.salaryDetails === null
+            ? null
+            : Number(target.salaryDetails.disclosed),
+          target.salaryDetails === null
+            ? null
+            : Number(target.salaryDetails.negotiable),
+          target.workArrangement,
+          target.workArrangementDetails?.originalText ?? null,
+          target.workArrangementDetails?.officeDaysPerWeek ?? null,
+          target.workArrangementDetails?.remoteDaysPerWeek ?? null,
+          input.recoveredAt,
+          input.workspaceId,
+          target.id,
+          input.expectedTargetUpdatedAt,
+        );
+      if (targetUpdate.changes !== 1) {
+        throw new ApplicationRecoveryVersionConflictError();
+      }
+      this.replaceContacts(input.workspaceId, target.id, target.contacts);
+      this.replaceLinks(input.workspaceId, target.id, target.links);
+      this.replaceOutlookGraphConnectionAssignment(
+        input.workspaceId,
+        target.id,
+        target.outlookGraphConnectionId,
+        input.actorUserId,
+        input.recoveredAt,
+      );
+
+      const sourceOnlyDocuments = snapshot.sourceDocumentIds.filter(
+        (id) => !snapshot.targetDocumentIds.includes(id),
+      );
+      const removeDocument = this.database.prepare(
+        `DELETE FROM application_documents
+         WHERE workspace_id = ? AND application_id = ? AND document_id = ?
+           AND associated_by_user_id = ? AND associated_at = ?`,
+      );
+      for (const documentId of sourceOnlyDocuments) {
+        const result = removeDocument.run(
+          input.workspaceId,
+          target.id,
+          documentId,
+          merge.actorUserId,
+          merge.mergedAt,
+        );
+        if (result.changes !== 1) {
+          throw new ApplicationMergeRecoveryUnsafeError(preview);
+        }
+      }
+
+      const moveEvidence = this.database.prepare(
+        `UPDATE application_email_evidence
+         SET application_id = ?, updated_at = ?
+         WHERE workspace_id = ? AND id = ? AND application_id = ?
+           AND updated_at = ?`,
+      );
+      for (const evidence of snapshot.sourceEmailEvidence) {
+        const result = moveEvidence.run(
+          input.sourceApplicationId,
+          input.recoveredAt,
+          input.workspaceId,
+          evidence.id,
+          target.id,
+          merge.mergedAt,
+        );
+        if (result.changes !== 1) {
+          throw new ApplicationMergeRecoveryUnsafeError(preview);
+        }
+      }
+      const movePosting = this.database.prepare(
+        `UPDATE application_job_postings
+         SET application_id = ?, updated_at = ?
+         WHERE workspace_id = ? AND id = ? AND application_id = ?
+           AND updated_at = ?`,
+      );
+      for (const posting of snapshot.sourceJobPostings) {
+        const result = movePosting.run(
+          input.sourceApplicationId,
+          input.recoveredAt,
+          input.workspaceId,
+          posting.id,
+          target.id,
+          merge.mergedAt,
+        );
+        if (result.changes !== 1) {
+          throw new ApplicationMergeRecoveryUnsafeError(preview);
+        }
+      }
+
+      const sourceUpdate = this.database
+        .prepare(
+          `UPDATE applications
+           SET deleted_at = NULL, updated_at = ?
+           WHERE workspace_id = ? AND id = ? AND deleted_at = ?
+             AND updated_at = ?`,
+        )
+        .run(
+          input.recoveredAt,
+          input.workspaceId,
+          input.sourceApplicationId,
+          preview.deletion.deletedAt,
+          input.expectedSourceUpdatedAt,
+        );
+      if (sourceUpdate.changes !== 1) {
+        throw new ApplicationRecoveryVersionConflictError();
+      }
+      this.replaceOutlookGraphConnectionAssignment(
+        input.workspaceId,
+        input.sourceApplicationId,
+        snapshot.sourceBefore.outlookGraphConnectionId,
+        input.actorUserId,
+        input.recoveredAt,
+      );
+
+      if (snapshot.targetAfter.statusId !== target.statusId) {
+        this.database
+          .prepare(
+            `INSERT INTO application_events
+               (id, workspace_id, application_id, actor_user_id, event_type,
+                from_status, to_status, occurred_at, processed_at,
+                source_email_message_id, status_override_reason, sequence)
+             VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, ?, NULL, NULL,
+               (SELECT COALESCE(MAX(sequence), 0) + 1
+                FROM application_events
+                WHERE workspace_id = ? AND application_id = ?))`,
+          )
+          .run(
+            randomUUID(),
+            input.workspaceId,
+            target.id,
+            input.actorUserId,
+            snapshot.targetAfter.status,
+            target.status,
+            input.recoveredAt,
+            input.recoveredAt,
+            input.workspaceId,
+            target.id,
+          );
+      }
+
+      const recoveryId = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO application_merge_recoveries
+             (id, workspace_id, merge_id, deletion_id,
+              source_application_id, target_application_id, actor_user_id,
+              expected_source_updated_at, expected_target_updated_at,
+              recovered_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          recoveryId,
+          input.workspaceId,
+          merge.id,
+          preview.deletion.id,
+          input.sourceApplicationId,
+          target.id,
+          input.actorUserId,
+          input.expectedSourceUpdatedAt,
+          input.expectedTargetUpdatedAt,
+          input.recoveredAt,
+        );
+      const restorationId = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO application_restorations
+             (id, workspace_id, deletion_id, application_id, actor_user_id,
+              recovery_type, merge_recovery_id, restored_at)
+           VALUES (?, ?, ?, ?, ?, 'merge', ?, ?)`,
+        )
+        .run(
+          restorationId,
+          input.workspaceId,
+          preview.deletion.id,
+          input.sourceApplicationId,
+          input.actorUserId,
+          recoveryId,
+          input.recoveredAt,
+        );
+
+      const sourceStored = this.findStoredApplication(
+        input.workspaceId,
+        input.sourceApplicationId,
+      );
+      const targetStored = this.findStoredApplication(
+        input.workspaceId,
+        target.id,
+      );
+      if (!sourceStored || !targetStored) {
+        throw new ApplicationRecoveryNotFoundError();
+      }
+      const [restoredSource] = this.hydrateApplications(input.workspaceId, [
+        sourceStored,
+      ]);
+      const [restoredTarget] = this.hydrateApplications(input.workspaceId, [
+        targetStored,
+      ]);
+      const actorDisplayName = this.database
+        .prepare("SELECT display_name FROM users WHERE id = ?")
+        .pluck()
+        .get(input.actorUserId);
+      if (
+        !restoredSource ||
+        !restoredTarget ||
+        typeof actorDisplayName !== "string"
+      ) {
+        throw new ApplicationRecoveryNotFoundError();
+      }
+      const recovery: ApplicationMergeRecoveryRecord = {
+        actorDisplayName,
+        id: recoveryId,
+        mergeId: merge.id,
+        recoveredAt: input.recoveredAt,
+        sourceApplicationId: restoredSource.id,
+        targetApplicationId: restoredTarget.id,
+      };
+      return {
+        preview,
+        recovery,
+        source: restoredSource,
+        target: restoredTarget,
+      };
+    });
+    return recover.immediate();
   }
 
   private hydrateApplications(
@@ -2379,6 +3246,19 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
 
   public deleteApplication(input: DeleteApplicationRecord): boolean {
     const remove = this.database.transaction(() => {
+      const stored = this.findStoredApplication(
+        input.workspaceId,
+        input.applicationId,
+      );
+      if (!stored) return false;
+      const [application] = this.hydrateApplications(input.workspaceId, [
+        stored,
+      ]);
+      if (!application) return false;
+      const snapshot = this.deletionRecoverySnapshot(
+        input.workspaceId,
+        application,
+      );
       const result = this.database
         .prepare(
           `UPDATE applications
@@ -2396,19 +3276,376 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       this.database
         .prepare(
           `INSERT INTO application_deletions
-             (application_id, workspace_id, actor_user_id, deleted_at)
-           VALUES (?, ?, ?, ?)`,
+             (id, application_id, workspace_id, actor_user_id, reason,
+              deleted_at, merge_id, recovery_snapshot_json)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
         )
         .run(
+          randomUUID(),
           input.applicationId,
           input.workspaceId,
           input.actorUserId,
+          input.reason,
           input.deletedAt,
+          JSON.stringify(snapshot),
         );
       return true;
     });
 
     return remove.immediate();
+  }
+
+  public listDeletedApplications(
+    workspaceId: string,
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage {
+    const total = this.database
+      .prepare(
+        `SELECT count(*)
+         FROM applications
+         JOIN application_deletions AS deletions
+           ON deletions.workspace_id = applications.workspace_id
+          AND deletions.application_id = applications.id
+          AND deletions.deleted_at = applications.deleted_at
+         WHERE applications.workspace_id = ?
+           AND applications.deleted_at IS NOT NULL`,
+      )
+      .pluck()
+      .get(workspaceId) as number;
+    const deletions = this.database
+      .prepare(
+        `SELECT
+           deletions.id,
+           deletions.application_id AS applicationId,
+           deletions.workspace_id AS workspaceId,
+           deletions.actor_user_id AS actorUserId,
+           actors.display_name AS actorDisplayName,
+           deletions.reason,
+           deletions.deleted_at AS deletedAt,
+           deletions.merge_id AS mergeId,
+           deletions.recovery_snapshot_json AS recoverySnapshotJson,
+           merges.target_application_id AS targetApplicationId,
+           targets.company_name AS targetCompanyName,
+           targets.role_title AS targetRoleTitle
+         FROM applications
+         JOIN application_deletions AS deletions
+           ON deletions.workspace_id = applications.workspace_id
+          AND deletions.application_id = applications.id
+          AND deletions.deleted_at = applications.deleted_at
+         JOIN users AS actors ON actors.id = deletions.actor_user_id
+         LEFT JOIN application_merges AS merges
+           ON merges.workspace_id = deletions.workspace_id
+          AND merges.id = deletions.merge_id
+         LEFT JOIN applications AS targets
+           ON targets.workspace_id = merges.workspace_id
+          AND targets.id = merges.target_application_id
+         WHERE applications.workspace_id = ?
+           AND applications.deleted_at IS NOT NULL
+         ORDER BY deletions.deleted_at DESC, deletions.application_id DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(
+        workspaceId,
+        input.limit,
+        input.offset,
+      ) as StoredApplicationDeletion[];
+    const applicationIds = deletions.map(({ applicationId }) => applicationId);
+    const applications =
+      applicationIds.length === 0
+        ? []
+        : this.hydrateApplications(
+            workspaceId,
+            this.database
+              .prepare(
+                `${publicApplicationSelect()}
+                 WHERE applications.workspace_id = ?
+                   AND applications.id IN (${applicationIds
+                     .map(() => "?")
+                     .join(", ")})`,
+              )
+              .all(workspaceId, ...applicationIds) as StoredApplicationRecord[],
+          );
+    const applicationById = new Map(
+      applications.map((application) => [application.id, application]),
+    );
+    const records = deletions.flatMap((deletion) => {
+      const application = applicationById.get(deletion.applicationId);
+      return application
+        ? [this.publicApplicationDeletion(deletion, application)]
+        : [];
+    });
+    const nextOffset = input.offset + records.length;
+    return {
+      applications: records,
+      limit: input.limit,
+      nextOffset: nextOffset < total ? nextOffset : null,
+      offset: input.offset,
+      returned: records.length,
+      total,
+    };
+  }
+
+  public previewApplicationRestore(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationRestorePreview {
+    const stored = this.findStoredApplicationIncludingDeleted(
+      workspaceId,
+      applicationId,
+    );
+    if (!stored) throw new ApplicationRecoveryNotFoundError();
+    const deletedAt = this.applicationDeletedAt(workspaceId, applicationId);
+    if (deletedAt === null) {
+      const restored = this.database
+        .prepare(
+          `SELECT 1 FROM application_restorations
+           WHERE workspace_id = ? AND application_id = ?`,
+        )
+        .pluck()
+        .get(workspaceId, applicationId);
+      throw new ApplicationRecoveryStateError(
+        restored === 1
+          ? "application_already_restored"
+          : "application_already_active",
+      );
+    }
+    const deletion = this.findCurrentApplicationDeletion(
+      workspaceId,
+      applicationId,
+    );
+    if (!deletion) throw new ApplicationRecoveryNotFoundError();
+    const [application] = this.hydrateApplications(workspaceId, [stored]);
+    if (!application) throw new ApplicationRecoveryNotFoundError();
+
+    const conflicts: ApplicationRecoveryConflict[] = [];
+    if (deletion.mergeId !== null) {
+      conflicts.push({
+        code: "merge_recovery_required",
+        field: null,
+        message:
+          "This application was deleted by a merge and requires merge recovery.",
+        recordId: deletion.mergeId,
+      });
+    } else {
+      const snapshot = parseDeletionRecoverySnapshot(
+        deletion.recoverySnapshotJson,
+      );
+      if (!snapshot || application.updatedAt !== deletion.deletedAt) {
+        conflicts.push({
+          code: "application_changed",
+          field: null,
+          message: "The deleted application changed after deletion.",
+          recordId: application.id,
+        });
+      }
+      if (snapshot) {
+        const currentDocumentIds = sortedUnique(
+          this.listApplicationDocuments(workspaceId, application.id).map(
+            ({ id }) => id,
+          ),
+        );
+        if (!isDeepStrictEqual(currentDocumentIds, snapshot.documentIds)) {
+          conflicts.push({
+            code: "document_relationship_changed",
+            field: null,
+            message: "Document relationships changed after deletion.",
+            recordId: null,
+          });
+        }
+        if (
+          application.outlookGraphConnectionId !==
+          snapshot.outlookGraphConnectionId
+        ) {
+          conflicts.push({
+            code: "outlook_connection_changed",
+            field: null,
+            message:
+              "The Microsoft Graph connection assignment changed after deletion.",
+            recordId: snapshot.outlookGraphConnectionId,
+          });
+        }
+        const evidence = this.database.prepare(
+          `SELECT id, application_id AS applicationId, updated_at AS updatedAt
+           FROM application_email_evidence
+           WHERE workspace_id = ? AND id = ?`,
+        );
+        for (const expected of snapshot.emailEvidence) {
+          const current = evidence.get(workspaceId, expected.id) as
+            | { applicationId: string; id: string; updatedAt: string }
+            | undefined;
+          if (!current || current.applicationId !== application.id) {
+            conflicts.push({
+              code: "email_evidence_moved",
+              field: null,
+              message: "Email evidence moved after deletion.",
+              recordId: expected.id,
+            });
+          } else if (current.updatedAt !== expected.updatedAt) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Email evidence changed after deletion.",
+              recordId: expected.id,
+            });
+          }
+        }
+        const expectedEvidenceIds = new Set(
+          snapshot.emailEvidence.map(({ id }) => id),
+        );
+        for (const current of this.listEmailEvidence(
+          workspaceId,
+          application.id,
+        )) {
+          if (!expectedEvidenceIds.has(current.id)) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Email evidence was attached after deletion.",
+              recordId: current.id,
+            });
+          }
+        }
+        const postings = this.database.prepare(
+          `SELECT id, application_id AS applicationId, updated_at AS updatedAt
+           FROM application_job_postings
+           WHERE workspace_id = ? AND id = ?`,
+        );
+        for (const expected of snapshot.jobPostings) {
+          const current = postings.get(workspaceId, expected.id) as
+            | { applicationId: string; id: string; updatedAt: string }
+            | undefined;
+          if (!current || current.applicationId !== application.id) {
+            conflicts.push({
+              code: "posting_moved",
+              field: null,
+              message: "Job-posting evidence moved after deletion.",
+              recordId: expected.id,
+            });
+          } else if (current.updatedAt !== expected.updatedAt) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Job-posting evidence changed after deletion.",
+              recordId: expected.id,
+            });
+          }
+        }
+        const expectedPostingIds = new Set(
+          snapshot.jobPostings.map(({ id }) => id),
+        );
+        for (const current of this.listJobPostings(
+          workspaceId,
+          application.id,
+        )) {
+          if (!expectedPostingIds.has(current.id)) {
+            conflicts.push({
+              code: "source_relationship_changed",
+              field: null,
+              message: "Job-posting evidence was attached after deletion.",
+              recordId: current.id,
+            });
+          }
+        }
+      }
+    }
+    conflicts.push(
+      ...this.inactiveReferenceConflicts(workspaceId, [application]),
+    );
+    const publicDeletion = this.publicApplicationDeletion(
+      deletion,
+      application,
+    );
+    return {
+      application,
+      conflicts,
+      deletion: publicDeletion,
+      relationships: this.applicationRecoveryRelationships(
+        workspaceId,
+        application,
+      ),
+      safeToRestore: conflicts.length === 0,
+    };
+  }
+
+  public restoreApplication(
+    input: RestoreApplicationRecord,
+  ): ApplicationRestoreResult {
+    const restore = this.database.transaction(() => {
+      const preview = this.previewApplicationRestore(
+        input.workspaceId,
+        input.applicationId,
+      );
+      if (preview.deletion.merge !== null) {
+        throw new ApplicationRecoveryStateError("merge_recovery_required");
+      }
+      if (
+        preview.deletion.deletedAt !== input.expectedDeletedAt ||
+        preview.application.updatedAt !== input.expectedUpdatedAt
+      ) {
+        throw new ApplicationRecoveryVersionConflictError();
+      }
+      if (!preview.safeToRestore) {
+        throw new ApplicationRestoreUnsafeError(preview);
+      }
+      const updated = this.database
+        .prepare(
+          `UPDATE applications
+           SET deleted_at = NULL, updated_at = ?
+           WHERE workspace_id = ? AND id = ?
+             AND deleted_at = ? AND updated_at = ?`,
+        )
+        .run(
+          input.restoredAt,
+          input.workspaceId,
+          input.applicationId,
+          input.expectedDeletedAt,
+          input.expectedUpdatedAt,
+        );
+      if (updated.changes !== 1) {
+        throw new ApplicationRecoveryVersionConflictError();
+      }
+      const restorationId = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO application_restorations
+             (id, workspace_id, deletion_id, application_id, actor_user_id,
+              recovery_type, merge_recovery_id, restored_at)
+           VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)`,
+        )
+        .run(
+          restorationId,
+          input.workspaceId,
+          preview.deletion.id,
+          input.applicationId,
+          input.actorUserId,
+          input.restoredAt,
+        );
+      const stored = this.findStoredApplication(
+        input.workspaceId,
+        input.applicationId,
+      );
+      if (!stored) throw new ApplicationRecoveryNotFoundError();
+      const [application] = this.hydrateApplications(input.workspaceId, [
+        stored,
+      ]);
+      const actorDisplayName = this.database
+        .prepare("SELECT display_name FROM users WHERE id = ?")
+        .pluck()
+        .get(input.actorUserId);
+      if (!application || typeof actorDisplayName !== "string") {
+        throw new ApplicationRecoveryNotFoundError();
+      }
+      const restoration: ApplicationRestorationRecord = {
+        actorDisplayName,
+        applicationId: input.applicationId,
+        deletionId: preview.deletion.id,
+        id: restorationId,
+        recoveryType: "manual",
+        restoredAt: input.restoredAt,
+      };
+      return { application, restoration };
+    });
+    return restore.immediate();
   }
 
   public listApplicationEvents(

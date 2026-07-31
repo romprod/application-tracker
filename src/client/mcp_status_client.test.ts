@@ -236,6 +236,39 @@ describe("browserMcpStatusClient", () => {
     );
   });
 
+  it.each([
+    ["list_deleted_applications", "application_collection"],
+    ["preview_application_restore", "application"],
+    ["restore_application", "application"],
+    ["recover_application_merge", "application"],
+  ] as const)(
+    "accepts the %s recovery audit action",
+    async (action, targetType) => {
+      const recovered = {
+        ...status,
+        recentAuditEvents: [
+          {
+            ...status.recentAuditEvents[0],
+            action,
+            targetType,
+          },
+        ],
+      } as const;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(JSON.stringify({ status: recovered }), {
+            status: 200,
+          }),
+        ),
+      );
+
+      await expect(browserMcpStatusClient.getStatus()).resolves.toEqual(
+        recovered,
+      );
+    },
+  );
+
   it("rejects a malformed status instead of guessing", async () => {
     vi.stubGlobal(
       "fetch",

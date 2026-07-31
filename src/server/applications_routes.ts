@@ -9,10 +9,15 @@ import {
   ApplicationFieldProvenanceSourceError,
   ApplicationFieldProvenanceVerificationConflictError,
   ApplicationMergeNotFoundError,
+  ApplicationMergeRecoveryUnsafeError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
   ApplicationNotFoundError,
+  ApplicationRecoveryNotFoundError,
+  ApplicationRecoveryStateError,
+  ApplicationRecoveryVersionConflictError,
+  ApplicationRestoreUnsafeError,
   InvalidApplicationReferenceError,
   InvalidOutlookGraphConnectionAssignmentError,
   type ApplicationLedgerService,
@@ -23,6 +28,13 @@ import {
   type JobEmailReconciliationService,
 } from "../application/job_email_reconciliation.js";
 import { applicationAttentionQuerySchema } from "../domain/application_attention.js";
+import {
+  deleteApplicationSchema,
+  listDeletedApplicationsSchema,
+  previewApplicationRestoreSchema,
+  recoverApplicationMergeSchema,
+  restoreApplicationSchema,
+} from "../domain/application_recovery.js";
 import {
   addApplicationActivitySchema,
   applicationIdSchema,
@@ -169,6 +181,29 @@ export function createApplicationsRouter(
     );
   });
 
+  router.get("/deleted", (request, response) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = listDeletedApplicationsSchema.safeParse({
+      ...(request.query.limit === undefined
+        ? {}
+        : { limit: queryNumber(request.query.limit) }),
+      ...(request.query.offset === undefined
+        ? {}
+        : { offset: queryNumber(request.query.offset) }),
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    response.json(
+      applicationsService.listDeletedApplications(actor, parsed.data),
+    );
+  });
+
   router.post("/", (request, response, next) => {
     const actor = authService.getActor(requestSessionToken(request));
     if (!actor) {
@@ -281,6 +316,139 @@ export function createApplicationsRouter(
       if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
         response.status(400).json({
           error: { code: "invalid_outlook_graph_connection_assignment" },
+        });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/merge-recovery", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = recoverApplicationMergeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        mergeRecovery: applicationsService.recoverApplicationMerge(
+          actor,
+          parsed.data,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationRecoveryNotFoundError) {
+        response
+          .status(404)
+          .json({ error: { code: "application_recovery_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationRecoveryStateError) {
+        response.status(409).json({ error: { code: error.code } });
+        return;
+      }
+      if (error instanceof ApplicationRecoveryVersionConflictError) {
+        response
+          .status(409)
+          .json({ error: { code: "application_recovery_conflict" } });
+        return;
+      }
+      if (error instanceof ApplicationMergeRecoveryUnsafeError) {
+        response.status(409).json({
+          error: { code: "application_merge_recovery_unsafe" },
+          preview: error.preview,
+        });
+        return;
+      }
+      if (error instanceof InvalidOutlookGraphConnectionAssignmentError) {
+        response.status(409).json({
+          error: { code: "application_merge_recovery_unsafe" },
+        });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.get("/:applicationId/restore-preview", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = previewApplicationRestoreSchema.safeParse({
+      applicationId: request.params.applicationId,
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        preview: applicationsService.previewApplicationRestore(
+          actor,
+          parsed.data.applicationId,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationRecoveryNotFoundError) {
+        response
+          .status(404)
+          .json({ error: { code: "application_recovery_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationRecoveryStateError) {
+        response.status(409).json({ error: { code: error.code } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/:applicationId/restore", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = restoreApplicationSchema.safeParse({
+      ...request.body,
+      applicationId: request.params.applicationId,
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        restoration: applicationsService.restoreApplication(actor, parsed.data),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationRecoveryNotFoundError) {
+        response
+          .status(404)
+          .json({ error: { code: "application_recovery_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationRecoveryStateError) {
+        response.status(409).json({ error: { code: error.code } });
+        return;
+      }
+      if (error instanceof ApplicationRecoveryVersionConflictError) {
+        response
+          .status(409)
+          .json({ error: { code: "application_recovery_conflict" } });
+        return;
+      }
+      if (error instanceof ApplicationRestoreUnsafeError) {
+        response.status(409).json({
+          error: { code: "application_restore_unsafe" },
+          preview: error.preview,
         });
         return;
       }
@@ -613,15 +781,16 @@ export function createApplicationsRouter(
       response.status(401).json({ error: { code: "authentication_required" } });
       return;
     }
-    const parsedId = applicationIdSchema.safeParse(
-      request.params.applicationId,
-    );
-    if (!parsedId.success) {
+    const parsed = deleteApplicationSchema.safeParse({
+      ...request.body,
+      applicationId: request.params.applicationId,
+    });
+    if (!parsed.success) {
       response.status(400).json({ error: { code: "validation_error" } });
       return;
     }
     try {
-      applicationsService.deleteApplication(actor, parsedId.data);
+      applicationsService.deleteApplication(actor, parsed.data);
       response.status(204).end();
     } catch (error) {
       if (error instanceof ApplicationNotFoundError) {

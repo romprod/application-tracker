@@ -655,7 +655,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   await locationFilter.getByRole("button", { name: "Done" }).click();
   await expect(opportunitiesTable).toContainText("Prospect Company");
 
-  await page.getByRole("button", { name: "Applications" }).click();
+  await page.getByRole("button", { name: "Applications", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Applications", exact: true }),
   ).toBeVisible();
@@ -1560,6 +1560,50 @@ async function ensureMobileAuditData(page: Page): Promise<void> {
       await expect(applicationDialog).toBeHidden();
     }
   }
+
+  const refreshedApplicationsResponse =
+    await page.request.get("/api/applications");
+  expect(refreshedApplicationsResponse.status()).toBe(200);
+  const refreshedApplicationsBody = record(
+    await refreshedApplicationsResponse.json(),
+    "refreshed mobile audit applications",
+  );
+  if (!Array.isArray(refreshedApplicationsBody.applications)) {
+    throw new Error(
+      "refreshed mobile audit applications must contain an array",
+    );
+  }
+  const exampleStudio = refreshedApplicationsBody.applications
+    .map((application) =>
+      record(application, "refreshed mobile audit application"),
+    )
+    .find((application) => application.companyName === "Example Studio");
+  if (!exampleStudio) {
+    throw new Error("Example Studio is missing from the mobile audit fixture");
+  }
+  const exampleStudioId = requiredString(
+    exampleStudio,
+    "id",
+    "refreshed mobile audit application",
+  );
+  const exampleStudioUpdatedAt = requiredString(
+    exampleStudio,
+    "updatedAt",
+    "refreshed mobile audit application",
+  );
+  const refreshExampleStudio = await page.request.patch(
+    `/api/applications/${encodeURIComponent(exampleStudioId)}`,
+    {
+      data: {
+        companyName: "Example Studio",
+        expectedUpdatedAt: exampleStudioUpdatedAt,
+      },
+      headers: {
+        Origin: new URL(refreshedApplicationsResponse.url()).origin,
+      },
+    },
+  );
+  expect(refreshExampleStudio.status()).toBe(200);
 
   const documentsResponse = await page.request.get("/api/documents");
   expect(documentsResponse.status()).toBe(200);

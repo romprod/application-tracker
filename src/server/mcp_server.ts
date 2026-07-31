@@ -17,10 +17,15 @@ import {
   ApplicationFieldProvenanceVerificationConflictError,
   ApplicationEventNoChangeError,
   ApplicationMergeNotFoundError,
+  ApplicationMergeRecoveryUnsafeError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
   ApplicationNotFoundError,
+  ApplicationRecoveryNotFoundError,
+  ApplicationRecoveryStateError,
+  ApplicationRecoveryVersionConflictError,
+  ApplicationRestoreUnsafeError,
   ApplicationStatusEventConflictError,
   ApplicationStatusRegressionError,
   ApplicationStatusStaleError,
@@ -81,6 +86,13 @@ import {
   verifyApplicationFieldProvenanceSchema,
   workArrangementDetailsSchema,
 } from "../domain/applications.js";
+import {
+  deleteApplicationSchema,
+  listDeletedApplicationsSchema,
+  previewApplicationRestoreSchema,
+  recoverApplicationMergeSchema,
+  restoreApplicationSchema,
+} from "../domain/application_recovery.js";
 import { documentUploadMetadataSchema } from "../domain/documents.js";
 import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { jobPostingInspectionInputSchema } from "../domain/job_postings.js";
@@ -886,6 +898,94 @@ const applicationMergeResultSchema = z.strictObject({
   lineage: applicationMergeLineageSchema.nullable(),
   preview: applicationMergePreviewSchema,
 });
+const applicationDeletionMergeLineageSchema = z.strictObject({
+  id: applicationIdSchema,
+  targetApplicationId: applicationIdSchema,
+  targetCompanyName: z.string(),
+  targetRoleTitle: z.string(),
+});
+const deletedApplicationRecordSchema = z.strictObject({
+  actorDisplayName: z.string(),
+  application: applicationRecordSchema,
+  deletedAt: z.iso.datetime(),
+  id: applicationIdSchema,
+  merge: applicationDeletionMergeLineageSchema.nullable(),
+  reason: z.string().min(3).max(500),
+});
+const deletedApplicationsPageSchema = z.strictObject({
+  applications: z.array(deletedApplicationRecordSchema).max(100),
+  limit: z.number().int().min(1).max(100),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative().max(100),
+  total: z.number().int().nonnegative(),
+});
+const applicationRecoveryConflictSchema = z.strictObject({
+  code: z.enum([
+    "application_changed",
+    "document_relationship_changed",
+    "email_evidence_moved",
+    "legacy_merge_snapshot_unavailable",
+    "merge_recovery_required",
+    "outlook_connection_changed",
+    "posting_moved",
+    "reference_inactive",
+    "source_relationship_changed",
+    "target_changed",
+    "target_unavailable",
+  ]),
+  field: z.enum(["role_type", "source", "status"]).nullable(),
+  message: z.string(),
+  recordId: z.string().nullable(),
+});
+const applicationRestorePreviewSchema = z.strictObject({
+  application: applicationRecordSchema,
+  conflicts: z.array(applicationRecoveryConflictSchema),
+  deletion: deletedApplicationRecordSchema,
+  relationships: z.strictObject({
+    contacts: z.number().int().nonnegative(),
+    documents: z.number().int().nonnegative(),
+    emailEvidence: z.number().int().nonnegative(),
+    jobPostings: z.number().int().nonnegative(),
+    links: z.number().int().nonnegative(),
+    outlookGraphConnectionId: z.uuid().nullable(),
+  }),
+  safeToRestore: z.boolean(),
+});
+const applicationRestorationRecordSchema = z.strictObject({
+  actorDisplayName: z.string(),
+  applicationId: applicationIdSchema,
+  deletionId: applicationIdSchema,
+  id: applicationIdSchema,
+  recoveryType: z.enum(["manual", "merge"]),
+  restoredAt: z.iso.datetime(),
+});
+const applicationRestoreResultSchema = z.strictObject({
+  application: applicationRecordSchema,
+  restoration: applicationRestorationRecordSchema,
+});
+const applicationMergeRecoveryPreviewSchema = z.strictObject({
+  conflicts: z.array(applicationRecoveryConflictSchema),
+  deletion: deletedApplicationRecordSchema,
+  merge: applicationMergeLineageSchema,
+  safeToRecover: z.boolean(),
+  source: applicationRecordSchema,
+  target: applicationRecordSchema.nullable(),
+});
+const applicationMergeRecoveryRecordSchema = z.strictObject({
+  actorDisplayName: z.string(),
+  id: applicationIdSchema,
+  mergeId: applicationIdSchema,
+  recoveredAt: z.iso.datetime(),
+  sourceApplicationId: applicationIdSchema,
+  targetApplicationId: applicationIdSchema,
+});
+const applicationMergeRecoveryResultSchema = z.strictObject({
+  preview: applicationMergeRecoveryPreviewSchema,
+  recovery: applicationMergeRecoveryRecordSchema,
+  source: applicationRecordSchema,
+  target: applicationRecordSchema,
+});
 const documentImportCapabilitiesSchema = z.strictObject({
   maxDocumentBytes: z.number().int().positive(),
   maxDocumentChunkBytes: z
@@ -1061,6 +1161,16 @@ function executeTool(
         ? failedToolResult(error.code)
         : failedToolResult("internal_error");
     }
+    if (error instanceof ApplicationRecoveryNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_recovery_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationRecoveryStateError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
     if (error instanceof DocumentNotFoundError) {
       return recordAuditEvent(audit, logger, tool, targetType, "not_found")
         ? failedToolResult("document_not_found")
@@ -1210,6 +1320,31 @@ function executeWriteTool(
     if (error instanceof ApplicationMergeUnsafeError) {
       return recordAuditEvent(audit, logger, tool, targetType, "error")
         ? failedToolResult("application_merge_unresolved_conflicts")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationRecoveryNotFoundError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "not_found")
+        ? failedToolResult("application_recovery_not_found")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationRecoveryStateError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult(error.code)
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationRecoveryVersionConflictError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_recovery_conflict")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationRestoreUnsafeError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_restore_unsafe")
+        : failedToolResult("internal_error");
+    }
+    if (error instanceof ApplicationMergeRecoveryUnsafeError) {
+      return recordAuditEvent(audit, logger, tool, targetType, "error")
+        ? failedToolResult("application_merge_recovery_unsafe")
         : failedToolResult("internal_error");
     }
     if (error instanceof ApplicationConflictError) {
@@ -1454,6 +1589,46 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "list_deleted_applications",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Return one bounded page of currently deleted applications with deletion reason, actor, time, and optional merge target lineage. Normal application reads remain active-only.",
+      inputSchema: listDeletedApplicationsSchema,
+      outputSchema: deletedApplicationsPageSchema,
+      title: "List deleted applications",
+    },
+    (input) =>
+      executeTool(
+        "list_deleted_applications",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.listDeletedApplications(input),
+      ),
+  );
+
+  server.registerTool(
+    "preview_application_restore",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Preview restoration of one soft-deleted application without mutation. Reports stale versions, inactive references, changed documents or Graph assignment, moved email or posting identities, and whether merge recovery is required.",
+      inputSchema: previewApplicationRestoreSchema,
+      outputSchema: applicationRestorePreviewSchema,
+      title: "Preview application restore",
+    },
+    (input) =>
+      executeTool(
+        "preview_application_restore",
+        "application",
+        logger,
+        options.audit,
+        () => tools.previewApplicationRestore(input),
+      ),
+  );
+
+  server.registerTool(
     "get_application",
     {
       annotations: readOnlyAnnotations,
@@ -1594,6 +1769,37 @@ export function createApplicationMcpServer(
             logger,
             options.audit,
             () => tools.mergeApplications(input),
+          ),
+  );
+
+  server.registerTool(
+    "recover_application_merge",
+    {
+      annotations: deleteAnnotations,
+      description:
+        "Preview or recover one application merge. Preview is read-only. Apply requires confirm=true and both current updatedAt values, preserves immutable merge and deletion history, and refuses recovery unless the merge-time snapshot proves the target and every relationship being reversed are unchanged.",
+      inputSchema: recoverApplicationMergeSchema,
+      outputSchema: z.union([
+        applicationMergeRecoveryPreviewSchema,
+        applicationMergeRecoveryResultSchema,
+      ]),
+      title: "Recover application merge",
+    },
+    (input) =>
+      input.mode === "preview"
+        ? executeTool(
+            "recover_application_merge",
+            "application",
+            logger,
+            options.audit,
+            () => tools.recoverApplicationMerge(input),
+          )
+        : executeWriteTool(
+            "recover_application_merge",
+            "application",
+            logger,
+            options.audit,
+            () => tools.recoverApplicationMerge(input),
           ),
   );
 
@@ -2023,25 +2229,42 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "restore_application",
+    {
+      annotations: writeAnnotations,
+      description:
+        "Atomically restore one soft-deleted non-merge application. Requires confirm=true plus the deletedAt and updatedAt returned by preview_application_restore, and refuses stale versions or any remaining relationship or reference conflict.",
+      inputSchema: restoreApplicationSchema,
+      outputSchema: applicationRestoreResultSchema,
+      title: "Restore application",
+    },
+    (input) =>
+      executeWriteTool(
+        "restore_application",
+        "application",
+        logger,
+        options.audit,
+        () => tools.restoreApplication(input),
+      ),
+  );
+
+  server.registerTool(
     "delete_application",
     {
       annotations: deleteAnnotations,
       description:
-        "Soft-delete an application from the bound workspace when this connection has read-and-write access. Pass confirm=true only after the user has explicitly approved this destructive action.",
-      inputSchema: z.strictObject({
-        applicationId: applicationIdSchema,
-        confirm: z.literal(true),
-      }),
+        "Soft-delete an application from the bound workspace when this connection has read-and-write access. Requires a 3-500 character reason; pass confirm=true only after the user has explicitly approved this destructive action.",
+      inputSchema: deleteApplicationSchema.extend({ confirm: z.literal(true) }),
       outputSchema: deleteApplicationResultSchema,
       title: "Delete application",
     },
-    ({ applicationId }) =>
+    ({ applicationId, reason }) =>
       executeWriteTool(
         "delete_application",
         "application",
         logger,
         options.audit,
-        () => tools.deleteApplication(applicationId),
+        () => tools.deleteApplication({ applicationId, reason }),
       ),
   );
 
@@ -2157,7 +2380,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires explicit confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires an explicit reason and confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

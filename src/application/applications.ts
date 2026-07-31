@@ -25,6 +25,12 @@ import type {
   WorkArrangement,
   WorkArrangementDetails,
 } from "../domain/applications.js";
+import type {
+  DeleteApplicationInput,
+  ListDeletedApplicationsInput,
+  RecoverApplicationMergeInput,
+  RestoreApplicationInput,
+} from "../domain/application_recovery.js";
 import type { DocumentRecord } from "./documents.js";
 import type {
   ApplicationEmailEvidence,
@@ -366,6 +372,126 @@ export interface DeleteApplicationRecord {
   actorUserId: string;
   applicationId: string;
   deletedAt: string;
+  reason: string;
+  workspaceId: string;
+}
+
+export interface ApplicationDeletionMergeLineage {
+  id: string;
+  targetApplicationId: string;
+  targetCompanyName: string;
+  targetRoleTitle: string;
+}
+
+export interface DeletedApplicationRecord {
+  actorDisplayName: string;
+  application: ApplicationRecord;
+  deletedAt: string;
+  id: string;
+  merge: ApplicationDeletionMergeLineage | null;
+  reason: string;
+}
+
+export interface DeletedApplicationsPage {
+  applications: DeletedApplicationRecord[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  total: number;
+}
+
+export type ApplicationRecoveryConflictCode =
+  | "application_changed"
+  | "document_relationship_changed"
+  | "email_evidence_moved"
+  | "legacy_merge_snapshot_unavailable"
+  | "merge_recovery_required"
+  | "outlook_connection_changed"
+  | "posting_moved"
+  | "reference_inactive"
+  | "source_relationship_changed"
+  | "target_changed"
+  | "target_unavailable";
+
+export interface ApplicationRecoveryConflict {
+  code: ApplicationRecoveryConflictCode;
+  field: "role_type" | "source" | "status" | null;
+  message: string;
+  recordId: string | null;
+}
+
+export interface ApplicationRecoveryRelationshipSummary {
+  contacts: number;
+  documents: number;
+  emailEvidence: number;
+  jobPostings: number;
+  links: number;
+  outlookGraphConnectionId: string | null;
+}
+
+export interface ApplicationRestorePreview {
+  application: ApplicationRecord;
+  conflicts: ApplicationRecoveryConflict[];
+  deletion: DeletedApplicationRecord;
+  relationships: ApplicationRecoveryRelationshipSummary;
+  safeToRestore: boolean;
+}
+
+export interface ApplicationRestorationRecord {
+  actorDisplayName: string;
+  applicationId: string;
+  deletionId: string;
+  id: string;
+  recoveryType: "manual" | "merge";
+  restoredAt: string;
+}
+
+export interface ApplicationRestoreResult {
+  application: ApplicationRecord;
+  restoration: ApplicationRestorationRecord;
+}
+
+export interface ApplicationMergeRecoveryRecord {
+  actorDisplayName: string;
+  id: string;
+  mergeId: string;
+  recoveredAt: string;
+  sourceApplicationId: string;
+  targetApplicationId: string;
+}
+
+export interface ApplicationMergeRecoveryPreview {
+  conflicts: ApplicationRecoveryConflict[];
+  deletion: DeletedApplicationRecord;
+  merge: ApplicationMergeLineage;
+  safeToRecover: boolean;
+  source: ApplicationRecord;
+  target: ApplicationRecord | null;
+}
+
+export interface ApplicationMergeRecoveryResult {
+  preview: ApplicationMergeRecoveryPreview;
+  recovery: ApplicationMergeRecoveryRecord;
+  source: ApplicationRecord;
+  target: ApplicationRecord;
+}
+
+export interface RestoreApplicationRecord {
+  actorUserId: string;
+  applicationId: string;
+  expectedDeletedAt: string;
+  expectedUpdatedAt: string;
+  restoredAt: string;
+  workspaceId: string;
+}
+
+export interface RecoverApplicationMergeRecord {
+  actorUserId: string;
+  expectedSourceUpdatedAt: string;
+  expectedTargetUpdatedAt: string;
+  recoveredAt: string;
+  sourceApplicationId: string;
   workspaceId: string;
 }
 
@@ -581,7 +707,23 @@ export interface ApplicationsRepository {
   ): ApplicationDuplicateAudit;
   createApplication(input: CreateApplicationRecord): ApplicationRecord;
   deleteApplication(input: DeleteApplicationRecord): boolean;
+  listDeletedApplications(
+    workspaceId: string,
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage;
   mergeApplications(input: ApplyApplicationMergeRecord): ApplicationMergeResult;
+  previewApplicationMergeRecovery(
+    workspaceId: string,
+    sourceApplicationId: string,
+  ): ApplicationMergeRecoveryPreview;
+  previewApplicationRestore(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationRestorePreview;
+  recoverApplicationMerge(
+    input: RecoverApplicationMergeRecord,
+  ): ApplicationMergeRecoveryResult;
+  restoreApplication(input: RestoreApplicationRecord): ApplicationRestoreResult;
   previewApplicationMerge(
     workspaceId: string,
     sourceApplicationId: string,
@@ -620,6 +762,47 @@ export class ApplicationNotFoundError extends Error {
   public constructor() {
     super("Application not found");
     this.name = "ApplicationNotFoundError";
+  }
+}
+
+export class ApplicationRecoveryNotFoundError extends Error {
+  public constructor() {
+    super("Application recovery target not found");
+    this.name = "ApplicationRecoveryNotFoundError";
+  }
+}
+
+export class ApplicationRecoveryStateError extends Error {
+  public constructor(
+    public readonly code:
+      | "application_already_active"
+      | "application_already_restored"
+      | "merge_recovery_required"
+      | "merge_target_unavailable",
+  ) {
+    super(code);
+    this.name = "ApplicationRecoveryStateError";
+  }
+}
+
+export class ApplicationRecoveryVersionConflictError extends Error {
+  public constructor() {
+    super("The recovery target changed since it was previewed");
+    this.name = "ApplicationRecoveryVersionConflictError";
+  }
+}
+
+export class ApplicationRestoreUnsafeError extends Error {
+  public constructor(public readonly preview: ApplicationRestorePreview) {
+    super("The application cannot be restored while conflicts remain");
+    this.name = "ApplicationRestoreUnsafeError";
+  }
+}
+
+export class ApplicationMergeRecoveryUnsafeError extends Error {
+  public constructor(public readonly preview: ApplicationMergeRecoveryPreview) {
+    super("The merge cannot be recovered while conflicts remain");
+    this.name = "ApplicationMergeRecoveryUnsafeError";
   }
 }
 
@@ -936,14 +1119,70 @@ export class ApplicationLedgerService {
     });
   }
 
-  public deleteApplication(
+  public listDeletedApplications(
+    actor: AuthenticatedActor,
+    input: ListDeletedApplicationsInput,
+  ): DeletedApplicationsPage {
+    return this.repository.listDeletedApplications(actor.workspaceId, input);
+  }
+
+  public previewApplicationRestore(
     actor: AuthenticatedActor,
     applicationId: string,
+  ): ApplicationRestorePreview {
+    return this.repository.previewApplicationRestore(
+      actor.workspaceId,
+      applicationId,
+    );
+  }
+
+  public restoreApplication(
+    actor: AuthenticatedActor,
+    input: RestoreApplicationInput,
+  ): ApplicationRestoreResult {
+    return this.repository.restoreApplication({
+      actorUserId: actor.userId,
+      applicationId: input.applicationId,
+      expectedDeletedAt: input.expectedDeletedAt,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      restoredAt: nextUpdatedAt(input.expectedUpdatedAt, this.clock()),
+      workspaceId: actor.workspaceId,
+    });
+  }
+
+  public recoverApplicationMerge(
+    actor: AuthenticatedActor,
+    input: RecoverApplicationMergeInput,
+  ): ApplicationMergeRecoveryPreview | ApplicationMergeRecoveryResult {
+    if (input.mode === "preview") {
+      return this.repository.previewApplicationMergeRecovery(
+        actor.workspaceId,
+        input.sourceApplicationId,
+      );
+    }
+    return this.repository.recoverApplicationMerge({
+      actorUserId: actor.userId,
+      expectedSourceUpdatedAt: input.expectedSourceUpdatedAt,
+      expectedTargetUpdatedAt: input.expectedTargetUpdatedAt,
+      recoveredAt: nextMergeTimestamp(
+        input.expectedSourceUpdatedAt,
+        input.expectedTargetUpdatedAt,
+        this.clock(),
+      ),
+      sourceApplicationId: input.sourceApplicationId,
+      workspaceId: actor.workspaceId,
+    });
+  }
+
+  public deleteApplication(
+    actor: AuthenticatedActor,
+    input: DeleteApplicationInput,
   ): void {
     const deleted = this.repository.deleteApplication({
       actorUserId: actor.userId,
-      applicationId,
+      applicationId: input.applicationId,
       deletedAt: this.clock().toISOString(),
+      reason: input.reason,
       workspaceId: actor.workspaceId,
     });
     if (!deleted) throw new ApplicationNotFoundError();

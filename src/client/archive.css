@@ -5298,6 +5298,17 @@ a {
     grid-template-columns: 1fr 1fr;
   }
 
+  .applications-page .tracker-page-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .applications-page .tracker-page-actions .tracker-button {
+    padding-right: 6px;
+    padding-left: 6px;
+    line-height: 1.15;
+  }
+
   .tracker-dashboard-hero {
     min-height: 0;
     grid-template-columns: 1fr;
@@ -5920,5 +5931,185 @@ a {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Deleted application recovery */
+.deleted-applications-modal {
+  width: min(1040px, 100%);
+}
+
+.deleted-applications-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+  overflow: hidden;
+}
+
+.deleted-applications-layout > section {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.deleted-applications-layout > section:first-child {
+  background: var(--archive-sunken);
+  border-right: 1px solid var(--archive-line);
+}
+
+.deleted-application-list {
+  display: grid;
+  gap: 5px;
+  padding: 0;
+  margin: 0 0 12px;
+  list-style: none;
+}
+
+.deleted-application-list button {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  color: var(--archive-ink);
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-line);
+  text-align: left;
+}
+
+.deleted-application-list button:hover,
+.deleted-application-list button[aria-pressed="true"] {
+  border-color: var(--archive-action);
+  box-shadow: inset 3px 0 0 var(--archive-action);
+}
+
+.deleted-application-list button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.deleted-application-list button > span:last-child {
+  justify-items: end;
+  color: var(--archive-ink-3);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px;
+}
+
+.deleted-application-list strong,
+.deleted-application-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleted-application-list strong {
+  font-size: 12.5px;
+}
+
+.deleted-application-list small {
+  color: var(--archive-ink-3);
+  font-size: 10.5px;
+}
+
+.deleted-application-preview {
+  align-content: start;
+}
+
+.deleted-application-preview h3 {
+  margin: 7px 0 4px;
+  font-family: "Source Serif 4 Variable", Georgia, serif;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.deleted-application-preview > p:not(.form-error, .tracker-loading) {
+  margin: 0 0 16px;
+  color: var(--archive-ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.deleted-application-preview dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 18px;
+  background: var(--archive-line);
+  border: 1px solid var(--archive-line);
+  gap: 1px;
+}
+
+.deleted-application-preview dl > div {
+  min-width: 0;
+  padding: 10px;
+  background: var(--archive-surface);
+}
+
+.deleted-application-preview dt {
+  color: var(--archive-ink-3);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.deleted-application-preview dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.deleted-recovery-result {
+  padding: 14px;
+  margin-top: 14px;
+  background: var(--archive-action-soft);
+  border: 1px solid #d8bd8c;
+  border-left: 3px solid var(--archive-action);
+}
+
+.deleted-recovery-result > strong {
+  font-family: "Source Serif 4 Variable", Georgia, serif;
+  font-size: 16px;
+}
+
+.deleted-recovery-result ul {
+  display: grid;
+  gap: 5px;
+  padding-left: 18px;
+  margin: 10px 0 0;
+  color: var(--archive-stop);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.deleted-recovery-result p {
+  margin: 9px 0 0;
+  color: var(--archive-ink-2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px;
+}
+
+@media (max-width: 760px) {
+  .deleted-applications-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .deleted-applications-layout > section {
+    overflow: visible;
+  }
+
+  .deleted-applications-layout > section:first-child {
+    border-right: 0;
+    border-bottom: 1px solid var(--archive-line);
+  }
+
+  .deleted-application-preview dl {
+    grid-template-columns: 1fr;
   }
 }
