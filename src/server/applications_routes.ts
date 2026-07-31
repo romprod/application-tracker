@@ -12,7 +12,10 @@ import {
   type ApplicationLedgerService,
 } from "../application/applications.js";
 import type { AuthService } from "../application/auth.js";
-import type { JobEmailReconciliationService } from "../application/job_email_reconciliation.js";
+import {
+  JobEmailEvidenceConflictError,
+  type JobEmailReconciliationService,
+} from "../application/job_email_reconciliation.js";
 import {
   applicationIdSchema,
   auditDuplicateApplicationsSchema,
@@ -20,6 +23,7 @@ import {
   mergeApplicationsSchema,
   updateApplicationSchema,
 } from "../domain/applications.js";
+import { linkEmailEvidencePayloadSchema } from "../domain/job_email_reconciliation.js";
 import { requestSessionToken } from "./auth_routes.js";
 
 function hasSameHostOrigin(request: Request): boolean {
@@ -217,6 +221,45 @@ export function createApplicationsRouter(
     } catch (error) {
       if (error instanceof ApplicationNotFoundError) {
         response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/:applicationId/evidence", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    const parsedInput = linkEmailEvidencePayloadSchema.safeParse(request.body);
+    if (!parsedId.success || !parsedInput.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    if (!jobEmailReconciliationService) {
+      response
+        .status(503)
+        .json({ error: { code: "job_email_reconciliation_unavailable" } });
+      return;
+    }
+    try {
+      const result = jobEmailReconciliationService.linkEvidence(actor, {
+        applicationId: parsedId.data,
+        ...parsedInput.data,
+      });
+      response.status(result.emailEvidenceLinked ? 201 : 200).json(result);
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      if (error instanceof JobEmailEvidenceConflictError) {
+        response.status(409).json({ error: { code: "job_email_conflict" } });
         return;
       }
       next(error);

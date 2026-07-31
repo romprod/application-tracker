@@ -72,7 +72,7 @@ The local server registers 34 tools:
 | `find_duplicate_applications`         | Exact-name wrapper over the duplicate audit                |
 | `merge_applications`                  | Preview or apply one explicit audited merge                |
 | `match_job_application_email`         | Deterministic posting, email, or company match             |
-| `link_email_evidence`                 | Idempotently link one Message-ID to an existing record     |
+| `link_email_evidence`                 | Idempotently link one typed Message-ID to an existing row  |
 | `reconcile_application_from_evidence` | Atomic link or match/create/update reconciliation          |
 | `sync_outlook_email_evidence`         | Server-side Outlook search, score, link, and verification  |
 | `reconcile_outlook_graph_connection`  | Incremental Graph connection evidence reconciliation       |
@@ -133,11 +133,15 @@ from a configured Graph connection. Existing and manual records remain
 unassigned until a user selects one.
 
 To link an Outlook message to a known application, pass its stable RFC
-Message-ID, received time, and Outlook `webUrl` to `link_email_evidence`. Use
-`reconcile_application_from_evidence` to atomically link explicit evidence or
-run the established match/create/update workflow. The stored link is returned
-by `get_application` in `emailEvidence[].webUrl`. This dedicated evidence link
-is separate from the application's user-managed related `links`.
+Message-ID, received time, optional Outlook `webUrl`, and one required
+`evidenceType` to `link_email_evidence`. Supported types are
+`original_advert`, `application_confirmation`, `recruiter_message`,
+`interview_invitation`, `rejection`, `offer`, `withdrawal`, `follow_up`, and
+`other`. Use `reconcile_application_from_evidence` to atomically link explicit
+evidence or run the established match/create/update workflow. The stored type
+and link are returned by `get_application` in `emailEvidence[].evidenceType`
+and `emailEvidence[].webUrl`. This dedicated evidence link is separate from
+the application's user-managed related `links`.
 
 When server-side Outlook synchronization is configured, a client that already
 has one application ID calls `sync_outlook_email_evidence` directly. It must not

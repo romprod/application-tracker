@@ -60,6 +60,22 @@ export const jobEmailEvidenceSchema = z.strictObject({
   webUrl: optionalHttpUrlSchema,
 });
 
+export const applicationEmailEvidenceTypes = [
+  "original_advert",
+  "application_confirmation",
+  "recruiter_message",
+  "interview_invitation",
+  "rejection",
+  "offer",
+  "withdrawal",
+  "follow_up",
+  "other",
+] as const;
+
+export const applicationEmailEvidenceTypeSchema = z.enum(
+  applicationEmailEvidenceTypes,
+);
+
 export const matchJobApplicationEmailSchema = z
   .strictObject({
     companyName: optionalIdentityText(160),
@@ -86,6 +102,7 @@ export const upsertApplicationFromEmailSchema = z
   .strictObject({
     application: createApplicationSchema,
     email: jobEmailEvidenceSchema,
+    evidenceType: applicationEmailEvidenceTypeSchema.optional(),
     posting: jobPostingEvidenceSchema.optional(),
     statusOverride: z
       .strictObject({
@@ -105,9 +122,13 @@ export const upsertApplicationFromEmailSchema = z
     }
   });
 
-export const linkEmailEvidenceSchema = z.strictObject({
-  applicationId: applicationIdSchema,
+export const linkEmailEvidencePayloadSchema = z.strictObject({
   email: jobEmailEvidenceSchema,
+  evidenceType: applicationEmailEvidenceTypeSchema,
+});
+
+export const linkEmailEvidenceSchema = linkEmailEvidencePayloadSchema.extend({
+  applicationId: applicationIdSchema,
 });
 
 export const linkApplicationEvidenceSchema = linkEmailEvidenceSchema.extend({
@@ -129,6 +150,9 @@ export const reconcileApplicationFromEvidenceSchema = z.discriminatedUnion(
 
 export type JobPostingEvidenceInput = z.infer<typeof jobPostingEvidenceSchema>;
 export type JobEmailEvidenceInput = z.infer<typeof jobEmailEvidenceSchema>;
+export type ApplicationEmailEvidenceType = z.infer<
+  typeof applicationEmailEvidenceTypeSchema
+>;
 export type LinkApplicationEvidenceInput = z.infer<
   typeof linkApplicationEvidenceSchema
 >;

@@ -191,6 +191,12 @@ assignment table. Existing applications remain unassigned. Deleting a
 connection cascades through assignments only; applications and email evidence
 remain stored.
 
+The thirty-fifth migration adds an immutable classification to every
+`application_email_evidence` row. Existing rows migrate to `other`; new direct
+links must use one of the bounded evidence types. The database constraint
+rejects unsupported values, while the workspace-unique Message-ID constraint
+continues to make exact retries idempotent.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

@@ -30,6 +30,7 @@ function emailEvidenceSelect(): string {
   return `SELECT
             id,
             application_id AS applicationId,
+            evidence_type AS evidenceType,
             message_id AS messageId,
             web_url AS webUrl,
             received_at AS receivedAt,
@@ -120,6 +121,7 @@ export class SqliteJobEmailReconciliationRepository implements JobEmailReconcili
     if (existing) {
       if (
         existing.applicationId !== input.applicationId ||
+        existing.evidenceType !== input.evidenceType ||
         existing.receivedAt !== input.receivedAt ||
         (existing.webUrl !== null &&
           input.webUrl !== null &&
@@ -150,6 +152,7 @@ export class SqliteJobEmailReconciliationRepository implements JobEmailReconcili
     const record: ApplicationEmailEvidence = {
       applicationId: input.applicationId,
       createdAt: input.occurredAt,
+      evidenceType: input.evidenceType,
       id: randomUUID(),
       messageId: input.messageId,
       receivedAt: input.receivedAt,
@@ -160,14 +163,15 @@ export class SqliteJobEmailReconciliationRepository implements JobEmailReconcili
       this.database
         .prepare(
           `INSERT INTO application_email_evidence
-             (id, workspace_id, application_id, message_id, web_url,
-              received_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, workspace_id, application_id, evidence_type, message_id,
+              web_url, received_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           record.id,
           input.workspaceId,
           record.applicationId,
+          record.evidenceType,
           record.messageId,
           record.webUrl,
           record.receivedAt,

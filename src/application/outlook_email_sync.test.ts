@@ -220,6 +220,12 @@ describe("OutlookEmailSyncService", () => {
           qualified: true,
         },
       ],
+      emailEvidence: [
+        {
+          evidenceType: "application_confirmation",
+          messageId: "<message-1@example.com>",
+        },
+      ],
       link: { attempted: true, created: true },
       outcome: "linked",
       verification: {
@@ -322,6 +328,7 @@ describe("OutlookEmailSyncService", () => {
         messageId: "<message-1@example.com>",
         receivedAt: "2026-07-21T15:30:00.000Z",
       },
+      evidenceType: "other",
     });
 
     const result = sync.commit(
@@ -414,6 +421,7 @@ describe("OutlookEmailSyncService", () => {
         messageId: "<concurrent@example.com>",
         receivedAt: "2026-07-21T15:45:00.000Z",
       },
+      evidenceType: "other",
     });
 
     expect(() => sync.commit(actor, prepared)).toThrow(

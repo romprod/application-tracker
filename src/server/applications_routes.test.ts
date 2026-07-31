@@ -223,6 +223,19 @@ describe("application ledger routes", () => {
     await request(app)
       .get("/api/applications/123e4567-e89b-12d3-a456-426614174000/evidence")
       .expect(401, { error: { code: "authentication_required" } });
+    await sameOrigin(
+      request(app).post(
+        "/api/applications/123e4567-e89b-12d3-a456-426614174000/evidence",
+      ),
+    )
+      .send({
+        email: {
+          messageId: "<unauthenticated@example.com>",
+          receivedAt: "2026-07-18T11:45:00.000Z",
+        },
+        evidenceType: "other",
+      })
+      .expect(401, { error: { code: "authentication_required" } });
 
     const cookie = await login(app, "alex", "correct horse battery staple");
     await request(app)
@@ -236,6 +249,18 @@ describe("application ledger routes", () => {
       .set("Cookie", cookie)
       .set("Host", "tracker.example.test")
       .send({ statusId: references.interview })
+      .expect(403, { error: { code: "csrf_rejected" } });
+    await request(app)
+      .post("/api/applications/123e4567-e89b-12d3-a456-426614174000/evidence")
+      .set("Cookie", cookie)
+      .set("Host", "tracker.example.test")
+      .send({
+        email: {
+          messageId: "<csrf@example.com>",
+          receivedAt: "2026-07-18T11:45:00.000Z",
+        },
+        evidenceType: "other",
+      })
       .expect(403, { error: { code: "csrf_rejected" } });
     await request(app)
       .delete("/api/applications/123e4567-e89b-12d3-a456-426614174000")
@@ -278,6 +303,7 @@ describe("application ledger routes", () => {
     }
     jobEmailRepository.linkEmailEvidence({
       applicationId,
+      evidenceType: "application_confirmation",
       messageId: "<application@example.com>",
       occurredAt: "2026-07-18T12:16:00.000Z",
       receivedAt: "2026-07-18T11:45:00.000Z",
@@ -301,6 +327,7 @@ describe("application ledger routes", () => {
       emailEvidence: [
         {
           applicationId,
+          evidenceType: "application_confirmation",
           messageId: "<application@example.com>",
           receivedAt: "2026-07-18T11:45:00.000Z",
           webUrl: "https://outlook.office.com/mail/inbox/id/example",
@@ -315,6 +342,89 @@ describe("application ledger routes", () => {
         },
       ],
     });
+  });
+
+  it("idempotently links typed email evidence to an existing application", async () => {
+    const { app, references } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput(references))
+      .expect(201);
+    const application = createdApplication(created);
+    const applicationId = application.id;
+    if (typeof applicationId !== "string") {
+      throw new Error("Expected an application ID");
+    }
+    const input = {
+      email: {
+        messageId: "<http-link@example.com>",
+        receivedAt: "2026-07-18T11:45:00.000Z",
+        webUrl: "https://outlook.office.com/mail/inbox/id/http-link",
+      },
+      evidenceType: "application_confirmation",
+    };
+
+    const first = await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send(input)
+      .expect(201);
+    expect(responseBody(first)).toMatchObject({
+      action: "linked",
+      application,
+      emailEvidence: [
+        {
+          applicationId,
+          evidenceType: "application_confirmation",
+          messageId: input.email.messageId,
+          receivedAt: input.email.receivedAt,
+          webUrl: input.email.webUrl,
+        },
+      ],
+      emailEvidenceLinked: true,
+      postingLinked: false,
+    });
+
+    await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send(input)
+      .expect(200)
+      .expect((response) => {
+        expect(responseBody(response)).toMatchObject({
+          emailEvidenceLinked: false,
+        });
+      });
+
+    await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send({ ...input, evidenceType: "rejection" })
+      .expect(409, { error: { code: "job_email_conflict" } });
+
+    await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send({ ...input, evidenceType: "unsupported" })
+      .expect(400, { error: { code: "validation_error" } });
+
+    await sameOrigin(request(app).delete(`/api/applications/${applicationId}`))
+      .set("Cookie", cookie)
+      .expect(204);
+    await sameOrigin(
+      request(app).post(`/api/applications/${applicationId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        ...input,
+        email: { ...input.email, messageId: "<deleted@example.com>" },
+      })
+      .expect(404, { error: { code: "application_not_found" } });
   });
 
   it("audits, previews, and applies an explicit application merge", async () => {
@@ -438,6 +548,18 @@ describe("application ledger routes", () => {
       .get(`/api/applications/${String(source.id)}/events`)
       .set("Cookie", cookie)
       .expect(200);
+    await sameOrigin(
+      request(app).post(`/api/applications/${String(source.id)}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        email: {
+          messageId: "<merged-source@example.com>",
+          receivedAt: "2026-07-18T11:45:00.000Z",
+        },
+        evidenceType: "other",
+      })
+      .expect(404, { error: { code: "application_not_found" } });
   });
 
   it("lets a member create and list sanitized workspace applications", async () => {
@@ -656,6 +778,18 @@ describe("application ledger routes", () => {
     await request(app)
       .get(`/api/applications/${missingId}/evidence`)
       .set("Cookie", cookie)
+      .expect(404, { error: { code: "application_not_found" } });
+    await sameOrigin(
+      request(app).post(`/api/applications/${missingId}/evidence`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        email: {
+          messageId: "<missing@example.com>",
+          receivedAt: "2026-07-18T11:45:00.000Z",
+        },
+        evidenceType: "other",
+      })
       .expect(404, { error: { code: "application_not_found" } });
     await request(app)
       .get("/api/applications/not-a-uuid/evidence")
