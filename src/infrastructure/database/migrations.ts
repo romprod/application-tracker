@@ -39,6 +39,7 @@ import { mcpOutlookJobDigestSearchAuditMigration } from "./migrations/034_mcp_ou
 import { applicationEmailEvidenceTypesMigration } from "./migrations/035_application_email_evidence_types.js";
 import { applicationActivityTimelineMigration } from "./migrations/036_application_activity_timeline.js";
 import { applicationFieldProvenanceMigration } from "./migrations/037_application_field_provenance.js";
+import { applicationAttentionQueueMigration } from "./migrations/038_application_attention_queue.js";
 
 export interface Migration {
   name: string;
@@ -97,6 +98,7 @@ export const applicationMigrations: readonly Migration[] = [
   applicationEmailEvidenceTypesMigration,
   applicationActivityTimelineMigration,
   applicationFieldProvenanceMigration,
+  applicationAttentionQueueMigration,
 ];
 
 const createMigrationTable = `

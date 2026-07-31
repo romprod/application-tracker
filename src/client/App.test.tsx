@@ -493,6 +493,38 @@ function createApplicationsClient(
     recordApplicationFieldProvenance: vi
       .fn<ApplicationsClient["recordApplicationFieldProvenance"]>()
       .mockRejectedValue(new Error("Provenance response not configured")),
+    queryApplicationAttention: vi
+      .fn<ApplicationsClient["queryApplicationAttention"]>()
+      .mockResolvedValue({
+        applications: applications.map((application) => ({
+          application,
+          reasons: [
+            {
+              code: "next_action_overdue",
+              field: null,
+              label: "Next action is overdue",
+              state: null,
+            },
+          ],
+        })),
+        limit: 25,
+        nextOffset: null,
+        offset: 0,
+        returned: applications.length,
+        summary: {
+          byReason: [
+            {
+              code: "next_action_overdue",
+              count: applications.length,
+              label: "Next action overdue",
+            },
+          ],
+          byState: [],
+          queuedApplications: applications.length,
+          totalApplications: applications.length,
+        },
+        total: applications.length,
+      }),
     updateApplication: vi
       .fn<ApplicationsClient["updateApplication"]>()
       .mockImplementation((id, input) => {
@@ -885,6 +917,7 @@ describe("application shell", () => {
     expect(
       screen.getAllByText("Send the portfolio follow-up.").length,
     ).toBeGreaterThan(0);
+    expect(screen.getByText("Next action is overdue")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Sign out" }),
     ).toBeInTheDocument();

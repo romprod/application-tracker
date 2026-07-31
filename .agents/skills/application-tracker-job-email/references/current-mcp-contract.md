@@ -15,6 +15,7 @@ this reference.
 - [Job-posting inspection](#job-posting-inspection)
 - [Match input and result](#match-input-and-result)
 - [Evidence gaps and data quality](#evidence-gaps-and-data-quality)
+- [Attention queue](#attention-queue)
 - [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
 - [Evidence linking and atomic reconciliation](#evidence-linking-and-atomic-reconciliation)
 - [Immutable application events](#immutable-application-events)
@@ -390,6 +391,22 @@ missing dedicated evidence, source, source URL, role type, location, working
 arrangement, non-terminal next action, and inconsistent action/due-date pairs.
 Evidence and optional-field gaps are signals for review, not permission to
 invent or overwrite data.
+
+## Attention queue
+
+`query_application_attention` returns one bounded, deterministic page plus
+workspace-level counts from the same reason model. It supports combined
+free-text, active or terminal lifecycle, custom status IDs, applied and updated
+date ranges, overdue or missing next action, missing scalar or evidence fields,
+duplicate risk, stable reason codes, and provenance-state filters.
+
+Every item contains the application and explicit reason codes and human labels.
+The queue keeps `missing`, `not_disclosed`, `not_applicable`, `conflicting`,
+`stale`, and `inferred_unverified` separate and exposes no completeness
+percentage. Its priority order is active before terminal, interview or offer
+stage, overdue action, missing evidence, duplicate risk, unresolved conflicts,
+then newest update and stable application ID. Continue with `nextOffset` only;
+do not enlarge the 100-record page limit or recreate the order client-side.
 
 ## Duplicate audit and application merge
 

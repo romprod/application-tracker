@@ -11,6 +11,7 @@ import {
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
+import { SqliteReferenceValuesRepository } from "./reference_values_repository.js";
 import { SqliteSetupRepository } from "./setup_repository.js";
 
 const createdAt = "2026-07-18T12:00:00.000Z";
@@ -1431,6 +1432,20 @@ describe("SqliteApplicationsRepository", () => {
       expect(repository.listApplications(setup.workspace.id)[0]?.salary).toBe(
         "Original wording remains authoritative",
       );
+      expect(
+        repository.queryApplicationAttention({
+          asOfDate: "2026-07-31",
+          attentionOnly: true,
+          fieldStates: ["conflicting", "stale"],
+          lifecycle: "all",
+          limit: 25,
+          offset: 0,
+          workspaceId: setup.workspace.id,
+        }).items[0]?.signals,
+      ).toMatchObject({
+        fieldConflicting: ["salary"],
+        fieldStale: ["salary"],
+      });
 
       const retried = repository.recordApplicationFieldProvenance({
         applicationId: application.id,
@@ -1504,6 +1519,250 @@ describe("SqliteApplicationsRepository", () => {
           application.id,
         ),
       ).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("queries one bounded attention page with combined filters and shared reason signals", () => {
+    const { database, repository, setup } = createRepository();
+    try {
+      const prospectStatusId = referenceId(
+        database,
+        setup.workspace.id,
+        "status",
+        "Prospect",
+      );
+      const create = (input: {
+        companyName: string;
+        location: string | null;
+        nextAction: string | null;
+        nextActionDue: string | null;
+        salary: string | null;
+        sourceUrl: string | null;
+        workArrangement: "hybrid" | null;
+      }) =>
+        repository.createApplication({
+          appliedOn: null,
+          companyName: input.companyName,
+          contacts: [],
+          createdAt,
+          createdByUserId: setup.administrator.id,
+          location: input.location,
+          nextAction: input.nextAction,
+          nextActionDue: input.nextActionDue,
+          notes: null,
+          roleTitle: "Platform Engineer",
+          salary: input.salary,
+          sourceUrl: input.sourceUrl,
+          statusId: prospectStatusId,
+          workArrangement: input.workArrangement,
+          workspaceId: setup.workspace.id,
+        });
+      const attention = create({
+        companyName: "Attention Ltd",
+        location: null,
+        nextAction: "Follow up",
+        nextActionDue: "2026-07-30",
+        salary: null,
+        sourceUrl: null,
+        workArrangement: null,
+      });
+      create({
+        companyName: "Attention Ltd",
+        location: "London",
+        nextAction: "Prepare notes",
+        nextActionDue: "2026-08-02",
+        salary: "£80,000",
+        sourceUrl: "https://jobs.example.com/platform-engineer",
+        workArrangement: "hybrid",
+      });
+      repository.recordApplicationFieldProvenance({
+        applicationId: attention.id,
+        confidence: 0.7,
+        createdAt,
+        field: "location",
+        fieldState: "inferred",
+        observedAt: "2026-07-29T12:00:00.000Z",
+        source: { type: "imported" },
+        value: "London",
+        workspaceId: setup.workspace.id,
+      });
+
+      const result = repository.queryApplicationAttention({
+        asOfDate: "2026-07-31",
+        attentionOnly: true,
+        duplicateRisk: true,
+        fieldStates: ["inferred_unverified"],
+        lifecycle: "active",
+        limit: 10,
+        missingEvidence: ["original_advert"],
+        missingFields: ["salary", "location"],
+        nextAction: "overdue",
+        offset: 0,
+        query: "platform attention",
+        workspaceId: setup.workspace.id,
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.items[0]?.application.id).toBe(attention.id);
+      expect(result.items[0]?.signals).toMatchObject({
+        duplicateRisk: true,
+        fieldInferredUnverified: ["location"],
+        locationMissing: true,
+        nextActionOverdue: true,
+        originalAdvertMissing: true,
+        salaryMissing: true,
+      });
+      expect(result.reasonCounts).toMatchObject({
+        duplicate_risk: 2,
+        field_inferred_unverified: 1,
+        salary_missing: 1,
+      });
+      expect(result.stateCounts).toMatchObject({
+        inferred_unverified: 1,
+        missing: 2,
+      });
+      expect(result.queuedApplications).toBe(2);
+      expect(result.totalApplications).toBe(2);
+      expect(
+        repository.queryApplicationAttention({
+          asOfDate: "2026-07-31",
+          attentionOnly: false,
+          lifecycle: "all",
+          limit: 10,
+          offset: 0,
+          query: "%' OR 1=1 --",
+          workspaceId: setup.workspace.id,
+        }).total,
+      ).toBe(0);
+      expect(
+        database.prepare("SELECT count(*) FROM applications").pluck().get(),
+      ).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("supports custom terminal statuses, pagination, and empty workspaces", () => {
+    const { database, repository, setup } = createRepository();
+    try {
+      const customStatus = new SqliteReferenceValuesRepository(
+        database,
+      ).createReferenceValue({
+        category: "status",
+        createdAt,
+        isTerminal: true,
+        label: "Archived custom",
+        updatedAt: createdAt,
+        workspaceId: setup.workspace.id,
+      });
+      const terminal = repository.createApplication({
+        appliedOn: "2026-07-01",
+        companyName: "Custom Terminal Ltd",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: "Manchester",
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Analyst",
+        salary: "£60,000",
+        sourceUrl: "https://jobs.example.com/analyst",
+        statusId: customStatus.id,
+        workArrangement: "office",
+        workspaceId: setup.workspace.id,
+      });
+      const overdue = repository.createApplication({
+        appliedOn: "2026-07-02",
+        companyName: "Overdue Active Ltd",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: "Leeds",
+        nextAction: "Follow up",
+        nextActionDue: "2026-07-30",
+        notes: null,
+        roleTitle: "Developer",
+        salary: "£65,000",
+        sourceUrl: "https://jobs.example.com/developer",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Prospect",
+        ),
+        workArrangement: "hybrid",
+        workspaceId: setup.workspace.id,
+      });
+      const interview = repository.createApplication({
+        appliedOn: "2026-07-03",
+        companyName: "Interview Priority Ltd",
+        createdAt,
+        createdByUserId: setup.administrator.id,
+        location: "Bristol",
+        nextAction: null,
+        nextActionDue: null,
+        notes: null,
+        roleTitle: "Architect",
+        salary: "£90,000",
+        sourceUrl: "https://jobs.example.com/architect",
+        statusId: referenceId(
+          database,
+          setup.workspace.id,
+          "status",
+          "Interview",
+        ),
+        workArrangement: "remote",
+        workspaceId: setup.workspace.id,
+      });
+
+      const priority = repository.queryApplicationAttention({
+        asOfDate: "2026-07-31",
+        attentionOnly: true,
+        lifecycle: "all",
+        limit: 10,
+        offset: 0,
+        workspaceId: setup.workspace.id,
+      });
+      expect(priority.items.map(({ application }) => application.id)).toEqual([
+        interview.id,
+        overdue.id,
+        terminal.id,
+      ]);
+
+      const page = repository.queryApplicationAttention({
+        asOfDate: "2026-07-31",
+        attentionOnly: false,
+        lifecycle: "terminal",
+        limit: 1,
+        offset: 0,
+        query: "custom terminal",
+        statusIds: [customStatus.id],
+        workspaceId: setup.workspace.id,
+      });
+      expect(page.total).toBe(1);
+      expect(page.items[0]?.application.id).toBe(terminal.id);
+
+      const empty = createRepository();
+      try {
+        expect(
+          empty.repository.queryApplicationAttention({
+            asOfDate: "2026-07-31",
+            attentionOnly: true,
+            lifecycle: "all",
+            limit: 25,
+            offset: 0,
+            workspaceId: empty.setup.workspace.id,
+          }),
+        ).toMatchObject({
+          items: [],
+          queuedApplications: 0,
+          total: 0,
+          totalApplications: 0,
+        });
+      } finally {
+        empty.database.close();
+      }
     } finally {
       database.close();
     }

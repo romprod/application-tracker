@@ -21,6 +21,8 @@ import {
   InvalidApplicationReferenceError,
   InvalidOutlookGraphConnectionAssignmentError,
   type AddApplicationActivityRecord,
+  type ApplicationAttentionRepositoryResult,
+  type ApplicationAttentionSignals,
   type ApplicationActivityEvent,
   type ApplicationDuplicateAudit,
   type ApplicationDuplicateCandidate,
@@ -42,6 +44,7 @@ import {
   type ApplicationsRepository,
   type CreateApplicationRecord,
   type DeleteApplicationRecord,
+  type QueryApplicationAttentionRecord,
   type RecordApplicationFieldProvenanceRecord,
   type UpdateApplicationRecord,
   type VerifyApplicationFieldProvenanceRecord,
@@ -51,6 +54,12 @@ import type {
   ApplicationJobPosting,
 } from "../../application/job_email_reconciliation.js";
 import type { DocumentRecord } from "../../application/documents.js";
+import type {
+  ApplicationAttentionFieldState,
+  ApplicationAttentionMissingEvidence,
+  ApplicationAttentionMissingField,
+  ApplicationAttentionReasonCode,
+} from "../../domain/application_attention.js";
 import {
   maximumApplicationRelations,
   type ApplicationFieldName,
@@ -150,7 +159,7 @@ const duplicateCandidatePairsSql = `
     JOIN applications AS second
       ON second.workspace_id = first.workspace_id
      AND second.id > first.id
-    WHERE first.workspace_id = ?
+    WHERE first.workspace_id = @workspaceId
       AND first.deleted_at IS NULL
       AND second.deleted_at IS NULL
       AND (
@@ -243,6 +252,280 @@ const duplicateCandidatePairsSql = `
         )
       )
   )`;
+
+interface StoredApplicationAttentionFact {
+  applicationConfirmationMissing: number;
+  applicationId: string;
+  appliedDateMissing: number;
+  contactsMissing: number;
+  duplicateRisk: number;
+  emailEvidenceMissing: number;
+  fieldConflicting: string;
+  fieldInferredUnverified: string;
+  fieldNotApplicable: string;
+  fieldNotDisclosed: string;
+  fieldStale: string;
+  locationMissing: number;
+  nextActionMissing: number;
+  nextActionOverdue: number;
+  originalAdvertMissing: number;
+  salaryMissing: number;
+  sourceUrlMissing: number;
+  workArrangementMissing: number;
+}
+
+const applicationAttentionFactsSql = `${duplicateCandidatePairsSql},
+  duplicate_application_ids AS (
+    SELECT firstId AS application_id FROM candidate_pairs
+    UNION
+    SELECT secondId AS application_id FROM candidate_pairs
+  ),
+  provenance_ranked AS (
+    SELECT
+      provenance.*,
+      row_number() OVER (
+        PARTITION BY provenance.workspace_id, provenance.application_id,
+                     provenance.field_name
+        ORDER BY
+          (provenance.verified_at IS NOT NULL) DESC,
+          CASE provenance.source_type
+            WHEN 'job_posting' THEN 400
+            WHEN 'document' THEN 300
+            WHEN 'email_evidence' THEN 200
+            ELSE 100
+          END DESC,
+          provenance.observed_at DESC,
+          provenance.confidence DESC,
+          provenance.id DESC
+      ) AS precedence_rank
+    FROM application_field_provenance AS provenance
+    WHERE provenance.workspace_id = @workspaceId
+  ),
+  selected_provenance AS (
+    SELECT * FROM provenance_ranked WHERE precedence_rank = 1
+  ),
+  provenance_flags AS (
+    SELECT
+      selected.application_id AS applicationId,
+      coalesce(group_concat(DISTINCT CASE
+        WHEN selected.field_state = 'not_disclosed' THEN selected.field_name
+      END), '') AS fieldNotDisclosed,
+      coalesce(group_concat(DISTINCT CASE
+        WHEN selected.field_state = 'not_applicable' THEN selected.field_name
+      END), '') AS fieldNotApplicable,
+      coalesce(group_concat(DISTINCT CASE
+        WHEN selected.field_state = 'inferred'
+         AND selected.verified_at IS NULL THEN selected.field_name
+      END), '') AS fieldInferredUnverified,
+      coalesce(group_concat(DISTINCT CASE
+        WHEN selected.field_state = 'conflicting' OR (
+          other.id IS NOT NULL AND other.value_json <> selected.value_json
+          AND other.observed_at >= selected.observed_at
+        ) THEN selected.field_name
+      END), '') AS fieldConflicting,
+      coalesce(group_concat(DISTINCT CASE
+        WHEN other.id IS NOT NULL AND other.value_json <> selected.value_json
+         AND other.observed_at < selected.observed_at THEN selected.field_name
+      END), '') AS fieldStale
+    FROM selected_provenance AS selected
+    LEFT JOIN application_field_provenance AS other
+      ON other.workspace_id = selected.workspace_id
+     AND other.application_id = selected.application_id
+     AND other.field_name = selected.field_name
+     AND other.id <> selected.id
+    GROUP BY selected.application_id
+  ),
+  attention_facts AS (
+    SELECT
+      applications.id AS applicationId,
+      applications.status_reference_id AS statusId,
+      statuses.is_terminal AS statusIsTerminal,
+      CASE WHEN lower(statuses.label) LIKE '%interview%'
+             OR lower(statuses.label) LIKE '%offer%'
+        THEN 1 ELSE 0 END AS stagePriority,
+      applications.applied_on AS appliedOn,
+      applications.updated_at AS updatedAt,
+      lower(
+        applications.company_name || ' ' || applications.role_title || ' ' ||
+        coalesce(applications.agency, '') || ' ' ||
+        coalesce(applications.location, '') || ' ' ||
+        coalesce(applications.notes, '')
+      ) AS searchText,
+      CASE WHEN statuses.is_terminal = 0
+             AND applications.next_action IS NOT NULL
+             AND applications.next_action_due < @asOfDate
+        THEN 1 ELSE 0 END AS nextActionOverdue,
+      CASE WHEN statuses.is_terminal = 0
+             AND applications.next_action IS NULL
+        THEN 1 ELSE 0 END AS nextActionMissing,
+      CASE WHEN applications.salary IS NULL
+             OR length(trim(applications.salary)) = 0
+        THEN 1 ELSE 0 END AS salaryMissing,
+      CASE WHEN applications.location IS NULL
+             OR length(trim(applications.location)) = 0
+        THEN 1 ELSE 0 END AS locationMissing,
+      CASE WHEN applications.work_arrangement IS NULL
+        THEN 1 ELSE 0 END AS workArrangementMissing,
+      CASE WHEN applications.source_url IS NULL
+             OR length(trim(applications.source_url)) = 0
+        THEN 1 ELSE 0 END AS sourceUrlMissing,
+      CASE WHEN applications.applied_on IS NULL THEN 1 ELSE 0 END
+        AS appliedDateMissing,
+      CASE WHEN NOT EXISTS (
+        SELECT 1 FROM application_contacts AS contacts
+        WHERE contacts.workspace_id = applications.workspace_id
+          AND contacts.application_id = applications.id
+      ) THEN 1 ELSE 0 END AS contactsMissing,
+      CASE WHEN NOT EXISTS (
+        SELECT 1 FROM application_email_evidence AS email
+        WHERE email.workspace_id = applications.workspace_id
+          AND email.application_id = applications.id
+      ) THEN 1 ELSE 0 END AS emailEvidenceMissing,
+      CASE WHEN NOT EXISTS (
+        SELECT 1 FROM application_email_evidence AS email
+        WHERE email.workspace_id = applications.workspace_id
+          AND email.application_id = applications.id
+          AND email.evidence_type = 'original_advert'
+      ) THEN 1 ELSE 0 END AS originalAdvertMissing,
+      CASE WHEN NOT EXISTS (
+        SELECT 1 FROM application_email_evidence AS email
+        WHERE email.workspace_id = applications.workspace_id
+          AND email.application_id = applications.id
+          AND email.evidence_type = 'application_confirmation'
+      ) THEN 1 ELSE 0 END AS applicationConfirmationMissing,
+      CASE WHEN duplicates.application_id IS NULL THEN 0 ELSE 1 END
+        AS duplicateRisk,
+      coalesce(provenance.fieldNotDisclosed, '') AS fieldNotDisclosed,
+      coalesce(provenance.fieldNotApplicable, '') AS fieldNotApplicable,
+      coalesce(provenance.fieldConflicting, '') AS fieldConflicting,
+      coalesce(provenance.fieldStale, '') AS fieldStale,
+      coalesce(provenance.fieldInferredUnverified, '')
+        AS fieldInferredUnverified
+    FROM applications AS applications
+    JOIN reference_values AS statuses
+      ON statuses.workspace_id = applications.workspace_id
+     AND statuses.id = applications.status_reference_id
+    LEFT JOIN duplicate_application_ids AS duplicates
+      ON duplicates.application_id = applications.id
+    LEFT JOIN provenance_flags AS provenance
+      ON provenance.applicationId = applications.id
+    WHERE applications.workspace_id = @workspaceId
+      AND applications.deleted_at IS NULL
+  )`;
+
+const applicationFieldNames = new Set<ApplicationFieldName>([
+  "agency",
+  "appliedOn",
+  "companyName",
+  "location",
+  "roleTitle",
+  "salary",
+  "sourceUrl",
+  "workArrangement",
+]);
+
+function attentionFields(value: string): ApplicationFieldName[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .filter((field): field is ApplicationFieldName =>
+      applicationFieldNames.has(field as ApplicationFieldName),
+    )
+    .sort();
+}
+
+function attentionSignals(
+  row: StoredApplicationAttentionFact,
+): ApplicationAttentionSignals {
+  return {
+    applicationConfirmationMissing: row.applicationConfirmationMissing === 1,
+    appliedDateMissing: row.appliedDateMissing === 1,
+    contactsMissing: row.contactsMissing === 1,
+    duplicateRisk: row.duplicateRisk === 1,
+    emailEvidenceMissing: row.emailEvidenceMissing === 1,
+    fieldConflicting: attentionFields(row.fieldConflicting),
+    fieldInferredUnverified: attentionFields(row.fieldInferredUnverified),
+    fieldNotApplicable: attentionFields(row.fieldNotApplicable),
+    fieldNotDisclosed: attentionFields(row.fieldNotDisclosed),
+    fieldStale: attentionFields(row.fieldStale),
+    locationMissing: row.locationMissing === 1,
+    nextActionMissing: row.nextActionMissing === 1,
+    nextActionOverdue: row.nextActionOverdue === 1,
+    originalAdvertMissing: row.originalAdvertMissing === 1,
+    salaryMissing: row.salaryMissing === 1,
+    sourceUrlMissing: row.sourceUrlMissing === 1,
+    workArrangementMissing: row.workArrangementMissing === 1,
+  };
+}
+
+const attentionMissingFieldConditions: Record<
+  ApplicationAttentionMissingField,
+  string
+> = {
+  applied_date: "facts.appliedDateMissing = 1",
+  contacts: "facts.contactsMissing = 1",
+  email_evidence: "facts.emailEvidenceMissing = 1",
+  location: "facts.locationMissing = 1",
+  salary: "facts.salaryMissing = 1",
+  source_url: "facts.sourceUrlMissing = 1",
+  work_arrangement: "facts.workArrangementMissing = 1",
+};
+const attentionMissingEvidenceConditions: Record<
+  ApplicationAttentionMissingEvidence,
+  string
+> = {
+  application_confirmation: "facts.applicationConfirmationMissing = 1",
+  original_advert: "facts.originalAdvertMissing = 1",
+};
+const attentionFieldStateConditions: Record<
+  ApplicationAttentionFieldState,
+  string
+> = {
+  conflicting: "length(facts.fieldConflicting) > 0",
+  inferred_unverified: "length(facts.fieldInferredUnverified) > 0",
+  missing: `(
+    facts.salaryMissing = 1 OR facts.locationMissing = 1 OR
+    facts.workArrangementMissing = 1 OR facts.sourceUrlMissing = 1 OR
+    facts.appliedDateMissing = 1 OR facts.contactsMissing = 1 OR
+    facts.emailEvidenceMissing = 1 OR facts.originalAdvertMissing = 1 OR
+    facts.applicationConfirmationMissing = 1
+  )`,
+  not_applicable: "length(facts.fieldNotApplicable) > 0",
+  not_disclosed: "length(facts.fieldNotDisclosed) > 0",
+  stale: "length(facts.fieldStale) > 0",
+};
+const attentionReasonConditions: Record<
+  ApplicationAttentionReasonCode,
+  string
+> = {
+  application_confirmation_missing: "facts.applicationConfirmationMissing = 1",
+  applied_date_missing: "facts.appliedDateMissing = 1",
+  contacts_missing: "facts.contactsMissing = 1",
+  duplicate_risk: "facts.duplicateRisk = 1",
+  email_evidence_missing: "facts.emailEvidenceMissing = 1",
+  field_conflicting: "length(facts.fieldConflicting) > 0",
+  field_inferred_unverified: "length(facts.fieldInferredUnverified) > 0",
+  field_not_applicable: "length(facts.fieldNotApplicable) > 0",
+  field_not_disclosed: "length(facts.fieldNotDisclosed) > 0",
+  field_stale: "length(facts.fieldStale) > 0",
+  location_missing: "facts.locationMissing = 1",
+  next_action_missing: "facts.nextActionMissing = 1",
+  next_action_overdue: "facts.nextActionOverdue = 1",
+  original_advert_missing: "facts.originalAdvertMissing = 1",
+  salary_missing: "facts.salaryMissing = 1",
+  source_url_missing: "facts.sourceUrlMissing = 1",
+  work_arrangement_missing: "facts.workArrangementMissing = 1",
+};
+const anyAttentionReasonCondition = `(${Object.values(
+  attentionReasonConditions,
+).join(" OR ")})`;
+
+function escapeLikePattern(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
 
 function normalizedText(value: string): string {
   return value
@@ -770,16 +1053,16 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         `${duplicateCandidatePairsSql} SELECT count(*) FROM candidate_pairs`,
       )
       .pluck()
-      .get(workspaceId) as number;
+      .get({ workspaceId }) as number;
     const pairs = this.database
       .prepare(
         `${duplicateCandidatePairsSql}
          SELECT firstId, secondId
          FROM candidate_pairs
          ORDER BY firstId, secondId
-         LIMIT ? OFFSET ?`,
+         LIMIT @limit OFFSET @offset`,
       )
-      .all(workspaceId, input.limit, input.offset) as {
+      .all({ limit: input.limit, offset: input.offset, workspaceId }) as {
       firstId: string;
       secondId: string;
     }[];
@@ -1641,6 +1924,182 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       )
       .all(workspaceId) as StoredApplicationRecord[];
     return this.hydrateApplications(workspaceId, stored);
+  }
+
+  public queryApplicationAttention(
+    input: QueryApplicationAttentionRecord,
+  ): ApplicationAttentionRepositoryResult {
+    const parameters: Record<string, number | string> = {
+      asOfDate: input.asOfDate,
+      limit: input.limit,
+      offset: input.offset,
+      workspaceId: input.workspaceId,
+    };
+    const conditions: string[] = [];
+    if (input.attentionOnly) conditions.push(anyAttentionReasonCondition);
+    if (input.lifecycle === "active") {
+      conditions.push("facts.statusIsTerminal = 0");
+    } else if (input.lifecycle === "terminal") {
+      conditions.push("facts.statusIsTerminal = 1");
+    }
+    if (input.statusIds?.length) {
+      const placeholders = input.statusIds.map((statusId, index) => {
+        const name = `statusId${index}`;
+        parameters[name] = statusId;
+        return `@${name}`;
+      });
+      conditions.push(`facts.statusId IN (${placeholders.join(", ")})`);
+    }
+    if (input.appliedFrom) {
+      parameters.appliedFrom = input.appliedFrom;
+      conditions.push("facts.appliedOn >= @appliedFrom");
+    }
+    if (input.appliedTo) {
+      parameters.appliedTo = input.appliedTo;
+      conditions.push("facts.appliedOn <= @appliedTo");
+    }
+    if (input.updatedFrom) {
+      parameters.updatedFrom = input.updatedFrom;
+      conditions.push("facts.updatedAt >= @updatedFrom");
+    }
+    if (input.updatedTo) {
+      parameters.updatedTo = input.updatedTo;
+      conditions.push("facts.updatedAt <= @updatedTo");
+    }
+    if (input.nextAction) {
+      conditions.push(
+        input.nextAction === "overdue"
+          ? "facts.nextActionOverdue = 1"
+          : "facts.nextActionMissing = 1",
+      );
+    }
+    for (const missing of input.missingFields ?? []) {
+      conditions.push(attentionMissingFieldConditions[missing]);
+    }
+    for (const missing of input.missingEvidence ?? []) {
+      conditions.push(attentionMissingEvidenceConditions[missing]);
+    }
+    if (input.duplicateRisk !== undefined) {
+      parameters.duplicateRisk = Number(input.duplicateRisk);
+      conditions.push("facts.duplicateRisk = @duplicateRisk");
+    }
+    if (input.fieldStates?.length) {
+      conditions.push(
+        `(${input.fieldStates
+          .map((state) => attentionFieldStateConditions[state])
+          .join(" OR ")})`,
+      );
+    }
+    if (input.reasonCodes?.length) {
+      conditions.push(
+        `(${input.reasonCodes
+          .map((code) => attentionReasonConditions[code])
+          .join(" OR ")})`,
+      );
+    }
+    for (const [index, token] of (input.query?.split(/\s+/) ?? []).entries()) {
+      const name = `queryToken${index}`;
+      parameters[name] = `%${escapeLikePattern(token.toLowerCase())}%`;
+      conditions.push(`facts.searchText LIKE @${name} ESCAPE '\\'`);
+    }
+    const where = conditions.length ? conditions.join(" AND ") : "1 = 1";
+    const total = this.database
+      .prepare(
+        `${applicationAttentionFactsSql}
+         SELECT count(*) FROM attention_facts AS facts WHERE ${where}`,
+      )
+      .pluck()
+      .get(parameters) as number;
+    const rows = this.database
+      .prepare(
+        `${applicationAttentionFactsSql}
+         SELECT facts.*
+         FROM attention_facts AS facts
+         WHERE ${where}
+         ORDER BY
+           facts.statusIsTerminal ASC,
+           facts.stagePriority DESC,
+           facts.nextActionOverdue DESC,
+           (
+             facts.emailEvidenceMissing OR facts.originalAdvertMissing OR
+             facts.applicationConfirmationMissing
+           ) DESC,
+           facts.duplicateRisk DESC,
+           (length(facts.fieldConflicting) > 0) DESC,
+           facts.updatedAt DESC,
+           facts.applicationId DESC
+         LIMIT @limit OFFSET @offset`,
+      )
+      .all(parameters) as StoredApplicationAttentionFact[];
+    const applicationIds = rows.map(({ applicationId }) => applicationId);
+    const applications =
+      applicationIds.length === 0
+        ? []
+        : this.hydrateApplications(
+            input.workspaceId,
+            this.database
+              .prepare(
+                `${publicApplicationSelect()}
+                 WHERE applications.workspace_id = ?
+                   AND applications.deleted_at IS NULL
+                   AND applications.id IN (${applicationIds
+                     .map(() => "?")
+                     .join(", ")})`,
+              )
+              .all(
+                input.workspaceId,
+                ...applicationIds,
+              ) as StoredApplicationRecord[],
+          );
+    const applicationById = new Map(
+      applications.map((application) => [application.id, application]),
+    );
+
+    const reasonSelections = Object.entries(attentionReasonConditions).map(
+      ([code, condition]) =>
+        `coalesce(sum(CASE WHEN ${condition} THEN 1 ELSE 0 END), 0) AS "${code}"`,
+    );
+    const stateSelections = Object.entries(attentionFieldStateConditions).map(
+      ([state, condition]) =>
+        `coalesce(sum(CASE WHEN ${condition} THEN 1 ELSE 0 END), 0) AS "state_${state}"`,
+    );
+    const summary = this.database
+      .prepare(
+        `${applicationAttentionFactsSql}
+         SELECT
+           count(*) AS totalApplications,
+           coalesce(sum(CASE WHEN ${anyAttentionReasonCondition}
+             THEN 1 ELSE 0 END), 0) AS queuedApplications,
+           ${reasonSelections.join(",\n           ")},
+           ${stateSelections.join(",\n           ")}
+         FROM attention_facts AS facts`,
+      )
+      .get(parameters) as Record<string, number>;
+    const reasonCounts = Object.fromEntries(
+      Object.keys(attentionReasonConditions).map((code) => [
+        code,
+        summary[code] ?? 0,
+      ]),
+    ) as Record<ApplicationAttentionReasonCode, number>;
+    const stateCounts = Object.fromEntries(
+      Object.keys(attentionFieldStateConditions).map((state) => [
+        state,
+        summary[`state_${state}`] ?? 0,
+      ]),
+    ) as Record<ApplicationAttentionFieldState, number>;
+    return {
+      items: rows.flatMap((row) => {
+        const application = applicationById.get(row.applicationId);
+        return application
+          ? [{ application, signals: attentionSignals(row) }]
+          : [];
+      }),
+      queuedApplications: summary.queuedApplications ?? 0,
+      reasonCounts,
+      stateCounts,
+      total,
+      totalApplications: summary.totalApplications ?? 0,
+    };
   }
 
   private storedApplicationFieldProvenance(

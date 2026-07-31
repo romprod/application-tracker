@@ -1417,6 +1417,14 @@ a {
   font-size: 10px;
 }
 
+.today-action-copy > .tracker-attention-reasons {
+  color: var(--archive-attend);
+}
+
+.tracker-attention-queue button {
+  min-height: 82px;
+}
+
 .today-open-label {
   color: var(--archive-action);
   font-size: 11.5px;

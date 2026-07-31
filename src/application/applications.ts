@@ -1,5 +1,10 @@
 import type { AuthenticatedActor } from "./auth.js";
 import type {
+  ApplicationAttentionFieldState,
+  ApplicationAttentionQueryInput,
+  ApplicationAttentionReasonCode,
+} from "../domain/application_attention.js";
+import type {
   AddApplicationActivityInput,
   AddApplicationEventInput,
   ApplicationActivityType,
@@ -67,6 +72,229 @@ export interface ApplicationRecord {
   updatedAt: string;
   workArrangement: WorkArrangement | null;
   workArrangementDetails: WorkArrangementDetails | null;
+}
+
+export interface ApplicationAttentionSignals {
+  applicationConfirmationMissing: boolean;
+  appliedDateMissing: boolean;
+  contactsMissing: boolean;
+  duplicateRisk: boolean;
+  emailEvidenceMissing: boolean;
+  fieldConflicting: ApplicationFieldName[];
+  fieldInferredUnverified: ApplicationFieldName[];
+  fieldNotApplicable: ApplicationFieldName[];
+  fieldNotDisclosed: ApplicationFieldName[];
+  fieldStale: ApplicationFieldName[];
+  locationMissing: boolean;
+  nextActionMissing: boolean;
+  nextActionOverdue: boolean;
+  originalAdvertMissing: boolean;
+  salaryMissing: boolean;
+  sourceUrlMissing: boolean;
+  workArrangementMissing: boolean;
+}
+
+export interface ApplicationAttentionReason {
+  code: ApplicationAttentionReasonCode;
+  field: ApplicationFieldName | null;
+  label: string;
+  state: ApplicationAttentionFieldState | null;
+}
+
+export interface ApplicationAttentionRepositoryItem {
+  application: ApplicationRecord;
+  signals: ApplicationAttentionSignals;
+}
+
+export interface ApplicationAttentionRepositoryResult {
+  items: ApplicationAttentionRepositoryItem[];
+  queuedApplications: number;
+  reasonCounts: Partial<Record<ApplicationAttentionReasonCode, number>>;
+  stateCounts: Partial<Record<ApplicationAttentionFieldState, number>>;
+  total: number;
+  totalApplications: number;
+}
+
+export interface ApplicationAttentionItem {
+  application: ApplicationRecord;
+  reasons: ApplicationAttentionReason[];
+}
+
+export interface ApplicationAttentionPage {
+  applications: ApplicationAttentionItem[];
+  limit: number;
+  nextOffset: number | null;
+  offset: number;
+  returned: number;
+  summary: {
+    byReason: {
+      code: ApplicationAttentionReasonCode;
+      count: number;
+      label: string;
+    }[];
+    byState: {
+      count: number;
+      state: ApplicationAttentionFieldState;
+    }[];
+    queuedApplications: number;
+    totalApplications: number;
+  };
+  total: number;
+}
+
+export interface QueryApplicationAttentionRecord extends ApplicationAttentionQueryInput {
+  asOfDate: string;
+  workspaceId: string;
+}
+
+const applicationFieldLabels: Record<ApplicationFieldName, string> = {
+  agency: "Agency",
+  appliedOn: "Applied date",
+  companyName: "Company",
+  location: "Location",
+  roleTitle: "Role title",
+  salary: "Salary",
+  sourceUrl: "Source URL",
+  workArrangement: "Work arrangement",
+};
+
+export const applicationAttentionReasonLabels: Record<
+  ApplicationAttentionReasonCode,
+  string
+> = {
+  application_confirmation_missing: "Application confirmation missing",
+  applied_date_missing: "Applied date missing",
+  contacts_missing: "Contacts missing",
+  duplicate_risk: "Possible duplicate",
+  email_evidence_missing: "Email evidence missing",
+  field_conflicting: "Conflicting field evidence",
+  field_inferred_unverified: "Inferred field not verified",
+  field_not_applicable: "Field marked not applicable",
+  field_not_disclosed: "Field marked not disclosed",
+  field_stale: "Stale field evidence",
+  location_missing: "Location missing",
+  next_action_missing: "Next action missing",
+  next_action_overdue: "Next action overdue",
+  original_advert_missing: "Original advert missing",
+  salary_missing: "Salary missing",
+  source_url_missing: "Source URL missing",
+  work_arrangement_missing: "Work arrangement missing",
+};
+
+export function applicationAttentionReasons(
+  signals: ApplicationAttentionSignals,
+): ApplicationAttentionReason[] {
+  const reasons: ApplicationAttentionReason[] = [];
+  const add = (
+    code: ApplicationAttentionReasonCode,
+    label: string,
+    state: ApplicationAttentionFieldState | null = null,
+    field: ApplicationFieldName | null = null,
+  ) => reasons.push({ code, field, label, state });
+
+  if (signals.nextActionOverdue) {
+    add("next_action_overdue", "Next action is overdue");
+  }
+  if (signals.nextActionMissing) {
+    add("next_action_missing", "Active application has no next action");
+  }
+  if (signals.originalAdvertMissing) {
+    add(
+      "original_advert_missing",
+      "Original advert evidence is missing",
+      "missing",
+    );
+  }
+  if (signals.applicationConfirmationMissing) {
+    add(
+      "application_confirmation_missing",
+      "Application confirmation evidence is missing",
+      "missing",
+    );
+  }
+  if (signals.emailEvidenceMissing) {
+    add("email_evidence_missing", "Email evidence is missing", "missing");
+  }
+  if (signals.duplicateRisk) {
+    add("duplicate_risk", "Possible duplicate application");
+  }
+
+  const provenance = (
+    fields: ApplicationFieldName[],
+    code: ApplicationAttentionReasonCode,
+    state: ApplicationAttentionFieldState,
+    suffix: string,
+  ) => {
+    for (const field of fields) {
+      add(code, `${applicationFieldLabels[field]} ${suffix}`, state, field);
+    }
+  };
+  provenance(
+    signals.fieldConflicting,
+    "field_conflicting",
+    "conflicting",
+    "has conflicting evidence",
+  );
+  provenance(signals.fieldStale, "field_stale", "stale", "has stale evidence");
+  provenance(
+    signals.fieldInferredUnverified,
+    "field_inferred_unverified",
+    "inferred_unverified",
+    "is inferred and unverified",
+  );
+  provenance(
+    signals.fieldNotDisclosed,
+    "field_not_disclosed",
+    "not_disclosed",
+    "was not disclosed",
+  );
+  provenance(
+    signals.fieldNotApplicable,
+    "field_not_applicable",
+    "not_applicable",
+    "is not applicable",
+  );
+
+  const missing = (
+    condition: boolean,
+    code: ApplicationAttentionReasonCode,
+    label: string,
+    field: ApplicationFieldName | null = null,
+  ) => {
+    if (condition) add(code, label, "missing", field);
+  };
+  missing(
+    signals.salaryMissing,
+    "salary_missing",
+    "Salary is missing",
+    "salary",
+  );
+  missing(
+    signals.locationMissing,
+    "location_missing",
+    "Location is missing",
+    "location",
+  );
+  missing(
+    signals.workArrangementMissing,
+    "work_arrangement_missing",
+    "Work arrangement is missing",
+    "workArrangement",
+  );
+  missing(
+    signals.sourceUrlMissing,
+    "source_url_missing",
+    "Source URL is missing",
+    "sourceUrl",
+  );
+  missing(
+    signals.appliedDateMissing,
+    "applied_date_missing",
+    "Applied date is missing",
+    "appliedOn",
+  );
+  missing(signals.contactsMissing, "contacts_missing", "Contacts are missing");
+  return reasons;
 }
 
 export interface CreateApplicationRecord {
@@ -370,6 +598,9 @@ export interface ApplicationsRepository {
     input: { limit: number; offset: number },
   ): ApplicationEventsPage | undefined;
   listApplications(workspaceId: string): ApplicationRecord[];
+  queryApplicationAttention(
+    input: QueryApplicationAttentionRecord,
+  ): ApplicationAttentionRepositoryResult;
   listApplicationFieldProvenance(
     workspaceId: string,
     applicationId: string,
@@ -589,6 +820,48 @@ export class ApplicationLedgerService {
 
   public listApplications(actor: AuthenticatedActor): ApplicationRecord[] {
     return this.repository.listApplications(actor.workspaceId);
+  }
+
+  public queryApplicationAttention(
+    actor: AuthenticatedActor,
+    input: ApplicationAttentionQueryInput,
+  ): ApplicationAttentionPage {
+    const result = this.repository.queryApplicationAttention({
+      ...input,
+      asOfDate: this.clock().toISOString().slice(0, 10),
+      workspaceId: actor.workspaceId,
+    });
+    const applications = result.items.map(({ application, signals }) => ({
+      application,
+      reasons: applicationAttentionReasons(signals),
+    }));
+    const nextOffset = input.offset + applications.length;
+    return {
+      applications,
+      limit: input.limit,
+      nextOffset: nextOffset < result.total ? nextOffset : null,
+      offset: input.offset,
+      returned: applications.length,
+      summary: {
+        byReason: Object.entries(result.reasonCounts)
+          .filter((entry): entry is [ApplicationAttentionReasonCode, number] =>
+            Number.isInteger(entry[1]),
+          )
+          .map(([code, count]) => ({
+            code,
+            count,
+            label: applicationAttentionReasonLabels[code],
+          })),
+        byState: Object.entries(result.stateCounts)
+          .filter((entry): entry is [ApplicationAttentionFieldState, number] =>
+            Number.isInteger(entry[1]),
+          )
+          .map(([state, count]) => ({ count, state })),
+        queuedApplications: result.queuedApplications,
+        totalApplications: result.totalApplications,
+      },
+      total: result.total,
+    };
   }
 
   public listApplicationFieldProvenance(

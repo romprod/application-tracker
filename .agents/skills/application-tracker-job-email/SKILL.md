@@ -109,8 +109,15 @@ require:
 - `find_duplicate_applications`; and
 - `merge_applications`.
 
-When the user asks for evidence-gap or data-quality review, also require
-`list_unlinked_applications` and `get_application_data_quality`.
+When the user asks for an evidence-gap, reconciliation, or data-quality review,
+prefer `query_application_attention`. Keep its page bounded, preserve the
+returned priority order, and report stable reason codes and labels exactly.
+Use its filters for missing email evidence, original adverts, application
+confirmations, duplicate risk, and provenance states. Never collapse `missing`,
+`not_disclosed`, `not_applicable`, `conflicting`, `stale`, or
+`inferred_unverified` into one completeness score. Use the older
+`list_unlinked_applications` or `get_application_data_quality` tools only when
+the requested legacy report specifically requires their narrower shape.
 
 For that broader or attachment workflow, require an already-connected
 `@softeria/ms-365-mcp-server` instance. Discover it from the current task's MCP

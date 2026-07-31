@@ -106,6 +106,7 @@ export interface McpAuditEvent {
     | "match_job_application_email"
     | "merge_applications"
     | "process_outlook_job_digest"
+    | "query_application_attention"
     | "record_application_field_provenance"
     | "reconcile_application_from_evidence"
     | "reconcile_outlook_graph_connection"
@@ -216,6 +217,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "match_job_application_email" &&
       value.action !== "merge_applications" &&
       value.action !== "process_outlook_job_digest" &&
+      value.action !== "query_application_attention" &&
       value.action !== "record_application_field_provenance" &&
       value.action !== "reconcile_application_from_evidence" &&
       value.action !== "reconcile_outlook_graph_connection" &&

@@ -3,6 +3,11 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
+  applicationAttentionFieldStateSchema,
+  applicationAttentionQuerySchema,
+  applicationAttentionReasonCodeSchema,
+} from "../domain/application_attention.js";
+import {
   ApplicationActivityCorrectionError,
   ApplicationActivityEvidenceError,
   ApplicationActivityIdempotencyConflictError,
@@ -401,6 +406,42 @@ const applicationDetailSchema = z.strictObject({
   eventsPage: applicationEventsPageMetadataSchema,
   jobPostings: z.array(applicationJobPostingSchema),
   provenance: z.array(applicationFieldProvenanceAssessmentSchema).optional(),
+});
+const applicationAttentionReasonSchema = z.strictObject({
+  code: applicationAttentionReasonCodeSchema,
+  field: applicationFieldNameSchema.nullable(),
+  label: z.string().min(1).max(160),
+  state: applicationAttentionFieldStateSchema.nullable(),
+});
+const applicationAttentionPageSchema = z.strictObject({
+  applications: z.array(
+    z.strictObject({
+      application: applicationRecordSchema,
+      reasons: z.array(applicationAttentionReasonSchema),
+    }),
+  ),
+  limit: z.number().int().min(1).max(100),
+  nextOffset: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  summary: z.strictObject({
+    byReason: z.array(
+      z.strictObject({
+        code: applicationAttentionReasonCodeSchema,
+        count: z.number().int().nonnegative(),
+        label: z.string().min(1).max(160),
+      }),
+    ),
+    byState: z.array(
+      z.strictObject({
+        count: z.number().int().nonnegative(),
+        state: applicationAttentionFieldStateSchema,
+      }),
+    ),
+    queuedApplications: z.number().int().nonnegative(),
+    totalApplications: z.number().int().nonnegative(),
+  }),
+  total: z.number().int().nonnegative(),
 });
 const outlookEmailClassificationSchema = z.enum([
   "account_or_security",
@@ -1360,6 +1401,26 @@ export function createApplicationMcpServer(
         logger,
         options.audit,
         () => tools.getJobSearchSummary(),
+      ),
+  );
+
+  server.registerTool(
+    "query_application_attention",
+    {
+      annotations: readOnlyAnnotations,
+      description:
+        "Return one bounded, priority-ordered application attention page. Filters combine free-text, lifecycle or custom statuses, applied and updated ranges, next-action state, missing fields or evidence, duplicate risk, provenance states, and stable reason codes. Missing, not disclosed, not applicable, conflicting, stale, and inferred-unverified remain distinct; summary counts use the same reason model.",
+      inputSchema: applicationAttentionQuerySchema,
+      outputSchema: applicationAttentionPageSchema,
+      title: "Query application attention queue",
+    },
+    (input) =>
+      executeTool(
+        "query_application_attention",
+        "application_collection",
+        logger,
+        options.audit,
+        () => tools.queryApplicationAttention(input),
       ),
   );
 

@@ -86,6 +86,20 @@ function fakeTools(): McpApplicationTools {
       terminalApplications: 0,
       totalApplications: 0,
     })),
+    queryApplicationAttention: vi.fn(() => ({
+      applications: [],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 0,
+      summary: {
+        byReason: [],
+        byState: [],
+        queuedApplications: 0,
+        totalApplications: 0,
+      },
+      total: 0,
+    })),
     getDocumentImportCapabilities: vi.fn(() => ({
       maxDocumentBytes: 1024 * 1024,
       maxDocumentChunkBytes: 12 * 1024,
@@ -392,6 +406,10 @@ describe("local MCP server", () => {
     const bulkUpdateApplications = vi.fn();
     tools.bulkUpdateApplications = bulkUpdateApplications;
     const listApplications = vi.spyOn(tools, "listApplications");
+    const queryApplicationAttention = vi.spyOn(
+      tools,
+      "queryApplicationAttention",
+    );
     const record = vi.fn();
     const recorder: McpAuditRecorder = { record };
     const server = createLocalMcpServer(tools, {
@@ -418,6 +436,7 @@ describe("local MCP server", () => {
       "get_tracker_context",
       "get_connector_schema_status",
       "get_job_search_summary",
+      "query_application_attention",
       "list_applications",
       "get_application",
       "list_application_events",
@@ -581,6 +600,26 @@ describe("local MCP server", () => {
     expect(summary.isError).not.toBe(true);
     expect(summary.structuredContent).toMatchObject({ totalApplications: 0 });
 
+    const attention = await client.callTool({
+      arguments: {},
+      name: "query_application_attention",
+    });
+    expect(attention.isError).not.toBe(true);
+    expect(attention.structuredContent).toMatchObject({
+      applications: [],
+      summary: { queuedApplications: 0 },
+    });
+    expect(queryApplicationAttention.mock.calls).toEqual([
+      [
+        {
+          attentionOnly: true,
+          lifecycle: "all",
+          limit: 25,
+          offset: 0,
+        },
+      ],
+    ]);
+
     const applications = await client.callTool({
       arguments: {},
       name: "list_applications",
@@ -660,7 +699,7 @@ describe("local MCP server", () => {
         type: "text",
       },
     ]);
-    expect(record).toHaveBeenCalledTimes(9);
+    expect(record).toHaveBeenCalledTimes(10);
     expect(record).toHaveBeenNthCalledWith(1, {
       action: "get_tracker_context",
       actorUserId: "actor-user-1",
@@ -677,7 +716,15 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(6, {
+    expect(record).toHaveBeenNthCalledWith(4, {
+      action: "query_application_attention",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "application_collection",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+    expect(record).toHaveBeenNthCalledWith(7, {
       action: "extract_job_links",
       actorUserId: "actor-user-1",
       result: "success",
@@ -685,7 +732,7 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(7, {
+    expect(record).toHaveBeenNthCalledWith(8, {
       action: "resolve_job_links",
       actorUserId: "actor-user-1",
       result: "success",
@@ -693,7 +740,7 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(8, {
+    expect(record).toHaveBeenNthCalledWith(9, {
       action: "inspect_job_posting",
       actorUserId: "actor-user-1",
       result: "success",
@@ -701,7 +748,7 @@ describe("local MCP server", () => {
       transport: "local_stdio",
       workspaceId: "workspace-1",
     });
-    expect(record).toHaveBeenNthCalledWith(9, {
+    expect(record).toHaveBeenNthCalledWith(10, {
       action: "get_application",
       actorUserId: "actor-user-1",
       result: "not_found",
