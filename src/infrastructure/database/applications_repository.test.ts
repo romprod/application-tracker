@@ -7,10 +7,10 @@ import {
   ApplicationConflictError,
   ApplicationFieldProvenanceIdempotencyConflictError,
   ApplicationFieldProvenanceSourceError,
-  ApplicationRecoveryStateError,
   ApplicationRecoveryVersionConflictError,
   ApplicationRestoreUnsafeError,
   InvalidOutlookGraphConnectionAssignmentError,
+  type ApplicationRecoveryStateError,
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";

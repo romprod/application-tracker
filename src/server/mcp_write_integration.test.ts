@@ -252,7 +252,11 @@ describe("MCP write integration", () => {
     ).toBe("Bulk Updated Company");
 
     const deleted = await client.callTool({
-      arguments: { applicationId, confirm: true },
+      arguments: {
+        applicationId,
+        confirm: true,
+        reason: "Removed by the MCP write integration test.",
+      },
       name: "delete_application",
     });
     expect(deleted.structuredContent).toEqual({
@@ -260,7 +264,11 @@ describe("MCP write integration", () => {
       deleted: true,
     });
     const secondDeleted = await client.callTool({
-      arguments: { applicationId: secondApplicationId, confirm: true },
+      arguments: {
+        applicationId: secondApplicationId,
+        confirm: true,
+        reason: "Removed after the bulk update integration test.",
+      },
       name: "delete_application",
     });
     expect(secondDeleted.structuredContent).toEqual({

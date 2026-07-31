@@ -6,11 +6,11 @@ import {
   ApplicationMergeUnsafeError,
   ApplicationMergeVersionConflictError,
   ApplicationRecoveryNotFoundError,
-  ApplicationRecoveryStateError,
   ApplicationRecoveryVersionConflictError,
   type ApplicationDuplicateReasonKind,
   type ApplicationMergeStateError,
   type ApplicationRecord,
+  type ApplicationRecoveryStateError,
 } from "../../application/applications.js";
 import { openApplicationDatabase } from "./connection.js";
 import { SqliteApplicationsRepository } from "./applications_repository.js";
@@ -1039,16 +1039,12 @@ describe("SqliteApplicationsRepository application merges", () => {
       expect(repository.listApplications(setup.workspace.id)).toEqual([
         expect.objectContaining({ id: target.id, updatedAt: mergedAt }),
       ]);
-      expect(
-        repository.listDeletedApplications(setup.workspace.id, {
-          limit: 25,
-          offset: 0,
-        }).applications,
-      ).toEqual([
-        expect.objectContaining({
-          application: expect.objectContaining({ id: source.id }),
-        }),
-      ]);
+      const deleted = repository.listDeletedApplications(setup.workspace.id, {
+        limit: 25,
+        offset: 0,
+      }).applications;
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0]?.application.id).toBe(source.id);
       expect(
         database
           .prepare(

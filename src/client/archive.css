@@ -5298,6 +5298,17 @@ a {
     grid-template-columns: 1fr 1fr;
   }
 
+  .applications-page .tracker-page-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .applications-page .tracker-page-actions .tracker-button {
+    padding-right: 6px;
+    padding-left: 6px;
+    line-height: 1.15;
+  }
+
   .tracker-dashboard-hero {
     min-height: 0;
     grid-template-columns: 1fr;
