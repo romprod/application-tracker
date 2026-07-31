@@ -8,10 +8,17 @@ import type {
   ApplicationMergeField,
   ApplicationMergeResolutions,
   AuditDuplicateApplicationsInput,
+  ApplicationFieldName,
+  ApplicationFieldProvenanceSource,
+  ApplicationFieldState,
   CreateApplicationInput,
   MergeApplicationsInput,
+  RecordApplicationFieldProvenanceInput,
+  SalaryDetails,
   UpdateApplicationInput,
+  VerifyApplicationFieldProvenanceInput,
   WorkArrangement,
+  WorkArrangementDetails,
 } from "../domain/applications.js";
 import type { DocumentRecord } from "./documents.js";
 import type {
@@ -50,6 +57,7 @@ export interface ApplicationRecord {
   roleTypeId: string | null;
   roleTitle: string;
   salary: string | null;
+  salaryDetails: SalaryDetails | null;
   source: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -58,6 +66,7 @@ export interface ApplicationRecord {
   statusIsTerminal: boolean;
   updatedAt: string;
   workArrangement: WorkArrangement | null;
+  workArrangementDetails: WorkArrangementDetails | null;
 }
 
 export interface CreateApplicationRecord {
@@ -77,11 +86,52 @@ export interface CreateApplicationRecord {
   roleTypeId: string | null;
   roleTitle: string;
   salary: string | null;
+  salaryDetails: SalaryDetails | null;
   sourceId: string | null;
   sourceUrl: string | null;
   statusId: string;
   workspaceId: string;
   workArrangement: WorkArrangement | null;
+  workArrangementDetails: WorkArrangementDetails | null;
+}
+
+export type ApplicationFieldProvenanceRelationship =
+  "conflicting" | "corroborating" | "selected" | "stale";
+
+export interface ApplicationFieldProvenanceRecord {
+  applicationId: string;
+  confidence: number;
+  createdAt: string;
+  field: ApplicationFieldName;
+  fieldState: ApplicationFieldState;
+  id: string;
+  idempotencyKey: string | null;
+  observedAt: string;
+  relationship: ApplicationFieldProvenanceRelationship;
+  source: ApplicationFieldProvenanceSource;
+  value: boolean | number | string | null;
+  verifiedAt: string | null;
+  verifiedByDisplayName: string | null;
+  verifiedByUserId: string | null;
+}
+
+export interface ApplicationFieldProvenanceAssessment {
+  conflicting: number;
+  field: ApplicationFieldName;
+  records: ApplicationFieldProvenanceRecord[];
+  selected: ApplicationFieldProvenanceRecord | null;
+  stale: number;
+}
+
+export interface RecordApplicationFieldProvenanceRecord extends RecordApplicationFieldProvenanceInput {
+  createdAt: string;
+  workspaceId: string;
+}
+
+export interface VerifyApplicationFieldProvenanceRecord extends VerifyApplicationFieldProvenanceInput {
+  verifiedAt: string;
+  verifiedByUserId: string;
+  workspaceId: string;
 }
 
 export interface DeleteApplicationRecord {
@@ -320,9 +370,19 @@ export interface ApplicationsRepository {
     input: { limit: number; offset: number },
   ): ApplicationEventsPage | undefined;
   listApplications(workspaceId: string): ApplicationRecord[];
+  listApplicationFieldProvenance(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationFieldProvenanceAssessment[] | undefined;
+  recordApplicationFieldProvenance(
+    input: RecordApplicationFieldProvenanceRecord,
+  ): ApplicationFieldProvenanceRecord | undefined;
   updateApplication(
     input: UpdateApplicationRecord,
   ): ApplicationRecord | undefined;
+  verifyApplicationFieldProvenance(
+    input: VerifyApplicationFieldProvenanceRecord,
+  ): ApplicationFieldProvenanceRecord | undefined;
 }
 
 export class ApplicationNotFoundError extends Error {
@@ -443,6 +503,29 @@ export class ApplicationMergeUnsafeError extends Error {
   }
 }
 
+export class ApplicationFieldProvenanceSourceError extends Error {
+  public constructor() {
+    super("The provenance source is not associated with this application");
+    this.name = "ApplicationFieldProvenanceSourceError";
+  }
+}
+
+export class ApplicationFieldProvenanceIdempotencyConflictError extends Error {
+  public constructor() {
+    super(
+      "The provenance idempotency key is already used by another observation",
+    );
+    this.name = "ApplicationFieldProvenanceIdempotencyConflictError";
+  }
+}
+
+export class ApplicationFieldProvenanceVerificationConflictError extends Error {
+  public constructor() {
+    super("The provenance observation was already verified by another actor");
+    this.name = "ApplicationFieldProvenanceVerificationConflictError";
+  }
+}
+
 function nextUpdatedAt(expectedUpdatedAt: string, now: Date): string {
   const expectedMilliseconds = new Date(expectedUpdatedAt).getTime();
   return new Date(
@@ -487,11 +570,13 @@ export class ApplicationLedgerService {
       roleTypeId: input.roleTypeId ?? null,
       roleTitle: input.roleTitle,
       salary: input.salary ?? null,
+      salaryDetails: input.salaryDetails ?? null,
       sourceId: input.sourceId ?? null,
       sourceUrl: input.sourceUrl ?? null,
       statusId: input.statusId,
       workspaceId: actor.workspaceId,
       workArrangement: input.workArrangement ?? null,
+      workArrangementDetails: input.workArrangementDetails ?? null,
     });
   }
 
@@ -504,6 +589,45 @@ export class ApplicationLedgerService {
 
   public listApplications(actor: AuthenticatedActor): ApplicationRecord[] {
     return this.repository.listApplications(actor.workspaceId);
+  }
+
+  public listApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    applicationId: string,
+  ): ApplicationFieldProvenanceAssessment[] {
+    const assessments = this.repository.listApplicationFieldProvenance(
+      actor.workspaceId,
+      applicationId,
+    );
+    if (!assessments) throw new ApplicationNotFoundError();
+    return assessments;
+  }
+
+  public recordApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    input: RecordApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord {
+    const record = this.repository.recordApplicationFieldProvenance({
+      ...input,
+      createdAt: this.clock().toISOString(),
+      workspaceId: actor.workspaceId,
+    });
+    if (!record) throw new ApplicationNotFoundError();
+    return record;
+  }
+
+  public verifyApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    input: VerifyApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord {
+    const record = this.repository.verifyApplicationFieldProvenance({
+      ...input,
+      verifiedAt: this.clock().toISOString(),
+      verifiedByUserId: actor.userId,
+      workspaceId: actor.workspaceId,
+    });
+    if (!record) throw new ApplicationNotFoundError();
+    return record;
   }
 
   public mergeApplications(

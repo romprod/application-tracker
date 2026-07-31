@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type {
+  RecordApplicationFieldProvenanceInput,
+  VerifyApplicationFieldProvenanceInput,
+} from "../domain/applications.js";
 import type { ApplicationRecord } from "./applications.js";
 import type { AuthenticatedActor } from "./auth.js";
 import { EmailLinkExtractionService } from "./email_links.js";
@@ -268,6 +272,7 @@ describe("ApplicationMcpService", () => {
         returned: 1,
         total: 1,
       }),
+      listApplicationFieldProvenance: vi.fn().mockReturnValue([]),
       listApplications: vi.fn().mockReturnValue(applications),
       mergeApplications: vi.fn(),
       updateApplication: vi.fn(),
@@ -372,6 +377,7 @@ describe("ApplicationMcpService", () => {
         total: 1,
       },
       jobPostings: [],
+      provenance: [],
     });
     expect(service.getReferenceData()).toEqual({ values: references });
     expect(
@@ -542,7 +548,37 @@ describe("ApplicationMcpService", () => {
       listApplicationEvents: vi.fn(),
       listApplications: vi.fn().mockReturnValue([]),
       mergeApplications: vi.fn(),
+      recordApplicationFieldProvenance: vi.fn(
+        (input: RecordApplicationFieldProvenanceInput) => ({
+          ...input,
+          createdAt: "2026-07-18T12:00:00.000Z",
+          id: "provenance-1",
+          idempotencyKey: input.idempotencyKey ?? null,
+          relationship: "selected" as const,
+          verifiedAt: null,
+          verifiedByDisplayName: null,
+          verifiedByUserId: null,
+        }),
+      ),
       updateApplication: vi.fn(() => updated),
+      verifyApplicationFieldProvenance: vi.fn(
+        (input: VerifyApplicationFieldProvenanceInput) => ({
+          applicationId: input.applicationId,
+          confidence: 0.9,
+          createdAt: "2026-07-18T12:00:00.000Z",
+          field: "salary" as const,
+          fieldState: "disclosed" as const,
+          id: input.provenanceId,
+          idempotencyKey: null,
+          observedAt: "2026-07-18T11:00:00.000Z",
+          relationship: "selected" as const,
+          source: { type: "imported" as const },
+          value: "£75,000",
+          verifiedAt: "2026-07-18T12:01:00.000Z",
+          verifiedByDisplayName: "Alex Example",
+          verifiedByUserId: actor.userId,
+        }),
+      ),
     };
     const { documents, imports } = documentDependencies();
     const service = new ApplicationMcpService(
@@ -574,6 +610,17 @@ describe("ApplicationMcpService", () => {
       McpWriteAccessDisabledError,
     );
     expect(applications.createApplication).not.toHaveBeenCalled();
+    expect(() =>
+      service.recordApplicationFieldProvenance({
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        confidence: 0.9,
+        field: "salary",
+        fieldState: "disclosed",
+        observedAt: "2026-07-18T11:00:00.000Z",
+        source: { type: "imported" },
+        value: "£75,000",
+      }),
+    ).toThrow(McpWriteAccessDisabledError);
     expect(
       service.mergeApplications({
         mode: "preview",
@@ -597,6 +644,23 @@ describe("ApplicationMcpService", () => {
     accessMode = "read_write";
     expect(service.getTrackerContext().access).toBe("read_write");
     expect(service.createApplication(createInput)).toBe(created);
+    expect(
+      service.recordApplicationFieldProvenance({
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        confidence: 0.9,
+        field: "salary",
+        fieldState: "disclosed",
+        observedAt: "2026-07-18T11:00:00.000Z",
+        source: { type: "imported" },
+        value: "£75,000",
+      }),
+    ).toMatchObject({ relationship: "selected" });
+    expect(
+      service.verifyApplicationFieldProvenance({
+        applicationId: "11111111-1111-4111-8111-111111111111",
+        provenanceId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toMatchObject({ verifiedByDisplayName: "Alex Example" });
     expect(
       service.updateApplication("application-created", {
         companyName: "Updated Company",

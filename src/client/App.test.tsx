@@ -484,9 +484,15 @@ function createApplicationsClient(
         returned: applicationEvents.length,
         total: applicationEvents.length,
       }),
+    listApplicationFieldProvenance: vi
+      .fn<ApplicationsClient["listApplicationFieldProvenance"]>()
+      .mockResolvedValue([]),
     mergeApplications: vi
       .fn<ApplicationsClient["mergeApplications"]>()
       .mockRejectedValue(new Error("Merge response not configured")),
+    recordApplicationFieldProvenance: vi
+      .fn<ApplicationsClient["recordApplicationFieldProvenance"]>()
+      .mockRejectedValue(new Error("Provenance response not configured")),
     updateApplication: vi
       .fn<ApplicationsClient["updateApplication"]>()
       .mockImplementation((id, input) => {
@@ -509,6 +515,9 @@ function createApplicationsClient(
           updatedAt: "2026-07-18T13:15:00.000Z",
         });
       }),
+    verifyApplicationFieldProvenance: vi
+      .fn<ApplicationsClient["verifyApplicationFieldProvenance"]>()
+      .mockRejectedValue(new Error("Provenance response not configured")),
   } satisfies ApplicationsClient;
 }
 
@@ -1590,10 +1599,12 @@ describe("application shell", () => {
           roleTypeId: "99999999-9999-4999-8999-999999999999",
           roleTitle: "Product Designer",
           salary: "£70,000–£80,000",
+          salaryDetails: null,
           sourceId: "88888888-8888-4888-8888-888888888888",
           sourceUrl: "https://jobs.example.com/product-designer",
           statusId: "13131313-1313-4131-8131-131313131313",
           workArrangement: "hybrid",
+          workArrangementDetails: null,
         },
       ),
     );
@@ -1876,6 +1887,89 @@ describe("application shell", () => {
         name: /Hiring portal.*careers\.example\.com.*opens in a new tab/,
       }),
     ).toHaveAttribute("href", "https://careers.example.com/application");
+  });
+
+  it("shows normalized wording and verifies immutable field provenance", async () => {
+    const applicationsClient = createApplicationsClient([
+      {
+        ...applicationRecord,
+        salaryDetails: {
+          currency: "GBP",
+          disclosed: true,
+          maximum: 80_000,
+          minimum: 70_000,
+          negotiable: false,
+          period: "annual",
+        },
+        workArrangementDetails: {
+          officeDaysPerWeek: 2,
+          originalText: "Two days in London",
+          remoteDaysPerWeek: 3,
+        },
+      },
+    ]);
+    const provenance = {
+      applicationId: applicationRecord.id,
+      confidence: 0.9,
+      createdAt: "2026-07-18T12:00:00.000Z",
+      field: "salary" as const,
+      fieldState: "disclosed" as const,
+      id: "77777777-7777-4777-8777-777777777777",
+      idempotencyKey: "salary-1",
+      observedAt: "2026-07-18T11:00:00.000Z",
+      relationship: "selected" as const,
+      source: { type: "imported" as const },
+      value: "£75,000",
+      verifiedAt: null,
+      verifiedByDisplayName: null,
+      verifiedByUserId: null,
+    };
+    applicationsClient.listApplicationFieldProvenance.mockResolvedValue([
+      {
+        conflicting: 0,
+        field: "salary",
+        records: [provenance],
+        selected: provenance,
+        stale: 0,
+      },
+    ]);
+    applicationsClient.verifyApplicationFieldProvenance.mockResolvedValue({
+      ...provenance,
+      verifiedAt: "2026-07-18T12:30:00.000Z",
+      verifiedByDisplayName: "Alex Example",
+      verifiedByUserId: "11111111-1111-4111-8111-111111111111",
+    });
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Example Studio" }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: "Product Designer",
+    });
+    expect(within(drawer).getByText(/Two days in London/)).toBeInTheDocument();
+    expect(
+      within(drawer).getByText(/GBP 70000–80000 annual/),
+    ).toBeInTheDocument();
+    expect(await within(drawer).findByText("£75,000")).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Verify" }));
+    await waitFor(() =>
+      expect(
+        applicationsClient.verifyApplicationFieldProvenance,
+      ).toHaveBeenCalledWith(applicationRecord.id, provenance.id),
+    );
   });
 
   it("confirms and removes an application from the workspace", async () => {

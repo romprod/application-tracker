@@ -3,6 +3,22 @@ import { browserApiFetch } from "./browser_api_fetch";
 
 export type ApplicationStatus = string;
 export type WorkArrangement = "hybrid" | "remote" | "office";
+export type SalaryPeriod = "annual" | "daily" | "hourly" | "monthly" | "weekly";
+
+export interface SalaryDetails {
+  currency: string;
+  disclosed: boolean;
+  maximum?: number;
+  minimum?: number;
+  negotiable: boolean;
+  period: SalaryPeriod;
+}
+
+export interface WorkArrangementDetails {
+  officeDaysPerWeek?: number;
+  originalText?: string;
+  remoteDaysPerWeek?: number;
+}
 
 export interface ApplicationContact {
   email: string | null;
@@ -42,6 +58,7 @@ export interface ApplicationRecord {
   roleTypeId: string | null;
   roleTitle: string;
   salary: string | null;
+  salaryDetails?: SalaryDetails | null;
   source: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -50,6 +67,7 @@ export interface ApplicationRecord {
   statusIsTerminal: boolean;
   updatedAt: string;
   workArrangement: WorkArrangement | null;
+  workArrangementDetails?: WorkArrangementDetails | null;
 }
 
 export interface CreateApplicationInput {
@@ -67,10 +85,12 @@ export interface CreateApplicationInput {
   roleTypeId?: string;
   roleTitle: string;
   salary?: string;
+  salaryDetails?: SalaryDetails;
   sourceId?: string;
   sourceUrl?: string;
   statusId: string;
   workArrangement?: WorkArrangement;
+  workArrangementDetails?: WorkArrangementDetails;
 }
 
 export interface UpdateApplicationInput {
@@ -89,10 +109,54 @@ export interface UpdateApplicationInput {
   roleTypeId?: string | null;
   roleTitle?: string;
   salary?: string | null;
+  salaryDetails?: SalaryDetails | null;
   sourceId?: string | null;
   sourceUrl?: string | null;
   statusId?: string;
   workArrangement?: WorkArrangement | null;
+  workArrangementDetails?: WorkArrangementDetails | null;
+}
+
+export type ApplicationFieldName =
+  | "agency"
+  | "appliedOn"
+  | "companyName"
+  | "location"
+  | "roleTitle"
+  | "salary"
+  | "sourceUrl"
+  | "workArrangement";
+export type ApplicationFieldState =
+  "conflicting" | "disclosed" | "inferred" | "not_applicable" | "not_disclosed";
+export type ApplicationFieldProvenanceSource =
+  | { documentId: string; type: "document" }
+  | { emailEvidenceId: string; type: "email_evidence" }
+  | { jobPostingId: string; type: "job_posting" }
+  | { type: "imported" };
+
+export interface ApplicationFieldProvenanceRecord {
+  applicationId: string;
+  confidence: number;
+  createdAt: string;
+  field: ApplicationFieldName;
+  fieldState: ApplicationFieldState;
+  id: string;
+  idempotencyKey: string | null;
+  observedAt: string;
+  relationship: "conflicting" | "corroborating" | "selected" | "stale";
+  source: ApplicationFieldProvenanceSource;
+  value: boolean | number | string | null;
+  verifiedAt: string | null;
+  verifiedByDisplayName: string | null;
+  verifiedByUserId: string | null;
+}
+
+export interface ApplicationFieldProvenanceAssessment {
+  conflicting: number;
+  field: ApplicationFieldName;
+  records: ApplicationFieldProvenanceRecord[];
+  selected: ApplicationFieldProvenanceRecord | null;
+  stale: number;
 }
 
 export type ApplicationActivityType =
@@ -332,14 +396,34 @@ export interface ApplicationsClient {
     applicationId: string,
     input?: { limit: number; offset: number },
   ): Promise<ApplicationEventsPage>;
+  listApplicationFieldProvenance(
+    applicationId: string,
+  ): Promise<ApplicationFieldProvenanceAssessment[]>;
   listApplications(): Promise<ApplicationRecord[]>;
   mergeApplications(
     input: MergeApplicationsInput,
   ): Promise<ApplicationMergeResult>;
+  recordApplicationFieldProvenance(
+    applicationId: string,
+    input: Omit<
+      ApplicationFieldProvenanceRecord,
+      | "applicationId"
+      | "createdAt"
+      | "id"
+      | "relationship"
+      | "verifiedAt"
+      | "verifiedByDisplayName"
+      | "verifiedByUserId"
+    >,
+  ): Promise<ApplicationFieldProvenanceRecord>;
   updateApplication(
     applicationId: string,
     input: UpdateApplicationInput,
   ): Promise<ApplicationRecord>;
+  verifyApplicationFieldProvenance(
+    applicationId: string,
+    provenanceId: string,
+  ): Promise<ApplicationFieldProvenanceRecord>;
 }
 
 export class ApplicationsClientError extends Error {
@@ -382,6 +466,61 @@ function isNullableWorkArrangement(
     value === "remote" ||
     value === "office"
   );
+}
+
+function parseSalaryDetails(value: unknown): SalaryDetails | null {
+  if (value === undefined || value === null) return null;
+  if (
+    !isRecord(value) ||
+    typeof value.currency !== "string" ||
+    !/^[A-Z]{3}$/.test(value.currency) ||
+    typeof value.disclosed !== "boolean" ||
+    typeof value.negotiable !== "boolean" ||
+    !["annual", "daily", "hourly", "monthly", "weekly"].includes(
+      String(value.period),
+    ) ||
+    (value.minimum !== undefined && typeof value.minimum !== "number") ||
+    (value.maximum !== undefined && typeof value.maximum !== "number")
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    currency: value.currency,
+    disclosed: value.disclosed,
+    ...(typeof value.maximum === "number" ? { maximum: value.maximum } : {}),
+    ...(typeof value.minimum === "number" ? { minimum: value.minimum } : {}),
+    negotiable: value.negotiable,
+    period: value.period as SalaryPeriod,
+  };
+}
+
+function parseWorkArrangementDetails(
+  value: unknown,
+): WorkArrangementDetails | null {
+  if (value === undefined || value === null) return null;
+  if (
+    !isRecord(value) ||
+    (value.officeDaysPerWeek !== undefined &&
+      (typeof value.officeDaysPerWeek !== "number" ||
+        !Number.isInteger(value.officeDaysPerWeek))) ||
+    (value.remoteDaysPerWeek !== undefined &&
+      (typeof value.remoteDaysPerWeek !== "number" ||
+        !Number.isInteger(value.remoteDaysPerWeek))) ||
+    (value.originalText !== undefined && typeof value.originalText !== "string")
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return {
+    ...(typeof value.officeDaysPerWeek === "number"
+      ? { officeDaysPerWeek: value.officeDaysPerWeek }
+      : {}),
+    ...(typeof value.originalText === "string"
+      ? { originalText: value.originalText }
+      : {}),
+    ...(typeof value.remoteDaysPerWeek === "number"
+      ? { remoteDaysPerWeek: value.remoteDaysPerWeek }
+      : {}),
+  };
 }
 
 function isReferenceValueId(value: unknown): value is string {
@@ -547,6 +686,9 @@ function parseApplication(value: unknown): ApplicationRecord {
     roleTypeId: value.roleTypeId,
     roleTitle: value.roleTitle,
     salary: value.salary,
+    ...(value.salaryDetails === undefined
+      ? {}
+      : { salaryDetails: parseSalaryDetails(value.salaryDetails) }),
     source: value.source,
     sourceId: value.sourceId,
     sourceUrl: value.sourceUrl,
@@ -555,6 +697,66 @@ function parseApplication(value: unknown): ApplicationRecord {
     statusIsTerminal: value.statusIsTerminal,
     updatedAt: value.updatedAt,
     workArrangement: value.workArrangement,
+    ...(value.workArrangementDetails === undefined
+      ? {}
+      : {
+          workArrangementDetails: parseWorkArrangementDetails(
+            value.workArrangementDetails,
+          ),
+        }),
+  };
+}
+
+function parseApplicationFieldProvenance(
+  value: unknown,
+): ApplicationFieldProvenanceRecord {
+  if (
+    !isRecord(value) ||
+    typeof value.applicationId !== "string" ||
+    typeof value.confidence !== "number" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.field !== "string" ||
+    typeof value.fieldState !== "string" ||
+    typeof value.id !== "string" ||
+    !isNullableString(value.idempotencyKey) ||
+    typeof value.observedAt !== "string" ||
+    !["conflicting", "corroborating", "selected", "stale"].includes(
+      String(value.relationship),
+    ) ||
+    !isRecord(value.source) ||
+    typeof value.source.type !== "string" ||
+    !isNullableString(value.verifiedAt) ||
+    !isNullableString(value.verifiedByDisplayName) ||
+    !isNullableString(value.verifiedByUserId)
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  return value as unknown as ApplicationFieldProvenanceRecord;
+}
+
+function parseApplicationFieldProvenanceAssessment(
+  value: unknown,
+): ApplicationFieldProvenanceAssessment {
+  if (
+    !isRecord(value) ||
+    typeof value.conflicting !== "number" ||
+    typeof value.field !== "string" ||
+    !Array.isArray(value.records) ||
+    typeof value.stale !== "number"
+  ) {
+    throw new ApplicationsClientError("invalid_response");
+  }
+  const records = value.records.map(parseApplicationFieldProvenance);
+  const selected =
+    value.selected === null
+      ? null
+      : parseApplicationFieldProvenance(value.selected);
+  return {
+    conflicting: value.conflicting,
+    field: value.field as ApplicationFieldName,
+    records,
+    selected,
+    stale: value.stale,
   };
 }
 
@@ -1121,6 +1323,23 @@ export const browserApplicationsClient: ApplicationsClient = {
     };
   },
 
+  async listApplicationFieldProvenance(applicationId) {
+    const encodedId = encodeURIComponent(applicationId);
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/provenance`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body) || !Array.isArray(body.assessments)) {
+      throw new ApplicationsClientError("invalid_response");
+    }
+    return body.assessments.map(parseApplicationFieldProvenanceAssessment);
+  },
+
   async addApplicationActivity(applicationId, input) {
     const encodedId = encodeURIComponent(applicationId);
     const response = await browserApiFetch(
@@ -1176,6 +1395,25 @@ export const browserApplicationsClient: ApplicationsClient = {
     return parseMergeResult(body.merge);
   },
 
+  async recordApplicationFieldProvenance(applicationId, input) {
+    const encodedId = encodeURIComponent(applicationId);
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/provenance`,
+      {
+        body: JSON.stringify(input),
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
+    return parseApplicationFieldProvenance(body.provenance);
+  },
+
   async updateApplication(applicationId, input) {
     const encodedId = encodeURIComponent(applicationId);
     const response = await browserApiFetch(`/api/applications/${encodedId}`, {
@@ -1200,5 +1438,21 @@ export const browserApplicationsClient: ApplicationsClient = {
     }
     if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
     return parseApplication(body.application);
+  },
+
+  async verifyApplicationFieldProvenance(applicationId, provenanceId) {
+    const encodedId = encodeURIComponent(applicationId);
+    const encodedProvenanceId = encodeURIComponent(provenanceId);
+    const response = await browserApiFetch(
+      `/api/applications/${encodedId}/provenance/${encodedProvenanceId}/verify`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "POST",
+      },
+    );
+    const body = await successfulBody(response);
+    if (!isRecord(body)) throw new ApplicationsClientError("invalid_response");
+    return parseApplicationFieldProvenance(body.provenance);
   },
 };

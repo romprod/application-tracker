@@ -13,6 +13,7 @@ import {
   type AddApplicationActivityInput,
   type ApplicationEvidence,
   type ApplicationEventsPage,
+  type ApplicationFieldProvenanceAssessment,
   type ApplicationRecord,
   type ApplicationsClient,
 } from "./applications_client";
@@ -105,6 +106,11 @@ export function ApplicationWorkspace({
   const [evidence, setEvidence] = useState<ApplicationEvidence>();
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [evidenceError, setEvidenceError] = useState(false);
+  const [provenance, setProvenance] =
+    useState<ApplicationFieldProvenanceAssessment[]>();
+  const [provenanceLoading, setProvenanceLoading] = useState(false);
+  const [provenanceError, setProvenanceError] = useState(false);
+  const [provenanceVerifyingId, setProvenanceVerifyingId] = useState<string>();
   const [reviewingDuplicates, setReviewingDuplicates] = useState(false);
   const drawerRequest = useRef(0);
 
@@ -161,12 +167,18 @@ export function ApplicationWorkspace({
     setEvidence(undefined);
     setEvidenceError(false);
     setEvidenceLoading(true);
+    setProvenance(undefined);
+    setProvenanceError(false);
+    setProvenanceLoading(true);
 
     const eventsRequest = applicationsClient.listApplicationEvents(
       application.id,
       { limit: 25, offset: 0 },
     );
     const evidenceRequest = applicationsClient.getApplicationEvidence(
+      application.id,
+    );
+    const provenanceRequest = applicationsClient.listApplicationFieldProvenance(
       application.id,
     );
     void eventsRequest
@@ -179,6 +191,17 @@ export function ApplicationWorkspace({
         if (drawerRequest.current !== request) return;
         setEventsError(true);
         setEventsLoading(false);
+      });
+    void provenanceRequest
+      .then((loaded) => {
+        if (drawerRequest.current !== request) return;
+        setProvenance(loaded);
+        setProvenanceLoading(false);
+      })
+      .catch(() => {
+        if (drawerRequest.current !== request) return;
+        setProvenanceError(true);
+        setProvenanceLoading(false);
       });
     void evidenceRequest
       .then((loaded) => {
@@ -203,6 +226,31 @@ export function ApplicationWorkspace({
     setEvidence(undefined);
     setEvidenceLoading(false);
     setEvidenceError(false);
+    setProvenance(undefined);
+    setProvenanceLoading(false);
+    setProvenanceError(false);
+    setProvenanceVerifyingId(undefined);
+  }
+
+  async function verifyProvenance(provenanceId: string) {
+    if (!selectedApplication || provenanceVerifyingId) return;
+    setProvenanceVerifyingId(provenanceId);
+    setProvenanceError(false);
+    try {
+      await applicationsClient.verifyApplicationFieldProvenance(
+        selectedApplication.id,
+        provenanceId,
+      );
+      setProvenance(
+        await applicationsClient.listApplicationFieldProvenance(
+          selectedApplication.id,
+        ),
+      );
+    } catch {
+      setProvenanceError(true);
+    } finally {
+      setProvenanceVerifyingId(undefined);
+    }
   }
 
   async function addActivity(input: AddApplicationActivityInput) {
@@ -465,6 +513,11 @@ export function ApplicationWorkspace({
             beginEdit(application);
           }}
           onLoadMoreEvents={loadMoreEvents}
+          onVerifyProvenance={verifyProvenance}
+          provenance={provenance}
+          provenanceError={provenanceError}
+          provenanceLoading={provenanceLoading}
+          provenanceVerifyingId={provenanceVerifyingId}
         />
       )}
       {formMode && (

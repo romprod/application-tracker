@@ -8,6 +8,9 @@ import {
   ApplicationActivityEvidenceError,
   ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
+  ApplicationFieldProvenanceIdempotencyConflictError,
+  ApplicationFieldProvenanceSourceError,
+  ApplicationFieldProvenanceVerificationConflictError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
@@ -25,6 +28,8 @@ import {
   type ApplicationContact,
   type ApplicationEvent,
   type ApplicationEventsPage,
+  type ApplicationFieldProvenanceAssessment,
+  type ApplicationFieldProvenanceRecord,
   type ApplicationLink,
   type ApplicationMergeFieldConflict,
   type ApplicationMergeFieldValue,
@@ -37,7 +42,9 @@ import {
   type ApplicationsRepository,
   type CreateApplicationRecord,
   type DeleteApplicationRecord,
+  type RecordApplicationFieldProvenanceRecord,
   type UpdateApplicationRecord,
+  type VerifyApplicationFieldProvenanceRecord,
 } from "../../application/applications.js";
 import type {
   ApplicationEmailEvidence,
@@ -46,6 +53,8 @@ import type {
 import type { DocumentRecord } from "../../application/documents.js";
 import {
   maximumApplicationRelations,
+  type ApplicationFieldName,
+  type ApplicationFieldProvenanceSource,
   type ApplicationMergeField,
   type ApplicationMergeResolutions,
   type AuditDuplicateApplicationsInput,
@@ -53,9 +62,41 @@ import {
 
 interface StoredApplicationRecord extends Omit<
   ApplicationRecord,
-  "contacts" | "links" | "statusIsTerminal"
+  | "contacts"
+  | "links"
+  | "salaryDetails"
+  | "statusIsTerminal"
+  | "workArrangementDetails"
 > {
+  officeDaysPerWeek: number | null;
+  remoteDaysPerWeek: number | null;
+  salaryCurrency: string | null;
+  salaryDisclosed: number | null;
+  salaryMaximum: number | null;
+  salaryMinimum: number | null;
+  salaryNegotiable: number | null;
+  salaryPeriod: "annual" | "daily" | "hourly" | "monthly" | "weekly" | null;
   statusIsTerminal: number;
+  workArrangementText: string | null;
+}
+
+interface StoredApplicationFieldProvenance {
+  applicationId: string;
+  confidence: number;
+  createdAt: string;
+  field: ApplicationFieldName;
+  fieldState: ApplicationFieldProvenanceRecord["fieldState"];
+  id: string;
+  idempotencyKey: string | null;
+  observedAt: string;
+  sourceDocumentId: string | null;
+  sourceEmailEvidenceId: string | null;
+  sourceJobPostingId: string | null;
+  sourceType: ApplicationFieldProvenanceSource["type"];
+  valueJson: string;
+  verifiedAt: string | null;
+  verifiedByDisplayName: string | null;
+  verifiedByUserId: string | null;
 }
 
 type StoredContact = ApplicationContact & { applicationId: string };
@@ -93,6 +134,15 @@ const mergeFields = [
 ] as const satisfies readonly ApplicationMergeField[];
 
 const relationHydrationBatchSize = 500;
+const provenanceSourcePrecedence: Record<
+  ApplicationFieldProvenanceSource["type"],
+  number
+> = {
+  document: 300,
+  email_evidence: 200,
+  imported: 100,
+  job_posting: 400,
+};
 const duplicateCandidatePairsSql = `
   WITH candidate_pairs AS (
     SELECT first.id AS firstId, second.id AS secondId
@@ -317,9 +367,18 @@ function publicApplicationSelect(): string {
             graph_connections.name AS outlookGraphConnectionName,
             applications.rating,
             applications.salary,
+            applications.salary_minimum_amount AS salaryMinimum,
+            applications.salary_maximum_amount AS salaryMaximum,
+            applications.salary_currency AS salaryCurrency,
+            applications.salary_period AS salaryPeriod,
+            applications.salary_disclosed AS salaryDisclosed,
+            applications.salary_negotiable AS salaryNegotiable,
             applications.created_at AS createdAt,
             applications.updated_at AS updatedAt,
-            applications.work_arrangement AS workArrangement
+            applications.work_arrangement AS workArrangement,
+            applications.work_arrangement_text AS workArrangementText,
+            applications.office_days_per_week AS officeDaysPerWeek,
+            applications.remote_days_per_week AS remoteDaysPerWeek
           FROM applications AS applications
           JOIN reference_values AS statuses
             ON statuses.id = applications.status_reference_id
@@ -333,6 +392,49 @@ function publicApplicationSelect(): string {
           LEFT JOIN outlook_graph_connections AS graph_connections
             ON graph_connections.workspace_id = graph_assignments.workspace_id
            AND graph_connections.id = graph_assignments.connection_id`;
+}
+
+function provenanceSource(
+  stored: StoredApplicationFieldProvenance,
+): ApplicationFieldProvenanceSource {
+  switch (stored.sourceType) {
+    case "document":
+      return { documentId: stored.sourceDocumentId!, type: "document" };
+    case "email_evidence":
+      return {
+        emailEvidenceId: stored.sourceEmailEvidenceId!,
+        type: "email_evidence",
+      };
+    case "job_posting":
+      return {
+        jobPostingId: stored.sourceJobPostingId!,
+        type: "job_posting",
+      };
+    case "imported":
+      return { type: "imported" };
+  }
+}
+
+function publicProvenance(
+  stored: StoredApplicationFieldProvenance,
+  relationship: ApplicationFieldProvenanceRecord["relationship"],
+): ApplicationFieldProvenanceRecord {
+  return {
+    applicationId: stored.applicationId,
+    confidence: stored.confidence,
+    createdAt: stored.createdAt,
+    field: stored.field,
+    fieldState: stored.fieldState,
+    id: stored.id,
+    idempotencyKey: stored.idempotencyKey,
+    observedAt: stored.observedAt,
+    relationship,
+    source: provenanceSource(stored),
+    value: JSON.parse(stored.valueJson) as boolean | number | string | null,
+    verifiedAt: stored.verifiedAt,
+    verifiedByDisplayName: stored.verifiedByDisplayName,
+    verifiedByUserId: stored.verifiedByUserId,
+  };
 }
 
 export class SqliteApplicationsRepository implements ApplicationsRepository {
@@ -790,6 +892,15 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         : survivor.outlookGraphConnectionId === source.outlookGraphConnectionId
           ? source.outlookGraphConnectionName
           : target.outlookGraphConnectionName;
+    survivor.salaryDetails =
+      survivor.salary === source.salary && survivor.salary !== target.salary
+        ? source.salaryDetails
+        : (target.salaryDetails ?? source.salaryDetails);
+    survivor.workArrangementDetails =
+      survivor.workArrangement === source.workArrangement &&
+      survivor.workArrangement !== target.workArrangement
+        ? source.workArrangementDetails
+        : (target.workArrangementDetails ?? source.workArrangementDetails);
     if (survivor.statusId === source.statusId) {
       survivor.status = source.status;
       survivor.statusIsTerminal = source.statusIsTerminal;
@@ -1011,7 +1122,16 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
                notes = ?,
                rating = ?,
                salary = ?,
+               salary_minimum_amount = ?,
+               salary_maximum_amount = ?,
+               salary_currency = ?,
+               salary_period = ?,
+               salary_disclosed = ?,
+               salary_negotiable = ?,
                work_arrangement = ?,
+               work_arrangement_text = ?,
+               office_days_per_week = ?,
+               remote_days_per_week = ?,
                updated_at = ?
            WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
              AND updated_at = ?`,
@@ -1032,7 +1152,20 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           survivor.notes,
           survivor.rating,
           survivor.salary,
+          survivor.salaryDetails?.minimum ?? null,
+          survivor.salaryDetails?.maximum ?? null,
+          survivor.salaryDetails?.currency ?? null,
+          survivor.salaryDetails?.period ?? null,
+          survivor.salaryDetails === null
+            ? null
+            : Number(survivor.salaryDetails.disclosed),
+          survivor.salaryDetails === null
+            ? null
+            : Number(survivor.salaryDetails.negotiable),
           survivor.workArrangement,
+          survivor.workArrangementDetails?.originalText ?? null,
+          survivor.workArrangementDetails?.officeDaysPerWeek ?? null,
+          survivor.workArrangementDetails?.remoteDaysPerWeek ?? null,
           input.mergedAt,
           input.workspaceId,
           target.id,
@@ -1206,12 +1339,52 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
     stored: StoredApplicationRecord[],
   ): ApplicationRecord[] {
     if (stored.length === 0) return [];
-    const applications = stored.map((application) => ({
-      ...application,
-      contacts: [] as ApplicationContact[],
-      statusIsTerminal: application.statusIsTerminal === 1,
-      links: [] as ApplicationLink[],
-    }));
+    const applications = stored.map((application) => {
+      const {
+        officeDaysPerWeek,
+        remoteDaysPerWeek,
+        salaryCurrency,
+        salaryDisclosed,
+        salaryMaximum,
+        salaryMinimum,
+        salaryNegotiable,
+        salaryPeriod,
+        workArrangementText,
+        ...record
+      } = application;
+      return {
+        ...record,
+        contacts: [] as ApplicationContact[],
+        links: [] as ApplicationLink[],
+        salaryDetails:
+          salaryCurrency !== null &&
+          salaryDisclosed !== null &&
+          salaryNegotiable !== null &&
+          salaryPeriod !== null
+            ? {
+                currency: salaryCurrency,
+                disclosed: salaryDisclosed === 1,
+                ...(salaryMaximum === null ? {} : { maximum: salaryMaximum }),
+                ...(salaryMinimum === null ? {} : { minimum: salaryMinimum }),
+                negotiable: salaryNegotiable === 1,
+                period: salaryPeriod,
+              }
+            : null,
+        statusIsTerminal: application.statusIsTerminal === 1,
+        workArrangementDetails:
+          workArrangementText !== null ||
+          officeDaysPerWeek !== null ||
+          remoteDaysPerWeek !== null
+            ? {
+                ...(officeDaysPerWeek === null ? {} : { officeDaysPerWeek }),
+                ...(remoteDaysPerWeek === null ? {} : { remoteDaysPerWeek }),
+                ...(workArrangementText === null
+                  ? {}
+                  : { originalText: workArrangementText }),
+              }
+            : null,
+      } satisfies ApplicationRecord;
+    });
     const byId = new Map(
       applications.map((application) => [application.id, application]),
     );
@@ -1377,9 +1550,13 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
            (id, workspace_id, agency, company_name, role_title, legacy_status,
             status_reference_id, source_reference_id, role_type_reference_id,
             location, source_url, applied_on, next_action, next_action_due,
-            notes, rating, salary, work_arrangement, created_by_user_id,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            notes, rating, salary, salary_minimum_amount,
+            salary_maximum_amount, salary_currency, salary_period,
+            salary_disclosed, salary_negotiable, work_arrangement,
+            work_arrangement_text, office_days_per_week, remote_days_per_week,
+            created_by_user_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -1399,7 +1576,20 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.notes,
           input.rating,
           input.salary,
+          input.salaryDetails?.minimum ?? null,
+          input.salaryDetails?.maximum ?? null,
+          input.salaryDetails?.currency ?? null,
+          input.salaryDetails?.period ?? null,
+          input.salaryDetails == null
+            ? null
+            : Number(input.salaryDetails.disclosed),
+          input.salaryDetails == null
+            ? null
+            : Number(input.salaryDetails.negotiable),
           input.workArrangement,
+          input.workArrangementDetails?.originalText ?? null,
+          input.workArrangementDetails?.officeDaysPerWeek ?? null,
+          input.workArrangementDetails?.remoteDaysPerWeek ?? null,
           input.createdByUserId,
           input.createdAt,
           input.createdAt,
@@ -1451,6 +1641,281 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
       )
       .all(workspaceId) as StoredApplicationRecord[];
     return this.hydrateApplications(workspaceId, stored);
+  }
+
+  private storedApplicationFieldProvenance(
+    workspaceId: string,
+    applicationId: string,
+  ): StoredApplicationFieldProvenance[] {
+    return this.database
+      .prepare(
+        `SELECT
+           provenance.id,
+           provenance.application_id AS applicationId,
+           provenance.field_name AS field,
+           provenance.value_json AS valueJson,
+           provenance.source_type AS sourceType,
+           provenance.source_email_evidence_id AS sourceEmailEvidenceId,
+           provenance.source_document_id AS sourceDocumentId,
+           provenance.source_job_posting_id AS sourceJobPostingId,
+           provenance.observed_at AS observedAt,
+           provenance.confidence,
+           provenance.field_state AS fieldState,
+           provenance.idempotency_key AS idempotencyKey,
+           provenance.verified_at AS verifiedAt,
+           provenance.verified_by_user_id AS verifiedByUserId,
+           verifiers.display_name AS verifiedByDisplayName,
+           provenance.created_at AS createdAt
+         FROM application_field_provenance AS provenance
+         LEFT JOIN users AS verifiers
+           ON verifiers.id = provenance.verified_by_user_id
+         WHERE provenance.workspace_id = ?
+           AND provenance.application_id = ?
+         ORDER BY provenance.field_name, provenance.observed_at DESC,
+                  provenance.id DESC`,
+      )
+      .all(workspaceId, applicationId) as StoredApplicationFieldProvenance[];
+  }
+
+  public listApplicationFieldProvenance(
+    workspaceId: string,
+    applicationId: string,
+  ): ApplicationFieldProvenanceAssessment[] | undefined {
+    if (!this.findStoredApplication(workspaceId, applicationId))
+      return undefined;
+    const grouped = new Map<
+      ApplicationFieldName,
+      StoredApplicationFieldProvenance[]
+    >();
+    for (const record of this.storedApplicationFieldProvenance(
+      workspaceId,
+      applicationId,
+    )) {
+      const records = grouped.get(record.field) ?? [];
+      records.push(record);
+      grouped.set(record.field, records);
+    }
+    return [...grouped.entries()]
+      .sort(([first], [second]) => first.localeCompare(second))
+      .map(([field, records]) => {
+        records.sort((first, second) => {
+          const verified =
+            Number(second.verifiedAt !== null) -
+            Number(first.verifiedAt !== null);
+          if (verified !== 0) return verified;
+          const source =
+            provenanceSourcePrecedence[second.sourceType] -
+            provenanceSourcePrecedence[first.sourceType];
+          if (source !== 0) return source;
+          const observed = second.observedAt.localeCompare(first.observedAt);
+          if (observed !== 0) return observed;
+          const confidence = second.confidence - first.confidence;
+          return confidence !== 0
+            ? confidence
+            : second.id.localeCompare(first.id);
+        });
+        const selected = records[0];
+        if (!selected) {
+          return {
+            conflicting: 0,
+            field,
+            records: [],
+            selected: null,
+            stale: 0,
+          };
+        }
+        const selectedValue = JSON.parse(selected.valueJson) as unknown;
+        let conflicting = 0;
+        let stale = 0;
+        const assessed = records.map((record, index) => {
+          let relationship: ApplicationFieldProvenanceRecord["relationship"];
+          if (index === 0) {
+            relationship = "selected";
+          } else if (
+            isDeepStrictEqual(JSON.parse(record.valueJson), selectedValue)
+          ) {
+            relationship = "corroborating";
+          } else if (record.observedAt < selected.observedAt) {
+            relationship = "stale";
+            stale += 1;
+          } else {
+            relationship = "conflicting";
+            conflicting += 1;
+          }
+          return publicProvenance(record, relationship);
+        });
+        return {
+          conflicting,
+          field,
+          records: assessed,
+          selected: assessed[0] ?? null,
+          stale,
+        };
+      });
+  }
+
+  private requireProvenanceSource(
+    workspaceId: string,
+    applicationId: string,
+    source: ApplicationFieldProvenanceSource,
+  ): void {
+    if (source.type === "imported") return;
+    const query =
+      source.type === "document"
+        ? {
+            id: source.documentId,
+            sql: `SELECT 1 FROM application_documents
+                  WHERE workspace_id = ? AND application_id = ? AND document_id = ?`,
+          }
+        : source.type === "email_evidence"
+          ? {
+              id: source.emailEvidenceId,
+              sql: `SELECT 1 FROM application_email_evidence
+                    WHERE workspace_id = ? AND application_id = ? AND id = ?`,
+            }
+          : {
+              id: source.jobPostingId,
+              sql: `SELECT 1 FROM application_job_postings
+                    WHERE workspace_id = ? AND application_id = ? AND id = ?`,
+            };
+    const exists = this.database
+      .prepare(query.sql)
+      .pluck()
+      .get(workspaceId, applicationId, query.id);
+    if (exists === undefined) throw new ApplicationFieldProvenanceSourceError();
+  }
+
+  public recordApplicationFieldProvenance(
+    input: RecordApplicationFieldProvenanceRecord,
+  ): ApplicationFieldProvenanceRecord | undefined {
+    const record = this.database.transaction(() => {
+      if (!this.findStoredApplication(input.workspaceId, input.applicationId)) {
+        return undefined;
+      }
+      const existing = input.idempotencyKey
+        ? (this.database
+            .prepare(
+              `SELECT application_id AS applicationId
+               FROM application_field_provenance
+               WHERE workspace_id = ? AND idempotency_key = ?`,
+            )
+            .get(input.workspaceId, input.idempotencyKey) as
+            { applicationId: string } | undefined)
+        : undefined;
+      if (existing) {
+        const stored = this.storedApplicationFieldProvenance(
+          input.workspaceId,
+          existing.applicationId,
+        ).find(({ idempotencyKey }) => idempotencyKey === input.idempotencyKey);
+        if (
+          stored &&
+          stored.applicationId === input.applicationId &&
+          stored.field === input.field &&
+          isDeepStrictEqual(JSON.parse(stored.valueJson), input.value) &&
+          isDeepStrictEqual(provenanceSource(stored), input.source) &&
+          stored.observedAt === input.observedAt &&
+          stored.confidence === input.confidence &&
+          stored.fieldState === input.fieldState
+        ) {
+          return this.listApplicationFieldProvenance(
+            input.workspaceId,
+            input.applicationId,
+          )
+            ?.flatMap(({ records }) => records)
+            .find(
+              ({ idempotencyKey }) => idempotencyKey === input.idempotencyKey,
+            );
+        }
+        throw new ApplicationFieldProvenanceIdempotencyConflictError();
+      }
+      this.requireProvenanceSource(
+        input.workspaceId,
+        input.applicationId,
+        input.source,
+      );
+      const id = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO application_field_provenance
+             (id, workspace_id, application_id, field_name, value_json,
+              source_type, source_email_evidence_id, source_document_id,
+              source_job_posting_id, observed_at, confidence, field_state,
+              idempotency_key, verified_at, verified_by_user_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+        )
+        .run(
+          id,
+          input.workspaceId,
+          input.applicationId,
+          input.field,
+          JSON.stringify(input.value),
+          input.source.type,
+          input.source.type === "email_evidence"
+            ? input.source.emailEvidenceId
+            : null,
+          input.source.type === "document" ? input.source.documentId : null,
+          input.source.type === "job_posting"
+            ? input.source.jobPostingId
+            : null,
+          input.observedAt,
+          input.confidence,
+          input.fieldState,
+          input.idempotencyKey ?? null,
+          input.createdAt,
+        );
+      return this.listApplicationFieldProvenance(
+        input.workspaceId,
+        input.applicationId,
+      )
+        ?.flatMap(({ records }) => records)
+        .find((candidate) => candidate.id === id);
+    });
+    return record.immediate();
+  }
+
+  public verifyApplicationFieldProvenance(
+    input: VerifyApplicationFieldProvenanceRecord,
+  ): ApplicationFieldProvenanceRecord | undefined {
+    const verify = this.database.transaction(() => {
+      if (!this.findStoredApplication(input.workspaceId, input.applicationId)) {
+        return undefined;
+      }
+      const stored = this.storedApplicationFieldProvenance(
+        input.workspaceId,
+        input.applicationId,
+      ).find(({ id }) => id === input.provenanceId);
+      if (!stored) return undefined;
+      if (stored.verifiedAt !== null) {
+        if (stored.verifiedByUserId !== input.verifiedByUserId) {
+          throw new ApplicationFieldProvenanceVerificationConflictError();
+        }
+      } else {
+        const result = this.database
+          .prepare(
+            `UPDATE application_field_provenance
+             SET verified_at = ?, verified_by_user_id = ?
+             WHERE workspace_id = ? AND application_id = ? AND id = ?
+               AND verified_at IS NULL`,
+          )
+          .run(
+            input.verifiedAt,
+            input.verifiedByUserId,
+            input.workspaceId,
+            input.applicationId,
+            input.provenanceId,
+          );
+        if (result.changes !== 1) {
+          throw new ApplicationFieldProvenanceVerificationConflictError();
+        }
+      }
+      return this.listApplicationFieldProvenance(
+        input.workspaceId,
+        input.applicationId,
+      )
+        ?.flatMap(({ records }) => records)
+        .find(({ id }) => id === input.provenanceId);
+    });
+    return verify.immediate();
   }
 
   public deleteApplication(input: DeleteApplicationRecord): boolean {
@@ -1889,6 +2354,29 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         );
       }
 
+      const salaryDetails =
+        input.salaryDetails === undefined
+          ? current.salaryDetails
+          : input.salaryDetails;
+      const workArrangement =
+        input.workArrangement === undefined
+          ? current.workArrangement
+          : input.workArrangement;
+      const workArrangementDetails =
+        input.workArrangementDetails === undefined
+          ? current.workArrangementDetails
+          : input.workArrangementDetails;
+      const officeDays = workArrangementDetails?.officeDaysPerWeek ?? 0;
+      const remoteDays = workArrangementDetails?.remoteDaysPerWeek ?? 0;
+      if (
+        (workArrangement === "remote" && officeDays > 0) ||
+        (workArrangement === "office" && remoteDays > 0)
+      ) {
+        throw new RangeError(
+          "Work-arrangement details are incompatible with the classification",
+        );
+      }
+
       const updateResult = this.database
         .prepare(
           `UPDATE applications
@@ -1896,8 +2384,11 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
                status_reference_id = ?, source_reference_id = ?,
                role_type_reference_id = ?, location = ?, source_url = ?,
                applied_on = ?, next_action = ?, next_action_due = ?,
-               notes = ?, rating = ?, salary = ?, work_arrangement = ?,
-               updated_at = ?
+               notes = ?, rating = ?, salary = ?, salary_minimum_amount = ?,
+               salary_maximum_amount = ?, salary_currency = ?, salary_period = ?,
+               salary_disclosed = ?, salary_negotiable = ?, work_arrangement = ?,
+               work_arrangement_text = ?, office_days_per_week = ?,
+               remote_days_per_week = ?, updated_at = ?
            WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
              AND updated_at = ?`,
         )
@@ -1921,9 +2412,16 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
           input.notes === undefined ? current.notes : input.notes,
           input.rating === undefined ? current.rating : input.rating,
           input.salary === undefined ? current.salary : input.salary,
-          input.workArrangement === undefined
-            ? current.workArrangement
-            : input.workArrangement,
+          salaryDetails?.minimum ?? null,
+          salaryDetails?.maximum ?? null,
+          salaryDetails?.currency ?? null,
+          salaryDetails?.period ?? null,
+          salaryDetails === null ? null : Number(salaryDetails.disclosed),
+          salaryDetails === null ? null : Number(salaryDetails.negotiable),
+          workArrangement,
+          workArrangementDetails?.originalText ?? null,
+          workArrangementDetails?.officeDaysPerWeek ?? null,
+          workArrangementDetails?.remoteDaysPerWeek ?? null,
           input.updatedAt,
           input.workspaceId,
           input.applicationId,

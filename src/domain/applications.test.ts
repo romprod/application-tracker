@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   applicationIdSchema,
   createApplicationSchema,
+  recordApplicationFieldProvenanceSchema,
   updateApplicationSchema,
+  verifyApplicationFieldProvenanceSchema,
 } from "./applications.js";
 
 const statusId = "11111111-1111-4111-8111-111111111111";
@@ -39,10 +41,23 @@ describe("createApplicationSchema", () => {
         roleTypeId,
         roleTitle: "  Product Designer  ",
         salary: "  £70,000–£80,000  ",
+        salaryDetails: {
+          currency: "gbp",
+          disclosed: true,
+          maximum: 80000,
+          minimum: 70000,
+          negotiable: false,
+          period: "annual",
+        },
         sourceId,
         sourceUrl: "  https://jobs.example.com/product-designer  ",
         statusId,
         workArrangement: "hybrid",
+        workArrangementDetails: {
+          officeDaysPerWeek: 2,
+          originalText: "  Two days in London  ",
+          remoteDaysPerWeek: 3,
+        },
       }),
     ).toEqual({
       agency: "Example Recruitment",
@@ -70,10 +85,23 @@ describe("createApplicationSchema", () => {
       roleTypeId,
       roleTitle: "Product Designer",
       salary: "£70,000–£80,000",
+      salaryDetails: {
+        currency: "GBP",
+        disclosed: true,
+        maximum: 80000,
+        minimum: 70000,
+        negotiable: false,
+        period: "annual",
+      },
       sourceId,
       sourceUrl: "https://jobs.example.com/product-designer",
       statusId,
       workArrangement: "hybrid",
+      workArrangementDetails: {
+        officeDaysPerWeek: 2,
+        originalText: "Two days in London",
+        remoteDaysPerWeek: 3,
+      },
     });
   });
 
@@ -103,6 +131,30 @@ describe("createApplicationSchema", () => {
         appliedOn: "18/07/2026",
         companyName: "Example Studio",
         roleTitle: "Product Designer",
+      }),
+    ).toThrow();
+    expect(() =>
+      createApplicationSchema.parse({
+        companyName: "Example Studio",
+        roleTitle: "Product Designer",
+        salaryDetails: {
+          currency: "GBP",
+          disclosed: true,
+          maximum: 70000,
+          minimum: 80000,
+          negotiable: false,
+          period: "annual",
+        },
+        statusId,
+      }),
+    ).toThrow();
+    expect(() =>
+      createApplicationSchema.parse({
+        companyName: "Example Studio",
+        roleTitle: "Product Designer",
+        statusId,
+        workArrangement: "remote",
+        workArrangementDetails: { officeDaysPerWeek: 1 },
       }),
     ).toThrow();
     expect(() =>
@@ -141,6 +193,55 @@ describe("createApplicationSchema", () => {
         companyName: "Example Studio",
         privateField: "not allowed",
         roleTitle: "Product Designer",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("application field provenance schemas", () => {
+  const applicationId = "44444444-4444-4444-8444-444444444444";
+  const evidenceId = "55555555-5555-4555-8555-555555555555";
+
+  it("normalizes one bounded, source-linked observation", () => {
+    expect(
+      recordApplicationFieldProvenanceSchema.parse({
+        applicationId,
+        confidence: 0.82,
+        field: "salary",
+        fieldState: "disclosed",
+        idempotencyKey: "  outlook-salary-1  ",
+        observedAt: "2026-07-18T11:45:00.000Z",
+        source: { emailEvidenceId: evidenceId, type: "email_evidence" },
+        value: "  £75,000  ",
+      }),
+    ).toEqual({
+      applicationId,
+      confidence: 0.82,
+      field: "salary",
+      fieldState: "disclosed",
+      idempotencyKey: "outlook-salary-1",
+      observedAt: "2026-07-18T11:45:00.000Z",
+      source: { emailEvidenceId: evidenceId, type: "email_evidence" },
+      value: "£75,000",
+    });
+  });
+
+  it("rejects mismatched sources, unsupported values, and invalid verification", () => {
+    expect(() =>
+      recordApplicationFieldProvenanceSchema.parse({
+        applicationId,
+        confidence: 0.5,
+        field: "salary",
+        fieldState: "disclosed",
+        observedAt: "2026-07-18T11:45:00.000Z",
+        source: { documentId: evidenceId, type: "email_evidence" },
+        value: { amount: 75_000 },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyApplicationFieldProvenanceSchema.parse({
+        applicationId,
+        provenanceId: "not-a-uuid",
       }),
     ).toThrow();
   });

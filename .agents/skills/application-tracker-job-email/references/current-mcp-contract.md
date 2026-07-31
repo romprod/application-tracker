@@ -18,6 +18,7 @@ this reference.
 - [Duplicate audit and application merge](#duplicate-audit-and-application-merge)
 - [Evidence linking and atomic reconciliation](#evidence-linking-and-atomic-reconciliation)
 - [Immutable application events](#immutable-application-events)
+- [Field provenance and normalized values](#field-provenance-and-normalized-values)
 - [Application detail evidence](#application-detail-evidence)
 - [Attachment document imports](#attachment-document-imports)
 - [Supported provider identities](#supported-provider-identities)
@@ -578,13 +579,39 @@ in deterministic `occurredAt` and insertion-sequence order.
   activity, plus `eventsPage` metadata; follow `eventsPage.nextOffset` with
   `list_application_events` for the remaining history;
 - `jobPostings`; and
-- `emailEvidence`.
+- `emailEvidence`; and
+- `provenance`, grouped by field with the selected observation and explicit
+  conflicting and stale counts.
 
 A job posting contains provider, external posting ID when available, canonical
 URL when available, and timestamps. Email evidence contains Message-ID,
 evidence type, received timestamp, optional Outlook web URL, and persistence
 timestamps. The server does not store email subjects, senders, or bodies in
 this evidence.
+
+## Field provenance and normalized values
+
+`record_application_field_provenance` appends one immutable observation for
+`agency`, `appliedOn`, `companyName`, `location`, `roleTitle`, `salary`,
+`sourceUrl`, or `workArrangement`. It requires the application, scalar JSON
+value, field state, source, observation time, and confidence from 0 through 1.
+Sources are one associated email-evidence ID, associated document ID,
+associated job-posting ID, or `imported`. Optional `idempotencyKey` supports an
+exact retry; reuse with different input returns
+`provenance_idempotency_conflict`.
+
+Recording provenance never changes the application scalar. Assessments select
+manually verified evidence first, then job posting, document, email evidence,
+and imported sources. Within a precedence tier, newer observation time and then
+higher confidence win. A different older value is `stale`; a different newer
+lower-precedence value is `conflicting`; equal values are `corroborating`.
+Conflicts remain stored and visible.
+
+`verify_application_field_provenance` accepts `applicationId` and
+`provenanceId`. It records the bound actor and server time without changing the
+source observation. An exact retry by the same actor returns the verified row;
+a competing verification returns `provenance_verification_conflict`. Invalid
+or cross-application sources return `invalid_provenance_source`.
 
 ## Attachment document imports
 
@@ -636,7 +663,13 @@ Do not submit campaign, email-click, recruiter, account, or search-result IDs.
 
 The create fallback requires `companyName`, `roleTitle`, and active `statusId`.
 Optional fields are `appliedOn`, contacts, links, location, next action and due
-date, notes, role type ID, source ID, and source URL.
+date, notes, role type ID, source ID, source URL, original salary text,
+normalized `salaryDetails`, the high-level work arrangement, and normalized
+`workArrangementDetails`. Salary details contain currency, period, disclosed
+and negotiable flags, and optional ordered minimum and maximum amounts. Work
+arrangement details preserve optional original wording and office and remote
+days per week, compatible with the `hybrid`, `remote`, or `office`
+classification.
 
 Updates omit unchanged fields and use `null` to clear nullable scalars. Contacts
 and links are replacement arrays with at most 10 entries each.

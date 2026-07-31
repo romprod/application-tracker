@@ -5,6 +5,9 @@ import {
   ApplicationActivityEvidenceError,
   ApplicationActivityIdempotencyConflictError,
   ApplicationConflictError,
+  ApplicationFieldProvenanceIdempotencyConflictError,
+  ApplicationFieldProvenanceSourceError,
+  ApplicationFieldProvenanceVerificationConflictError,
   ApplicationMergeNotFoundError,
   ApplicationMergeStateError,
   ApplicationMergeUnsafeError,
@@ -26,7 +29,9 @@ import {
   createApplicationSchema,
   listApplicationEventsSchema,
   mergeApplicationsSchema,
+  recordApplicationFieldProvenanceSchema,
   updateApplicationSchema,
+  verifyApplicationFieldProvenanceSchema,
 } from "../domain/applications.js";
 import { linkEmailEvidencePayloadSchema } from "../domain/job_email_reconciliation.js";
 import { requestSessionToken } from "./auth_routes.js";
@@ -270,6 +275,122 @@ export function createApplicationsRouter(
       next(error);
     }
   });
+
+  router.get("/:applicationId/provenance", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsedId = applicationIdSchema.safeParse(
+      request.params.applicationId,
+    );
+    if (!parsedId.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.json({
+        assessments: applicationsService.listApplicationFieldProvenance(
+          actor,
+          parsedId.data,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/:applicationId/provenance", (request, response, next) => {
+    const actor = authService.getActor(requestSessionToken(request));
+    if (!actor) {
+      response.status(401).json({ error: { code: "authentication_required" } });
+      return;
+    }
+    const parsed = recordApplicationFieldProvenanceSchema.safeParse({
+      ...request.body,
+      applicationId: request.params.applicationId,
+    });
+    if (!parsed.success) {
+      response.status(400).json({ error: { code: "validation_error" } });
+      return;
+    }
+    try {
+      response.status(201).json({
+        provenance: applicationsService.recordApplicationFieldProvenance(
+          actor,
+          parsed.data,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof ApplicationNotFoundError) {
+        response.status(404).json({ error: { code: "application_not_found" } });
+        return;
+      }
+      if (error instanceof ApplicationFieldProvenanceSourceError) {
+        response
+          .status(400)
+          .json({ error: { code: "invalid_provenance_source" } });
+        return;
+      }
+      if (error instanceof ApplicationFieldProvenanceIdempotencyConflictError) {
+        response
+          .status(409)
+          .json({ error: { code: "provenance_idempotency_conflict" } });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post(
+    "/:applicationId/provenance/:provenanceId/verify",
+    (request, response, next) => {
+      const actor = authService.getActor(requestSessionToken(request));
+      if (!actor) {
+        response
+          .status(401)
+          .json({ error: { code: "authentication_required" } });
+        return;
+      }
+      const parsed = verifyApplicationFieldProvenanceSchema.safeParse({
+        applicationId: request.params.applicationId,
+        provenanceId: request.params.provenanceId,
+      });
+      if (!parsed.success) {
+        response.status(400).json({ error: { code: "validation_error" } });
+        return;
+      }
+      try {
+        response.json({
+          provenance: applicationsService.verifyApplicationFieldProvenance(
+            actor,
+            parsed.data,
+          ),
+        });
+      } catch (error) {
+        if (error instanceof ApplicationNotFoundError) {
+          response
+            .status(404)
+            .json({ error: { code: "provenance_not_found" } });
+          return;
+        }
+        if (
+          error instanceof ApplicationFieldProvenanceVerificationConflictError
+        ) {
+          response
+            .status(409)
+            .json({ error: { code: "provenance_verification_conflict" } });
+          return;
+        }
+        next(error);
+      }
+    },
+  );
 
   router.get("/:applicationId/events", (request, response, next) => {
     const actor = authService.getActor(requestSessionToken(request));

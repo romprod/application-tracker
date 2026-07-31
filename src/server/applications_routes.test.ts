@@ -925,6 +925,73 @@ describe("application ledger routes", () => {
       .expect(400, { error: { code: "invalid_application_reference" } });
   });
 
+  it("records, lists, and verifies field provenance without changing the application scalar", async () => {
+    const { app, references } = await createApplicationsApp();
+    const cookie = await login(app, "alex", "correct horse battery staple");
+    const created = await sameOrigin(request(app).post("/api/applications"))
+      .set("Cookie", cookie)
+      .send(applicationInput(references))
+      .expect(201);
+    const application = createdApplication(created);
+    if (typeof application.id !== "string") {
+      throw new Error("Expected an application ID");
+    }
+    const recorded = await sameOrigin(
+      request(app).post(`/api/applications/${application.id}/provenance`),
+    )
+      .set("Cookie", cookie)
+      .send({
+        confidence: 0.9,
+        field: "salary",
+        fieldState: "disclosed",
+        idempotencyKey: "http-salary-1",
+        observedAt: "2026-07-18T11:30:00.000Z",
+        source: { type: "imported" },
+        value: "£75,000",
+      })
+      .expect(201);
+    const provenance = responseObject(recorded, "provenance");
+    expect(provenance).toMatchObject({
+      applicationId: application.id,
+      field: "salary",
+      relationship: "selected",
+      verifiedAt: null,
+    });
+    if (typeof provenance.id !== "string") {
+      throw new Error("Expected a provenance ID");
+    }
+
+    const listed = await request(app)
+      .get(`/api/applications/${application.id}/provenance`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(objectArrayProperty(responseBody(listed), "assessments")).toEqual([
+      expect.objectContaining({
+        conflicting: 0,
+        field: "salary",
+        stale: 0,
+      }),
+    ]);
+    const verified = await sameOrigin(
+      request(app).post(
+        `/api/applications/${application.id}/provenance/${provenance.id}/verify`,
+      ),
+    )
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(responseObject(verified, "provenance")).toMatchObject({
+      verifiedByDisplayName: "Alex Example",
+    });
+    const applications = await request(app)
+      .get("/api/applications")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(
+      objectArrayProperty(responseBody(applications), "applications")[0]
+        ?.salary,
+    ).toBe(application.salary);
+  });
+
   it("removes an application from normal APIs while retaining its audit trail", async () => {
     const { app, references } = await createApplicationsApp();
     const input = applicationInput(references);

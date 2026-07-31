@@ -7,6 +7,8 @@ import {
   type ApplicationDuplicateAudit,
   type ApplicationEvent,
   type ApplicationEventsPage,
+  type ApplicationFieldProvenanceAssessment,
+  type ApplicationFieldProvenanceRecord,
   type ApplicationMergeResult,
   type ApplicationRecord,
 } from "./applications.js";
@@ -39,7 +41,9 @@ import type {
   AuditDuplicateApplicationsInput,
   CreateApplicationInput,
   MergeApplicationsInput,
+  RecordApplicationFieldProvenanceInput,
   UpdateApplicationInput,
+  VerifyApplicationFieldProvenanceInput,
 } from "../domain/applications.js";
 import type { McpAccessMode } from "./mcp_access.js";
 import type { ReferenceValue } from "./reference_values.js";
@@ -85,7 +89,7 @@ import type {
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 18;
+export const applicationMcpSchemaVersion = 19;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -120,6 +124,8 @@ export const applicationMcpToolNames = [
   "bulk_update_applications",
   "add_application_event",
   "add_application_activity",
+  "record_application_field_provenance",
+  "verify_application_field_provenance",
   "delete_application",
   "upsert_application_from_email",
   "begin_document_import",
@@ -211,6 +217,10 @@ export interface McpApplicationsReader {
     input: { limit: number; offset: number },
   ): ApplicationEventsPage;
   listApplications(actor: AuthenticatedActor): ApplicationRecord[];
+  listApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    applicationId: string,
+  ): ApplicationFieldProvenanceAssessment[];
 }
 
 export interface McpApplicationsService extends McpApplicationsReader {
@@ -235,11 +245,19 @@ export interface McpApplicationsService extends McpApplicationsReader {
     actor: AuthenticatedActor,
     input: MergeApplicationsInput,
   ): ApplicationMergeResult;
+  recordApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    input: RecordApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord;
   updateApplication(
     actor: AuthenticatedActor,
     applicationId: string,
     input: UpdateApplicationInput,
   ): ApplicationRecord;
+  verifyApplicationFieldProvenance(
+    actor: AuthenticatedActor,
+    input: VerifyApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord;
 }
 
 export interface McpAccessPolicy {
@@ -303,11 +321,13 @@ export interface McpApplicationSummary {
   rating: number | null;
   roleTitle: string;
   salary: string | null;
+  salaryDetails: ApplicationRecord["salaryDetails"];
   status: string;
   statusId: string;
   statusIsTerminal: boolean;
   updatedAt: string;
   workArrangement: ApplicationRecord["workArrangement"];
+  workArrangementDetails: ApplicationRecord["workArrangementDetails"];
 }
 
 export interface McpApplicationList {
@@ -376,6 +396,7 @@ export interface McpApplicationDetail {
   events: ApplicationEvent[];
   eventsPage: Omit<ApplicationEventsPage, "events">;
   jobPostings: ApplicationJobPosting[];
+  provenance: ApplicationFieldProvenanceAssessment[];
 }
 
 export interface McpReferenceData {
@@ -495,6 +516,9 @@ export interface McpApplicationTools {
     input: MatchJobApplicationEmailInput,
   ): JobEmailMatchResult;
   mergeApplications(input: MergeApplicationsInput): ApplicationMergeResult;
+  recordApplicationFieldProvenance(
+    input: RecordApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord;
   reconcileApplicationFromEvidence(
     input: ReconcileApplicationFromEvidenceInput,
   ): LinkApplicationEvidenceResult | UpsertApplicationFromEmailResult;
@@ -517,6 +541,9 @@ export interface McpApplicationTools {
     applicationId: string,
     input: UpdateApplicationInput,
   ): ApplicationRecord;
+  verifyApplicationFieldProvenance(
+    input: VerifyApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord;
   upsertApplicationFromEmail(
     input: UpsertApplicationFromEmailInput,
   ): UpsertApplicationFromEmailResult;
@@ -571,11 +598,13 @@ function applicationSummary(
     rating: application.rating,
     roleTitle: application.roleTitle,
     salary: application.salary,
+    salaryDetails: application.salaryDetails,
     status: application.status,
     statusId: application.statusId,
     statusIsTerminal: application.statusIsTerminal,
     updatedAt: application.updatedAt,
     workArrangement: application.workArrangement,
+    workArrangementDetails: application.workArrangementDetails,
   };
 }
 
@@ -739,6 +768,11 @@ export class ApplicationMcpService implements McpApplicationTools {
         total: eventsPage.total,
       },
       jobPostings: evidence.jobPostings,
+      provenance:
+        this.applications.listApplicationFieldProvenance?.(
+          actor,
+          applicationId,
+        ) ?? [],
     };
   }
 
@@ -1108,6 +1142,22 @@ export class ApplicationMcpService implements McpApplicationTools {
     const actor = this.actorProvider.getActor();
     this.accessPolicy.requireWriteAccess(actor);
     return this.applications.addApplicationActivity(actor, input);
+  }
+
+  public recordApplicationFieldProvenance(
+    input: RecordApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.recordApplicationFieldProvenance(actor, input);
+  }
+
+  public verifyApplicationFieldProvenance(
+    input: VerifyApplicationFieldProvenanceInput,
+  ): ApplicationFieldProvenanceRecord {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    return this.applications.verifyApplicationFieldProvenance(actor, input);
   }
 
   public updateApplication(

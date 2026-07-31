@@ -4,6 +4,69 @@ import { referenceValueIdSchema } from "./reference_values.js";
 
 export const applicationIdSchema = z.uuid();
 export const workArrangementSchema = z.enum(["hybrid", "remote", "office"]);
+export const salaryPeriodSchema = z.enum([
+  "hourly",
+  "daily",
+  "weekly",
+  "monthly",
+  "annual",
+]);
+
+const moneyAmountSchema = z
+  .number()
+  .finite()
+  .nonnegative()
+  .max(1_000_000_000)
+  .refine((value) => Math.round(value * 100) === value * 100, {
+    message: "Salary amounts support at most two decimal places",
+  });
+
+export const salaryDetailsSchema = z
+  .strictObject({
+    currency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{3}$/),
+    disclosed: z.boolean(),
+    maximum: moneyAmountSchema.nullable().optional(),
+    minimum: moneyAmountSchema.nullable().optional(),
+    negotiable: z.boolean(),
+    period: salaryPeriodSchema,
+  })
+  .superRefine((details, context) => {
+    if (
+      details.minimum !== null &&
+      details.minimum !== undefined &&
+      details.maximum !== null &&
+      details.maximum !== undefined &&
+      details.minimum > details.maximum
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Salary minimum cannot exceed salary maximum",
+        path: ["minimum"],
+      });
+    }
+  });
+
+export const workArrangementDetailsSchema = z
+  .strictObject({
+    officeDaysPerWeek: z.number().int().min(0).max(7).nullable().optional(),
+    originalText: optionalText(500),
+    remoteDaysPerWeek: z.number().int().min(0).max(7).nullable().optional(),
+  })
+  .superRefine((details, context) => {
+    const office = details.officeDaysPerWeek ?? 0;
+    const remote = details.remoteDaysPerWeek ?? 0;
+    if (office + remote > 7) {
+      context.addIssue({
+        code: "custom",
+        message: "Office and remote days cannot exceed seven per week",
+        path: ["officeDaysPerWeek"],
+      });
+    }
+  });
 
 export const maximumApplicationRelations = 10;
 
@@ -47,39 +110,60 @@ export const applicationLinkSchema = z.strictObject({
     .max(2048),
 });
 
-export const createApplicationSchema = z.strictObject({
-  agency: optionalText(160),
-  appliedOn: z.preprocess(blankToUndefined, z.iso.date().optional()),
-  companyName: z.string().trim().min(1).max(160),
-  contacts: z
-    .array(applicationContactSchema)
-    .max(maximumApplicationRelations)
-    .optional(),
-  links: z
-    .array(applicationLinkSchema)
-    .max(maximumApplicationRelations)
-    .optional(),
-  location: optionalText(160),
-  nextAction: optionalText(500),
-  nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
-  notes: optionalText(5000),
-  outlookGraphConnectionId: outlookGraphConnectionIdSchema.optional(),
-  rating: z.number().int().min(1).max(5).optional(),
-  roleTypeId: referenceValueIdSchema.optional(),
-  roleTitle: z.string().trim().min(1).max(160),
-  salary: optionalText(160),
-  sourceId: referenceValueIdSchema.optional(),
-  sourceUrl: z.preprocess(
-    blankToUndefined,
-    z
-      .url({ protocol: /^https?$/ })
-      .trim()
-      .max(2048)
+export const createApplicationSchema = z
+  .strictObject({
+    agency: optionalText(160),
+    appliedOn: z.preprocess(blankToUndefined, z.iso.date().optional()),
+    companyName: z.string().trim().min(1).max(160),
+    contacts: z
+      .array(applicationContactSchema)
+      .max(maximumApplicationRelations)
       .optional(),
-  ),
-  statusId: referenceValueIdSchema,
-  workArrangement: workArrangementSchema.optional(),
-});
+    links: z
+      .array(applicationLinkSchema)
+      .max(maximumApplicationRelations)
+      .optional(),
+    location: optionalText(160),
+    nextAction: optionalText(500),
+    nextActionDue: z.preprocess(blankToUndefined, z.iso.date().optional()),
+    notes: optionalText(5000),
+    outlookGraphConnectionId: outlookGraphConnectionIdSchema.optional(),
+    rating: z.number().int().min(1).max(5).optional(),
+    roleTypeId: referenceValueIdSchema.optional(),
+    roleTitle: z.string().trim().min(1).max(160),
+    salary: optionalText(160),
+    salaryDetails: salaryDetailsSchema.optional(),
+    sourceId: referenceValueIdSchema.optional(),
+    sourceUrl: z.preprocess(
+      blankToUndefined,
+      z
+        .url({ protocol: /^https?$/ })
+        .trim()
+        .max(2048)
+        .optional(),
+    ),
+    statusId: referenceValueIdSchema,
+    workArrangement: workArrangementSchema.optional(),
+    workArrangementDetails: workArrangementDetailsSchema.optional(),
+  })
+  .superRefine((input, context) => {
+    const officeDays = input.workArrangementDetails?.officeDaysPerWeek ?? 0;
+    const remoteDays = input.workArrangementDetails?.remoteDaysPerWeek ?? 0;
+    if (input.workArrangement === "remote" && officeDays > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Remote roles cannot declare office days",
+        path: ["workArrangementDetails", "officeDaysPerWeek"],
+      });
+    }
+    if (input.workArrangement === "office" && remoteDays > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Office roles cannot declare remote days",
+        path: ["workArrangementDetails", "remoteDaysPerWeek"],
+      });
+    }
+  });
 
 const applicationUpdateFields = {
   agency: nullableText(160).optional(),
@@ -104,6 +188,7 @@ const applicationUpdateFields = {
   roleTypeId: referenceValueIdSchema.nullable().optional(),
   roleTitle: z.string().trim().min(1).max(160).optional(),
   salary: nullableText(160).optional(),
+  salaryDetails: salaryDetailsSchema.nullable().optional(),
   sourceId: referenceValueIdSchema.nullable().optional(),
   sourceUrl: z
     .preprocess(
@@ -117,6 +202,7 @@ const applicationUpdateFields = {
     .optional(),
   statusId: referenceValueIdSchema.optional(),
   workArrangement: workArrangementSchema.nullable().optional(),
+  workArrangementDetails: workArrangementDetailsSchema.nullable().optional(),
 };
 
 export const applicationChangesSchema = z
@@ -272,6 +358,75 @@ export const listApplicationEventsSchema = z.strictObject({
   offset: z.number().int().nonnegative().default(0),
 });
 
+export const applicationFieldNameSchema = z.enum([
+  "agency",
+  "appliedOn",
+  "companyName",
+  "location",
+  "roleTitle",
+  "salary",
+  "sourceUrl",
+  "workArrangement",
+]);
+export const applicationFieldStateSchema = z.enum([
+  "conflicting",
+  "disclosed",
+  "inferred",
+  "not_applicable",
+  "not_disclosed",
+]);
+export const applicationFieldProvenanceSourceSchema = z.discriminatedUnion(
+  "type",
+  [
+    z.strictObject({
+      emailEvidenceId: applicationIdSchema,
+      type: z.literal("email_evidence"),
+    }),
+    z.strictObject({
+      documentId: applicationIdSchema,
+      type: z.literal("document"),
+    }),
+    z.strictObject({
+      jobPostingId: applicationIdSchema,
+      type: z.literal("job_posting"),
+    }),
+    z.strictObject({ type: z.literal("imported") }),
+  ],
+);
+const applicationFieldValueSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim() : value),
+  z.union([
+    z.string().min(1).max(500),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+  ]),
+);
+export const recordApplicationFieldProvenanceSchema = z
+  .strictObject({
+    applicationId: applicationIdSchema,
+    confidence: z.number().finite().min(0).max(1),
+    field: applicationFieldNameSchema,
+    fieldState: applicationFieldStateSchema,
+    idempotencyKey: optionalText(200),
+    observedAt: z.iso.datetime(),
+    source: applicationFieldProvenanceSourceSchema,
+    value: applicationFieldValueSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.fieldState === "disclosed" && input.value === null) {
+      context.addIssue({
+        code: "custom",
+        message: "Disclosed provenance requires a value",
+        path: ["value"],
+      });
+    }
+  });
+export const verifyApplicationFieldProvenanceSchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  provenanceId: applicationIdSchema,
+});
+
 export type AddApplicationEventInput = z.infer<
   typeof addApplicationEventSchema
 >;
@@ -288,13 +443,28 @@ export type ApplicationMergeField = z.infer<typeof applicationMergeFieldSchema>;
 export type ApplicationMergeResolutions = z.infer<
   typeof applicationMergeResolutionsSchema
 >;
+export type ApplicationFieldName = z.infer<typeof applicationFieldNameSchema>;
+export type ApplicationFieldState = z.infer<typeof applicationFieldStateSchema>;
+export type ApplicationFieldProvenanceSource = z.infer<
+  typeof applicationFieldProvenanceSourceSchema
+>;
 export type AuditDuplicateApplicationsInput = z.infer<
   typeof auditDuplicateApplicationsSchema
 >;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type MergeApplicationsInput = z.infer<typeof mergeApplicationsSchema>;
+export type RecordApplicationFieldProvenanceInput = z.infer<
+  typeof recordApplicationFieldProvenanceSchema
+>;
+export type SalaryDetails = z.infer<typeof salaryDetailsSchema>;
 export type ListApplicationEventsInput = z.infer<
   typeof listApplicationEventsSchema
 >;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;
+export type VerifyApplicationFieldProvenanceInput = z.infer<
+  typeof verifyApplicationFieldProvenanceSchema
+>;
 export type WorkArrangement = z.infer<typeof workArrangementSchema>;
+export type WorkArrangementDetails = z.infer<
+  typeof workArrangementDetailsSchema
+>;
