@@ -12,6 +12,7 @@ import {
   type JobBoardMatch,
 } from "./job_board_provider_registry.js";
 import type {
+  ApplicationEmailEvidenceType,
   JobEmailEvidenceInput,
   JobPostingEvidenceInput,
   LinkApplicationEvidenceInput,
@@ -55,6 +56,7 @@ export interface ApplicationJobPosting {
 export interface ApplicationEmailEvidence {
   applicationId: string;
   createdAt: string;
+  evidenceType: ApplicationEmailEvidenceType;
   id: string;
   messageId: string;
   receivedAt: string;
@@ -76,6 +78,7 @@ export interface LinkApplicationJobPostingInput extends ResolvedJobPostingEviden
 
 export interface LinkApplicationEmailEvidenceInput {
   applicationId: string;
+  evidenceType: ApplicationEmailEvidenceType;
   messageId: string;
   occurredAt: string;
   receivedAt: string;
@@ -322,6 +325,7 @@ export class JobEmailReconciliationService {
         : undefined;
       const emailResult = this.repository.linkEmailEvidence({
         applicationId: application.id,
+        evidenceType: input.evidenceType,
         messageId: input.email.messageId,
         occurredAt,
         receivedAt: new Date(input.email.receivedAt).toISOString(),
@@ -583,6 +587,7 @@ export class JobEmailReconciliationService {
         : undefined;
       const emailResult = this.repository.linkEmailEvidence({
         applicationId: application.id,
+        evidenceType: input.evidenceType ?? "other",
         messageId: input.email.messageId,
         occurredAt,
         receivedAt: new Date(input.email.receivedAt).toISOString(),

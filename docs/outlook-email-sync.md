@@ -21,13 +21,19 @@ this workflow. The Application Tracker server:
 4. runs at most two searches and retains at most 20 candidates;
 5. retrieves full content and metadata for at most five messages;
 6. classifies and scores each message with the versioned deterministic policy;
-7. links only one unambiguous candidate at or above the confidence threshold;
+7. links only one unambiguous candidate at or above the confidence threshold
+   and records a bounded evidence type;
 8. re-reads the application and evidence; and
 9. commits the evidence link and successful MCP audit event atomically.
 
 All Graph work completes before the SQLite transaction begins. The integration
 is read-only from Outlook's perspective: it does not mark mail read, move,
 categorize, send, or delete messages.
+
+An application acknowledgement is stored as `application_confirmation`, an
+explicit offer as `offer`, and a recruiter conversation as
+`recruiter_message`. Broader classifications that cannot prove one narrower
+type are stored as `other` instead of being guessed.
 
 ## Microsoft configuration
 

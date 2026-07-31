@@ -129,11 +129,14 @@ tool resolves only that connection. Disabling it pauses synchronization. Hard
 deletion preserves applications and evidence but clears affected assignments.
 These lifecycle changes do not alter the MCP sync input.
 
-The evidence record persists only RFC Message-ID, received time, optional
-Outlook web URL, and evidence timestamps. Each workspace connection record
+The evidence record persists only RFC Message-ID, received time, bounded
+evidence type, optional Outlook web URL, and evidence timestamps. Application
+acknowledgements map to `application_confirmation`, explicit offers to `offer`,
+and recruiter conversations to `recruiter_message`; broader classifications
+remain `other` instead of being guessed. Each workspace connection record
 contains its non-secret route metadata and an encrypted client secret. The
-server does not store Graph access tokens, plaintext secrets, subjects, senders,
-headers, previews, or bodies.
+server does not store Graph access tokens, plaintext secrets, subjects,
+senders, headers, previews, or bodies.
 
 ## Server-side Graph connection reconciliation
 
@@ -457,16 +460,21 @@ preview and obtain user approval for any changed decision.
 For one known application's automatic Outlook evidence search, use
 `sync_outlook_email_evidence` instead of the tools in this section.
 
-`link_email_evidence` requires an explicit existing `applicationId` and one
-bounded `email` object with `messageId`, `receivedAt`, and optional `webUrl`.
-It is idempotent. A Message-ID already linked to the same application returns
-the existing row; a Message-ID attributed to another application returns
-`job_email_conflict`.
+`link_email_evidence` requires an explicit existing `applicationId`, one
+bounded `email` object with `messageId`, `receivedAt`, and optional `webUrl`,
+and an `evidenceType` of `original_advert`, `application_confirmation`,
+`recruiter_message`, `interview_invitation`, `rejection`, `offer`,
+`withdrawal`, `follow_up`, or `other`. It is idempotent. A Message-ID already
+linked to the same application with the same immutable metadata returns the
+existing row; a changed evidence type, changed received time, or attribution
+to another application returns `job_email_conflict`. A missing stored web URL
+may be enriched idempotently.
 
 `reconcile_application_from_evidence` is a discriminated union:
 
-- `mode: "link_existing"` requires an explicit `applicationId`, `email`, and
-  optional `posting`; both evidence rows are linked in one transaction; or
+- `mode: "link_existing"` requires an explicit `applicationId`, `email`,
+  `evidenceType`, and optional `posting`; both evidence rows are linked in one
+  transaction; or
 - `mode: "match_or_create"` requires `reconciliation`, using the established
   application, email, posting, update, and status-override input below.
 
@@ -483,6 +491,8 @@ The nested `reconciliation` requires:
 It optionally accepts:
 
 - `email.webUrl`, an HTTP(S) URL up to 2048 characters;
+- `evidenceType`, using the bounded values above. Backward-compatible
+  match-or-create callers that omit it store `other`;
 - `posting`, using the match posting schema; and
 - `update`, using the non-empty application field schema. The reconciliation
   service reads and supplies the matched record's concurrency value internally;
@@ -550,8 +560,9 @@ event failures are `application_event_no_change`, `application_event_stale`,
 
 A job posting contains provider, external posting ID when available, canonical
 URL when available, and timestamps. Email evidence contains Message-ID,
-received timestamp, optional Outlook web URL, and persistence timestamps. The
-server does not store email subjects, senders, or bodies in this evidence.
+evidence type, received timestamp, optional Outlook web URL, and persistence
+timestamps. The server does not store email subjects, senders, or bodies in
+this evidence.
 
 ## Attachment document imports
 

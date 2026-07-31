@@ -241,7 +241,12 @@ describe("OutlookConnectionReconciliationService", () => {
     expect(
       value.jobEmails.getApplicationEvidence(value.actor, application.id)
         .emailEvidence,
-    ).toHaveLength(1);
+    ).toEqual([
+      expect.objectContaining({
+        evidenceType: "application_confirmation",
+        messageId: "<message-1@example.com>",
+      }),
+    ]);
     expect(
       value.connectionRepository.find(value.actor.workspaceId, connectionId),
     ).toMatchObject({

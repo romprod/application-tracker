@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ApplicationLedgerService,
+  ApplicationNotFoundError,
   ApplicationStatusEventConflictError,
   ApplicationStatusRegressionError,
   ApplicationStatusStaleError,
@@ -85,19 +86,33 @@ describe("JobEmailReconciliationService", () => {
         email: {
           messageId: "<explicit-evidence@example.com>",
           receivedAt: "2026-07-21T09:30:00.000Z",
-          webUrl: "https://outlook.office.com/mail/id/explicit",
         },
+        evidenceType: "application_confirmation",
         posting: {
           url: "https://www.linkedin.com/jobs/view/4405273020",
         },
       } as const;
 
       const first = reconciliation.linkEvidence(actor, input);
-      const repeated = reconciliation.linkEvidence(actor, input);
+      const enrichedInput = {
+        ...input,
+        email: {
+          ...input.email,
+          webUrl: "https://outlook.office.com/mail/id/explicit",
+        },
+      } as const;
+      const enriched = reconciliation.linkEvidence(actor, enrichedInput);
+      const repeated = reconciliation.linkEvidence(actor, enrichedInput);
 
       expect(first).toMatchObject({
         action: "linked",
         application: { id: application.id },
+        emailEvidence: [
+          expect.objectContaining({
+            evidenceType: "application_confirmation",
+            messageId: input.email.messageId,
+          }),
+        ],
         emailEvidenceLinked: true,
         matchLevel: null,
         postingLinked: true,
@@ -108,6 +123,16 @@ describe("JobEmailReconciliationService", () => {
         emailEvidenceLinked: false,
         matchLevel: null,
         postingLinked: false,
+      });
+      expect(enriched).toMatchObject({
+        emailEvidence: [
+          expect.objectContaining({
+            evidenceType: "application_confirmation",
+            messageId: input.email.messageId,
+            webUrl: enrichedInput.email.webUrl,
+          }),
+        ],
+        emailEvidenceLinked: false,
       });
       expect(reconciliation.listEvidenceCounts(actor)).toEqual(
         expect.arrayContaining([
@@ -127,7 +152,15 @@ describe("JobEmailReconciliationService", () => {
       expect(() =>
         reconciliation.linkEvidence(actor, {
           applicationId: other.id,
-          email: input.email,
+          email: enrichedInput.email,
+          evidenceType: input.evidenceType,
+        }),
+      ).toThrow(JobEmailEvidenceConflictError);
+      expect(() =>
+        reconciliation.linkEvidence(actor, {
+          applicationId: application.id,
+          email: enrichedInput.email,
+          evidenceType: "rejection",
         }),
       ).toThrow(JobEmailEvidenceConflictError);
       expect(
@@ -142,6 +175,107 @@ describe("JobEmailReconciliationService", () => {
           .pluck()
           .get(),
       ).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps Message-ID identity and evidence reads workspace-scoped", () => {
+    const { actor, applications, database, reconciliation, statusId } =
+      fixture();
+    try {
+      const occurredAt = "2026-07-21T10:10:00.000Z";
+      database
+        .prepare(
+          `INSERT INTO workspaces (id, name, slug, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          "workspace-secondary",
+          "Secondary Applications",
+          "secondary",
+          occurredAt,
+        );
+      database
+        .prepare(
+          `INSERT INTO workspace_memberships
+             (workspace_id, user_id, role, created_at)
+           VALUES (?, ?, 'admin', ?)`,
+        )
+        .run("workspace-secondary", actor.userId, occurredAt);
+      const secondaryActor = new LocalMcpActorProvider(
+        new SqliteMcpActorRepository(database),
+        { username: actor.user.username, workspaceSlug: "secondary" },
+      ).getActor();
+      const secondaryStatusId = database
+        .prepare(
+          `SELECT id FROM reference_values
+           WHERE workspace_id = ? AND category = 'status' AND label = 'Prospect'`,
+        )
+        .pluck()
+        .get(secondaryActor.workspaceId);
+      if (typeof secondaryStatusId !== "string") {
+        throw new Error("Expected a secondary workspace status");
+      }
+      const primaryApplication = applications.createApplication(actor, {
+        companyName: "Primary Workspace Ltd",
+        roleTitle: "Platform Engineer",
+        statusId,
+      });
+      const secondaryApplication = applications.createApplication(
+        secondaryActor,
+        {
+          companyName: "Secondary Workspace Ltd",
+          roleTitle: "Platform Engineer",
+          statusId: secondaryStatusId,
+        },
+      );
+      const email = {
+        messageId: "<workspace-scoped@example.com>",
+        receivedAt: "2026-07-21T09:30:00.000Z",
+      };
+
+      reconciliation.linkEvidence(actor, {
+        applicationId: primaryApplication.id,
+        email,
+        evidenceType: "application_confirmation",
+      });
+      reconciliation.linkEvidence(secondaryActor, {
+        applicationId: secondaryApplication.id,
+        email,
+        evidenceType: "offer",
+      });
+
+      expect(
+        reconciliation.getApplicationEvidence(actor, primaryApplication.id)
+          .emailEvidence,
+      ).toEqual([
+        expect.objectContaining({
+          evidenceType: "application_confirmation",
+          messageId: email.messageId,
+        }),
+      ]);
+      expect(
+        reconciliation.getApplicationEvidence(
+          secondaryActor,
+          secondaryApplication.id,
+        ).emailEvidence,
+      ).toEqual([
+        expect.objectContaining({
+          evidenceType: "offer",
+          messageId: email.messageId,
+        }),
+      ]);
+      expect(() =>
+        reconciliation.linkEvidence(actor, {
+          applicationId: secondaryApplication.id,
+          email: {
+            messageId: "<cross-workspace@example.com>",
+            receivedAt: email.receivedAt,
+          },
+          evidenceType: "other",
+        }),
+      ).toThrow(ApplicationNotFoundError);
     } finally {
       database.close();
     }

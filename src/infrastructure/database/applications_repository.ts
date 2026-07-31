@@ -467,6 +467,7 @@ export class SqliteApplicationsRepository implements ApplicationsRepository {
         `SELECT
            id,
            application_id AS applicationId,
+           evidence_type AS evidenceType,
            message_id AS messageId,
            web_url AS webUrl,
            received_at AS receivedAt,

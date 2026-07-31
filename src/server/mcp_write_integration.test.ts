@@ -957,6 +957,7 @@ describe("MCP write integration", () => {
     expect(detail.structuredContent?.emailEvidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          evidenceType: "other",
           messageId: "<linkedin-4405273020@example.com>",
         }),
       ]),
@@ -1071,6 +1072,7 @@ describe("MCP write integration", () => {
         messageId: "<explicit-link@example.com>",
         receivedAt: "2026-07-21T17:15:00.000Z",
       },
+      evidenceType: "application_confirmation",
     };
     const linkedEmail = await client.callTool({
       arguments: linkedEmailInput,
@@ -1080,9 +1082,19 @@ describe("MCP write integration", () => {
       arguments: linkedEmailInput,
       name: "link_email_evidence",
     });
+    const linkedEmailConflict = await client.callTool({
+      arguments: { ...linkedEmailInput, evidenceType: "rejection" },
+      name: "link_email_evidence",
+    });
     expect(linkedEmail.structuredContent).toMatchObject({
       action: "linked",
       application: { id: unlinkedApplicationId },
+      emailEvidence: [
+        expect.objectContaining({
+          evidenceType: "application_confirmation",
+          messageId: "<explicit-link@example.com>",
+        }),
+      ],
       emailEvidenceLinked: true,
       postingLinked: false,
     });
@@ -1091,6 +1103,12 @@ describe("MCP write integration", () => {
       emailEvidenceLinked: false,
       postingLinked: false,
     });
+    expect(linkedEmailConflict.content).toEqual([
+      {
+        text: '{"error":{"code":"job_email_conflict"}}',
+        type: "text",
+      },
+    ]);
 
     const reconciled = await client.callTool({
       arguments: {
@@ -1099,6 +1117,7 @@ describe("MCP write integration", () => {
           messageId: "<explicit-reconciliation@example.com>",
           receivedAt: "2026-07-21T17:30:00.000Z",
         },
+        evidenceType: "recruiter_message",
         mode: "link_existing",
         posting: {
           url: "https://www.linkedin.com/jobs/view/5505273020",
@@ -1112,6 +1131,17 @@ describe("MCP write integration", () => {
       emailEvidenceLinked: true,
       postingLinked: true,
     });
+    expect(
+      (reconciled.structuredContent as { emailEvidence: unknown[] })
+        .emailEvidence,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidenceType: "recruiter_message",
+          messageId: "<explicit-reconciliation@example.com>",
+        }),
+      ]),
+    );
 
     const beforeEvent = await client.callTool({
       arguments: { applicationId: unlinkedApplicationId },

@@ -65,6 +65,7 @@ import { emailLinkExtractionInputSchema } from "../domain/email_links.js";
 import { jobPostingInspectionInputSchema } from "../domain/job_postings.js";
 import { referenceValueIdSchema } from "../domain/reference_values.js";
 import {
+  applicationEmailEvidenceTypeSchema,
   linkEmailEvidenceSchema,
   matchJobApplicationEmailSchema,
   reconcileApplicationFromEvidenceSchema,
@@ -324,6 +325,7 @@ const applicationJobPostingSchema = z.strictObject({
 const applicationEmailEvidenceSchema = z.strictObject({
   applicationId: applicationIdSchema,
   createdAt: z.iso.datetime(),
+  evidenceType: applicationEmailEvidenceTypeSchema,
   id: z.uuid(),
   messageId: z.string(),
   receivedAt: z.iso.datetime(),
@@ -1449,7 +1451,7 @@ export function createApplicationMcpServer(
     {
       annotations: idempotentWriteAnnotations,
       description:
-        "Idempotently link one bounded RFC Message-ID evidence record to an explicit existing application. Message-IDs are workspace-unique and a conflict with another application is rejected.",
+        "Idempotently link one typed, bounded RFC Message-ID evidence record to an explicit existing application. Message-IDs are workspace-unique and inconsistent immutable metadata or attribution to another application is rejected.",
       inputSchema: linkEmailEvidenceSchema,
       outputSchema: applicationEvidenceReconciliationResultSchema,
       title: "Link email evidence",

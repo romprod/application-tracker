@@ -16,6 +16,7 @@ import type {
   ApplicationEmailEvidence,
   ApplicationJobPosting,
 } from "./job_email_reconciliation.js";
+import type { ApplicationEmailEvidenceType } from "../domain/job_email_reconciliation.js";
 
 export const outlookEmailSyncScoringVersion = 1;
 export const outlookEmailSyncThreshold = 80;
@@ -33,6 +34,19 @@ export type OutlookEmailClassification =
   | "offer"
   | "recruiter_conversation"
   | "status_or_rejection";
+
+export function evidenceTypeForOutlookClassification(
+  classification: OutlookEmailClassification,
+): ApplicationEmailEvidenceType {
+  if (classification === "application_acknowledgement") {
+    return "application_confirmation";
+  }
+  if (classification === "offer") return "offer";
+  if (classification === "recruiter_conversation") {
+    return "recruiter_message";
+  }
+  return "other";
+}
 
 export type OutlookEmailScoreReason =
   | "canonical_url_match"
@@ -694,6 +708,9 @@ export class OutlookEmailSyncService {
               ? { webUrl: prepared.selected.message.webUrl }
               : {}),
           },
+          evidenceType: evidenceTypeForOutlookClassification(
+            prepared.selected.assessment.classification,
+          ),
         },
         prepared.expectedUpdatedAt,
       );

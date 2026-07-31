@@ -5,6 +5,7 @@ import type {
   JobEmailReconciliationService,
 } from "./job_email_reconciliation.js";
 import {
+  evidenceTypeForOutlookClassification,
   maximumOutlookReconciliationMessages,
   OutlookEmailSyncOperationalError,
   OutlookEmailSyncVerificationError,
@@ -376,6 +377,9 @@ export class OutlookConnectionReconciliationService {
                 ? { webUrl: selected.message.webUrl }
                 : {}),
             },
+            evidenceType: evidenceTypeForOutlookClassification(
+              selected.assessment.classification,
+            ),
           },
           selected.application.updatedAt,
         );

@@ -76,6 +76,7 @@ const evidence = {
     {
       applicationId: application.id,
       createdAt: "2026-07-18T12:16:00.000Z",
+      evidenceType: "application_confirmation",
       id: "77777777-7777-4777-8777-777777777777",
       messageId: "<application@example.com>",
       receivedAt: "2026-07-18T11:45:00.000Z",

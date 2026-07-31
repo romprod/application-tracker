@@ -81,9 +81,12 @@ Application Tracker MCP tools:
 - `reconcile_application_from_evidence` for atomic mutations.
 
 When a trustworthy message must only be linked to a known record, also require
-`link_email_evidence`. Use `add_application_event` only for an explicitly
-requested standalone status transition; ordinary email-driven transitions
-belong inside `reconcile_application_from_evidence`.
+`link_email_evidence`. Supply one explicit `evidenceType` from
+`original_advert`, `application_confirmation`, `recruiter_message`,
+`interview_invitation`, `rejection`, `offer`, `withdrawal`, `follow_up`, or
+`other`. Use `add_application_event` only for an explicitly requested
+standalone status transition; ordinary email-driven transitions belong inside
+`reconcile_application_from_evidence`.
 
 When the user explicitly includes duplicate detection or consolidation, also
 require:
@@ -307,6 +310,7 @@ For each in-scope message, retain working evidence for:
 
 - stable internet Message-ID;
 - durable Outlook message web URL, when available;
+- the bounded evidence type the message actually proves;
 - sender, subject, and received timestamp;
 - company and job title explicitly named by the message;
 - direct job-posting URL and explicit board-scoped posting ID; and
@@ -492,9 +496,11 @@ back to generic create/update after an uncertain reconciliation result.
 
 Use `mode: "link_existing"` only when the user or a prior deterministic match
 has selected one explicit application and the operation needs to link evidence
-without changing application fields. It accepts `applicationId`, `email`, and
-optional `posting` in one transaction. If only email evidence is needed,
-`link_email_evidence` is the narrower idempotent tool.
+without changing application fields. It accepts `applicationId`, `email`,
+required `evidenceType`, and optional `posting` in one transaction. If only
+email evidence is needed, `link_email_evidence` is the narrower idempotent
+tool. The match-or-create reconciliation may also carry `evidenceType`; omit it
+only for backward-compatible callers that must store the row as `other`.
 
 ### 8. Import a supported attachment
 
@@ -544,7 +550,8 @@ After a successful reconciliation, call `get_application` and verify:
 
 - company, title, and status;
 - the expected `jobPostings` entry;
-- the expected `emailEvidence` Message-ID and optional web URL; and
+- the expected `emailEvidence` Message-ID, evidence type, and optional web URL;
+  and
 - any selected field update.
 
 Report matched, created, updated, skipped, ambiguous, conflicting, and failed

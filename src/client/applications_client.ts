@@ -110,6 +110,16 @@ export interface ApplicationEvent {
 export interface ApplicationEmailEvidence {
   applicationId: string;
   createdAt: string;
+  evidenceType:
+    | "application_confirmation"
+    | "follow_up"
+    | "interview_invitation"
+    | "offer"
+    | "original_advert"
+    | "other"
+    | "recruiter_message"
+    | "rejection"
+    | "withdrawal";
   id: string;
   messageId: string;
   receivedAt: string;
@@ -537,6 +547,15 @@ function parseApplicationEmailEvidence(
     !isRecord(value) ||
     !isReferenceValueId(value.applicationId) ||
     !isIsoDateTime(value.createdAt) ||
+    (value.evidenceType !== "application_confirmation" &&
+      value.evidenceType !== "follow_up" &&
+      value.evidenceType !== "interview_invitation" &&
+      value.evidenceType !== "offer" &&
+      value.evidenceType !== "original_advert" &&
+      value.evidenceType !== "other" &&
+      value.evidenceType !== "recruiter_message" &&
+      value.evidenceType !== "rejection" &&
+      value.evidenceType !== "withdrawal") ||
     !isReferenceValueId(value.id) ||
     typeof value.messageId !== "string" ||
     value.messageId.trim().length === 0 ||
@@ -550,6 +569,7 @@ function parseApplicationEmailEvidence(
   return {
     applicationId: value.applicationId,
     createdAt: value.createdAt,
+    evidenceType: value.evidenceType,
     id: value.id,
     messageId: value.messageId,
     receivedAt: value.receivedAt,

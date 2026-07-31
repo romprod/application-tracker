@@ -97,8 +97,17 @@ members may use them:
 - `GET /api/applications` lists the active workspace's records;
 - `POST /api/applications` creates a record;
 - `PATCH /api/applications/:applicationId` edits a record;
-- `DELETE /api/applications/:applicationId` removes a record; and
+- `DELETE /api/applications/:applicationId` removes a record;
+- `GET /api/applications/:applicationId/evidence` lists typed email and posting
+  evidence;
+- `POST /api/applications/:applicationId/evidence` idempotently links one typed
+  email evidence record without changing application fields or status; and
 - `GET /api/applications/:applicationId/events` lists its timeline.
+
+The evidence-link request body contains `email.messageId`,
+`email.receivedAt`, optional `email.webUrl`, and one bounded `evidenceType`.
+Exact retries return HTTP 200 without adding a row, new links return HTTP 201,
+and changed immutable metadata returns HTTP 409 with `job_email_conflict`.
 
 Every application read includes `updatedAt`. A PATCH must send that value as
 `expectedUpdatedAt` together with at least one changed field. The database

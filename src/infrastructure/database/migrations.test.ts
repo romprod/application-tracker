@@ -1,12 +1,17 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
+import { ApplicationLedgerService } from "../../application/applications.js";
+import { LocalMcpActorProvider } from "../../application/mcp.js";
+import { SqliteApplicationsRepository } from "./applications_repository.js";
+import { SqliteMcpActorRepository } from "./mcp_actor_repository.js";
 import {
   applicationMigrations,
   migrateDatabase,
   type Migration,
 } from "./migrations.js";
 import { workspaceIdentityMigration } from "./migrations/001_workspace_identity.js";
+import { SqliteSetupRepository } from "./setup_repository.js";
 
 describe("migrateDatabase", () => {
   it("applies each migration once", () => {
@@ -96,7 +101,7 @@ describe("migrateDatabase", () => {
           .all(),
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
       ]);
       expect(
         database
@@ -1244,6 +1249,28 @@ describe("migrateDatabase", () => {
           .pluck()
           .all(),
       ).toEqual(["application_email_evidence", "application_job_postings"]);
+      expect(
+        database
+          .prepare("PRAGMA table_info(application_email_evidence)")
+          .all()
+          .find(
+            (column) => (column as { name?: unknown }).name === "evidence_type",
+          ),
+      ).toMatchObject({
+        dflt_value: "'other'",
+        name: "evidence_type",
+        notnull: 1,
+        type: "TEXT",
+      });
+      const evidenceSql = database
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'application_email_evidence'",
+        )
+        .pluck()
+        .get();
+      expect(evidenceSql).toContain("'application_confirmation'");
+      expect(evidenceSql).toContain("'interview_invitation'");
+      expect(evidenceSql).toContain("'withdrawal'");
       const auditSql = database
         .prepare(
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_audit_events'",
@@ -1260,6 +1287,82 @@ describe("migrateDatabase", () => {
       expect(auditSql).toContain("search_outlook_job_digests");
       expect(auditSql).toContain("process_outlook_job_digest");
       expect(auditSql).toContain("job_email");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("classifies legacy email evidence as other during migration", () => {
+    const database = new Database(":memory:");
+
+    try {
+      database.pragma("foreign_keys = ON");
+      migrateDatabase(database, applicationMigrations.slice(0, -1));
+      const setup = new SqliteSetupRepository(
+        database,
+      ).createInitialAdministrator({
+        completedAt: "2026-07-31T06:00:00.000Z",
+        displayName: "Alex Example",
+        passwordHash: "scrypt$1024$8$1$salt$hash-value-long-enough",
+        username: "alex",
+        workspaceName: "Applications",
+      });
+      const actor = new LocalMcpActorProvider(
+        new SqliteMcpActorRepository(database),
+        { username: "alex", workspaceSlug: "default" },
+      ).getActor();
+      const statusId = database
+        .prepare(
+          `SELECT id FROM reference_values
+           WHERE workspace_id = ? AND category = 'status' AND label = 'Applied'`,
+        )
+        .pluck()
+        .get(setup.workspace.id);
+      if (typeof statusId !== "string") {
+        throw new Error("Expected the default Applied status");
+      }
+      const application = new ApplicationLedgerService(
+        new SqliteApplicationsRepository(database),
+        () => new Date("2026-07-31T06:05:00.000Z"),
+      ).createApplication(actor, {
+        companyName: "Legacy Evidence Ltd",
+        roleTitle: "Platform Engineer",
+        statusId,
+      });
+      database
+        .prepare(
+          `INSERT INTO application_email_evidence
+             (id, workspace_id, application_id, message_id, web_url,
+              received_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+        )
+        .run(
+          "legacy-evidence",
+          setup.workspace.id,
+          application.id,
+          "<legacy@example.com>",
+          "2026-07-31T05:45:00.000Z",
+          "2026-07-31T06:06:00.000Z",
+          "2026-07-31T06:06:00.000Z",
+        );
+
+      migrateDatabase(database, applicationMigrations);
+
+      expect(
+        database
+          .prepare(
+            "SELECT evidence_type FROM application_email_evidence WHERE id = ?",
+          )
+          .pluck()
+          .get("legacy-evidence"),
+      ).toBe("other");
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE application_email_evidence SET evidence_type = 'invalid' WHERE id = ?",
+          )
+          .run("legacy-evidence"),
+      ).toThrow();
     } finally {
       database.close();
     }

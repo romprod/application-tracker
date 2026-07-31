@@ -1980,6 +1980,7 @@ describe("application shell", () => {
         {
           applicationId: applicationRecord.id,
           createdAt: "2026-07-25T10:44:00.000Z",
+          evidenceType: "application_confirmation",
           id: "abababab-abab-4bab-8bab-abababababab",
           messageId: "<application@example.com>",
           receivedAt: "2026-07-25T10:43:03.000Z",
