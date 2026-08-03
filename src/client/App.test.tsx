@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -14,7 +15,9 @@ import {
   browserApplicationsClient,
   type ApplicationEvent,
   type ApplicationRecord,
+  type ApplicationRestorePreview,
   type ApplicationsClient,
+  type DeletedApplicationRecord,
 } from "./applications_client";
 import type {
   AuthClient,
@@ -1433,6 +1436,166 @@ describe("application shell", () => {
         "Example Studio",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("ignores a stale restore preview after another deletion is selected", async () => {
+    const firstApplication = {
+      ...applicationRecord,
+      companyName: "First Studio",
+      id: "81818181-8181-4181-8181-818181818181",
+    };
+    const secondApplication = {
+      ...applicationRecord,
+      companyName: "Second Studio",
+      id: "82828282-8282-4282-8282-828282828282",
+    };
+    const firstDeletion: DeletedApplicationRecord = {
+      actorDisplayName: "Alex Example",
+      application: firstApplication,
+      deletedAt: "2026-07-19T09:30:00.000Z",
+      id: "83838383-8383-4383-8383-838383838383",
+      merge: null,
+      reason: "Removed during the first import",
+    };
+    const secondDeletion: DeletedApplicationRecord = {
+      actorDisplayName: "Alex Example",
+      application: secondApplication,
+      deletedAt: "2026-07-19T09:31:00.000Z",
+      id: "84848484-8484-4484-8484-848484848484",
+      merge: null,
+      reason: "Removed during the second import",
+    };
+    const preview = (
+      deletion: DeletedApplicationRecord,
+      emailEvidence: number,
+    ): ApplicationRestorePreview => ({
+      application: deletion.application,
+      conflicts: [],
+      deletion,
+      relationships: {
+        contacts: 0,
+        documents: 0,
+        emailEvidence,
+        jobPostings: 0,
+        links: 0,
+        outlookGraphConnectionId: null,
+      },
+      safeToRestore: true,
+    });
+    const firstPreview = preview(firstDeletion, 1);
+    const secondPreview = preview(secondDeletion, 2);
+    let resolveFirstPreview!: (value: ApplicationRestorePreview) => void;
+    let resolveSecondPreview!: (value: ApplicationRestorePreview) => void;
+    const firstPreviewRequest = new Promise<ApplicationRestorePreview>(
+      (resolve) => {
+        resolveFirstPreview = resolve;
+      },
+    );
+    const secondPreviewRequest = new Promise<ApplicationRestorePreview>(
+      (resolve) => {
+        resolveSecondPreview = resolve;
+      },
+    );
+    const applicationsClient = createApplicationsClient([]);
+    applicationsClient.listDeletedApplications.mockResolvedValue({
+      applications: [firstDeletion, secondDeletion],
+      limit: 25,
+      nextOffset: null,
+      offset: 0,
+      returned: 2,
+      total: 2,
+    });
+    applicationsClient.previewApplicationRestore.mockImplementation(
+      (applicationId) => {
+        if (applicationId === firstApplication.id) return firstPreviewRequest;
+        if (applicationId === secondApplication.id) return secondPreviewRequest;
+        return Promise.reject(new Error("Unexpected application preview"));
+      },
+    );
+    applicationsClient.restoreApplication.mockResolvedValue({
+      application: secondApplication,
+      restoration: {
+        actorDisplayName: "Alex Example",
+        applicationId: secondApplication.id,
+        deletionId: secondDeletion.id,
+        id: "85858585-8585-4585-8585-858585858585",
+        recoveryType: "manual",
+        restoredAt: "2026-07-19T10:00:00.000Z",
+      },
+    });
+    render(
+      <App
+        applicationsClient={applicationsClient}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Applications" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Deleted applications" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Deleted applications",
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: /First Studio/ }),
+    );
+    await waitFor(() =>
+      expect(applicationsClient.previewApplicationRestore).toHaveBeenCalledWith(
+        firstApplication.id,
+      ),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Second Studio/ }),
+    );
+    await waitFor(() =>
+      expect(applicationsClient.previewApplicationRestore).toHaveBeenCalledWith(
+        secondApplication.id,
+      ),
+    );
+
+    await act(async () => {
+      resolveSecondPreview(secondPreview);
+      await secondPreviewRequest;
+    });
+    expect(
+      await within(dialog).findByText(
+        (_content, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "2 emails · 0 postings · 0 documents",
+      ),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      resolveFirstPreview(firstPreview);
+      await firstPreviewRequest;
+    });
+    expect(
+      within(dialog).getByText(
+        (_content, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "2 emails · 0 postings · 0 documents",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Restore application" }),
+    );
+
+    await waitFor(() =>
+      expect(applicationsClient.restoreApplication).toHaveBeenCalledWith({
+        applicationId: secondApplication.id,
+        confirm: true,
+        expectedDeletedAt: secondDeletion.deletedAt,
+        expectedUpdatedAt: secondApplication.updatedAt,
+      }),
+    );
   });
 
   it("previews and safely recovers a deleted merge source", async () => {

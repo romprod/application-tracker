@@ -29,6 +29,7 @@ export function DeletedApplicationsDialog({
   onRecovered: (applications: ApplicationRecord[]) => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const previewRequestIdRef = useRef(0);
   const [page, setPage] = useState<DeletedApplicationsPage>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -60,6 +61,8 @@ export function DeletedApplicationsDialog({
   }, [applicationsClient]);
 
   function inspect(application: DeletedApplicationRecord) {
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
     setSelected(application);
     setPreview(undefined);
     setPreviewError(false);
@@ -75,11 +78,18 @@ export function DeletedApplicationsDialog({
         );
     void operation
       .then((loaded) => {
+        if (previewRequestIdRef.current !== requestId) return;
         if ("recovery" in loaded) return;
         setPreview(loaded);
       })
-      .catch(() => setPreviewError(true))
-      .finally(() => setPreviewLoading(false));
+      .catch(() => {
+        if (previewRequestIdRef.current === requestId) setPreviewError(true);
+      })
+      .finally(() => {
+        if (previewRequestIdRef.current === requestId) {
+          setPreviewLoading(false);
+        }
+      });
   }
 
   function recover() {
