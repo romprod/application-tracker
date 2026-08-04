@@ -186,6 +186,44 @@ describe("MicrosoftGraphOutlookMailReader", () => {
     expect(request?.searchParams.get("$select")).not.toContain("body,");
   });
 
+  it("retains one chronological look-ahead summary for safe reconciliation batching", async () => {
+    const requested: URL[] = [];
+    const fetcher = vi.fn((input: string | URL | Request) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input.toString(),
+      );
+      requested.push(url);
+      if (url.pathname.includes("/childFolders")) {
+        return resolvedJsonResponse({
+          value: [{ displayName: "Jobs", id: "jobs-folder" }],
+        });
+      }
+      return resolvedJsonResponse({
+        value: Array.from({ length: 51 }, (_, index) =>
+          graphMessage({
+            id: `message-${index + 1}`,
+            internetMessageId: `<message-${index + 1}@example.com>`,
+            receivedDateTime: `2026-07-21T16:${String(index).padStart(2, "0")}:00.000Z`,
+          }),
+        ),
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await reader(fetcher).listMessagesReceivedBetween({
+      after: "2026-07-21T15:00:00.000Z",
+      through: "2026-07-21T17:00:00.000Z",
+    });
+
+    expect(result.messages).toHaveLength(51);
+    expect(result.messages[0]).toMatchObject({ id: "message-1" });
+    expect(result.messages[50]).toMatchObject({ id: "message-51" });
+    expect(result.truncated).toBe(true);
+    const request = requested.find(({ pathname }) =>
+      pathname.includes("/mailFolders/jobs-folder/messages"),
+    );
+    expect(request?.searchParams.get("$top")).toBe("51");
+  });
+
   it("lists a bounded historical window newest-first without reading bodies", async () => {
     const requested: URL[] = [];
     const fetcher = vi.fn((input: string | URL | Request) => {

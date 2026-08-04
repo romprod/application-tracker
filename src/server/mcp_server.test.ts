@@ -300,6 +300,7 @@ function outlookConnectionReconciliationResult() {
       assignedApplications: 12,
       conflicts: 0,
       detailsRead: 0,
+      hasMore: false,
       linked: 0,
       messagesRetrieved: 0,
       noMatch: 0,

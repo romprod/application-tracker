@@ -158,7 +158,8 @@ To process only new mail since a connection's last successful pass:
 Recheck the russ@sargeson.co.uk Graph connection for new job-search emails
 since its last successful reconciliation. Use only
 reconcile_outlook_graph_connection and report every linked, ambiguous,
-conflicting, and unmatched message.
+conflicting, and unmatched message. Repeat with the same connection while
+reconciliation.hasMore is true.
 ```
 
 To inspect a digest reported by that pass without exposing its body to the MCP

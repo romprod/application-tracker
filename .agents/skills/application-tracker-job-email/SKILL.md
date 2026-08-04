@@ -39,12 +39,14 @@ For new-message evidence across one configured Graph connection, require only:
 
 - `reconcile_outlook_graph_connection`.
 
-Call it exactly once with `connection` set to the exact connection ID, name, or
-mailbox supplied by the user. Do not call `get_tracker_context`, list
-applications, lower-level matching or linking tools, an Outlook plugin, or a
-Microsoft 365 MCP around it. The server owns the last-successful cursor,
-bounded Graph reads, deterministic matching against assigned applications,
-evidence persistence, cursor update, audit, and verification.
+Call it with `connection` set to the exact connection ID, name, or mailbox
+supplied by the user. If a successful result reports
+`reconciliation.hasMore: true`, repeat with the identical connection until it
+returns false. Do not call `get_tracker_context`, list applications,
+lower-level matching or linking tools, an Outlook plugin, or a Microsoft 365
+MCP around these batches. The server owns the last-successful cursor, bounded
+Graph reads, deterministic matching against assigned applications, evidence
+persistence, cursor update, audit, and verification.
 
 For one exact job-alert or digest RFC Message-ID, require only:
 
@@ -239,27 +241,32 @@ credentials in SQLite.
 Use this path when the user asks to recheck one named Graph connection or
 mailbox for new evidence since its last successful pass.
 
-1. Call `reconcile_outlook_graph_connection` exactly once with only
-   `connection`.
+1. Call `reconcile_outlook_graph_connection` with only `connection`.
 2. Treat every message outcome exactly: `linked`, `already_linked`, `no_match`,
    `ambiguous`, or `conflict`.
 3. Confirm success only when `verification.connectionReread` and
    `verification.cursorStored` are true and
    `window.storedLastReconciledAt` equals `window.through`.
-4. Report the previous and stored cursors, assigned-application and bounded
-   message counts, linked Message-IDs, and every ambiguous or conflicting
-   message.
-5. Stop on the normal Graph errors plus
+4. When `reconciliation.hasMore` is true, repeat from step 1 with the identical
+   connection. Do not insert another mailbox or tracker tool between batches.
+5. Report every batch's previous and stored cursors, assigned-application and
+   bounded message counts, linked Message-IDs, and every ambiguous or
+   conflicting message.
+6. Stop on the normal Graph errors plus
    `outlook_graph_connection_not_found`,
    `outlook_graph_connection_ambiguous`,
    `outlook_graph_reconciliation_conflict`, or
    `outlook_reconcile_message_limit`. Do not fall back to another connector.
 
 The first pass starts at the connection creation timestamp. Each successful
-pass reads and inspects at most 50 new messages and advances the cursor only in
-the same transaction as evidence links and the MCP audit event. It never
-changes mailbox state, creates opportunities, changes application fields or
-statuses, or stores subjects, senders, bodies, tokens, or credentials in
+batch inspects at most 50 new messages and advances the cursor only in the same
+transaction as evidence links and the MCP audit event. On overflow, one
+look-ahead summary finds a timestamp-safe boundary; every message sharing that
+boundary remains for the next batch, and `reconciliation.hasMore` is true. The
+stable `outlook_reconcile_message_limit` error remains only when a truncated
+page contains no complete timestamp group that can advance safely. The tool
+never changes mailbox state, creates opportunities, changes application fields
+or statuses, or stores subjects, senders, bodies, tokens, or credentials in
 SQLite.
 
 ## Server-side digest processing

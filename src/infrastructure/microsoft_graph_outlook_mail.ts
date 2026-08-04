@@ -489,7 +489,7 @@ export class MicrosoftGraphOutlookMailReader implements OutlookMailReader {
         );
       });
     return {
-      messages: messages.slice(0, maximumOutlookReconciliationMessages),
+      messages: messages.slice(0, maximumOutlookReconciliationMessages + 1),
       truncated:
         messages.length > maximumOutlookReconciliationMessages ||
         page["@odata.nextLink"] !== undefined,

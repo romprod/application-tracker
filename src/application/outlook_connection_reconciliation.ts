@@ -55,6 +55,7 @@ export interface OutlookConnectionReconciliationResult {
     assignedApplications: number;
     conflicts: number;
     detailsRead: number;
+    hasMore: boolean;
     linked: number;
     messagesRetrieved: number;
     noMatch: number;
@@ -87,6 +88,7 @@ export interface OutlookConnectionReconciliationPrepared {
   assignedApplications: number;
   connection: OutlookGraphReconciliationTarget["connection"];
   detailsRead: number;
+  hasMore: boolean;
   messages: PreparedMessage[];
   previousReconciledAt: string | null;
   since: string;
@@ -199,10 +201,10 @@ export class OutlookConnectionReconciliationService {
       actor.workspaceId,
       selector,
     );
-    const through = this.clock().toISOString();
+    const scanThrough = this.clock().toISOString();
     const previousReconciledAt = target.connection.lastReconciledAt;
     const since = previousReconciledAt ?? target.connection.createdAt;
-    if (Date.parse(since) > Date.parse(through)) {
+    if (Date.parse(since) > Date.parse(scanThrough)) {
       throw new OutlookEmailSyncOperationalError(
         "outlook_graph_reconciliation_conflict",
       );
@@ -215,20 +217,14 @@ export class OutlookConnectionReconciliationService {
       );
     const listed = await target.mail.listMessagesReceivedBetween!({
       after: since,
-      through,
+      through: scanThrough,
     });
-    if (
-      listed.truncated ||
-      listed.messages.length > maximumOutlookReconciliationMessages
-    ) {
-      throw new OutlookEmailSyncOperationalError(
-        "outlook_reconcile_message_limit",
-      );
-    }
-    const summaries = listed.messages
+    const eligible = listed.messages
       .filter(({ receivedAt }) => {
         const received = Date.parse(receivedAt);
-        return received > Date.parse(since) && received <= Date.parse(through);
+        return (
+          received > Date.parse(since) && received <= Date.parse(scanThrough)
+        );
       })
       .sort((left, right) => {
         const receivedDifference =
@@ -238,7 +234,28 @@ export class OutlookConnectionReconciliationService {
           right.internetMessageId ?? right.id,
         );
       })
-      .slice(0, maximumOutlookReconciliationMessages);
+      .slice(0, maximumOutlookReconciliationMessages + 1);
+    const hasMore =
+      listed.truncated ||
+      eligible.length > maximumOutlookReconciliationMessages;
+    const overflowBoundary = hasMore
+      ? (eligible.at(maximumOutlookReconciliationMessages)?.receivedAt ??
+        eligible.at(-1)?.receivedAt)
+      : undefined;
+    const summaries = (
+      overflowBoundary
+        ? eligible.filter(
+            ({ receivedAt }) =>
+              Date.parse(receivedAt) < Date.parse(overflowBoundary),
+          )
+        : eligible
+    ).slice(0, maximumOutlookReconciliationMessages);
+    if (hasMore && summaries.length === 0) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_reconcile_message_limit",
+      );
+    }
+    const through = hasMore ? summaries.at(-1)!.receivedAt : scanThrough;
     const details = await target.mail.getMessages(
       summaries.map(({ id }) => id),
     );
@@ -350,6 +367,7 @@ export class OutlookConnectionReconciliationService {
       assignedApplications: applications.length,
       connection: target.connection,
       detailsRead: details.length,
+      hasMore,
       messages,
       previousReconciledAt,
       since,
@@ -422,6 +440,7 @@ export class OutlookConnectionReconciliationService {
         ...counts(messages),
         assignedApplications: prepared.assignedApplications,
         detailsRead: prepared.detailsRead,
+        hasMore: prepared.hasMore,
         messagesRetrieved: prepared.messages.length,
       },
       scoringVersion: outlookEmailSyncScoringVersion,

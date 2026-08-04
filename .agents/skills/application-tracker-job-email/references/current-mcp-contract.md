@@ -36,9 +36,10 @@ application read, Graph work, evidence write, application re-read, and storage
 verification.
 
 For new evidence across one configured Graph connection, call only
-`reconcile_outlook_graph_connection` with its exact ID, name, or mailbox. Do not
-call `get_tracker_context`, list applications, lower-level evidence tools, or a
-separate Outlook/MS365 MCP around it.
+`reconcile_outlook_graph_connection` with its exact ID, name, or mailbox. Repeat
+the same call while `reconciliation.hasMore` is true. Do not call
+`get_tracker_context`, list applications, lower-level evidence tools, or a
+separate Outlook/MS365 MCP around these batches.
 
 For one exact digest RFC Message-ID, call only
 `process_outlook_job_digest` with its exact connection selector, Message-ID, and
@@ -86,7 +87,7 @@ through an external managed distribution channel is separate from this
 contract and requires an explicit user request; schema drift alone is not
 authorization to register or submit a plugin.
 
-The current direct MCP contract is schema version 21 with 43 tools. This
+The current direct MCP contract is schema version 22 with 43 tools. This
 reference does not represent optional externally managed publication state.
 
 ## Server-side one-application Outlook sync
@@ -158,11 +159,17 @@ senders, headers, previews, or bodies.
 
 It requires connection-bound `read_write` access. The server resolves one
 enabled connection, starts after its last-successful cursor (or its creation
-timestamp on the first run), lists at most 50 messages through a fixed run
-timestamp, reads their full details, and deterministically scores each against
-applications assigned to that connection. Only one unique high-confidence
-application may receive a Message-ID. Existing, ambiguous, conflicting,
-marketing, and unmatched mail is reported without a new link.
+timestamp on the first run), obtains a bounded chronological page plus one
+look-ahead summary, reads at most 50 full details, and deterministically scores
+each against applications assigned to that connection. Only one unique
+high-confidence application may receive a Message-ID. Existing, ambiguous,
+conflicting, marketing, and unmatched mail is reported without a new link.
+
+If the look-ahead proves more mail remains, the server excludes every summary
+sharing the look-ahead timestamp and advances only through the last complete
+timestamp group. The result reports `reconciliation.hasMore: true`; repeat the
+same tool with the identical connection until it is false. This prevents a
+batch boundary from skipping messages with equal received timestamps.
 
 Evidence links, the new cursor, and the immutable MCP audit event commit
 atomically after Graph reads. The result contains the connection,
@@ -171,9 +178,10 @@ identity metadata, aggregate counts, scoring version and threshold, and
 connection/cursor/link verification. It never changes mailbox state, creates
 opportunities, or changes application fields or status.
 
-If more than 50 messages fall in the window, the tool returns
-`outlook_reconcile_message_limit` without advancing the cursor. Other stable
-connection-specific errors are `outlook_graph_connection_not_found`,
+If a truncated page contains no complete timestamp group that can advance the
+cursor safely, the tool returns `outlook_reconcile_message_limit` without
+advancing the cursor. Other stable connection-specific errors are
+`outlook_graph_connection_not_found`,
 `outlook_graph_connection_ambiguous`, and
 `outlook_graph_reconciliation_conflict`, in addition to normal Graph errors.
 

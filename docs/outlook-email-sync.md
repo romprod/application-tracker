@@ -153,10 +153,14 @@ connection ID, name, or mailbox:
 ```
 
 The first run starts at the connection's creation time. Later runs start after
-the last successful cursor. The server reads at most 50 new messages, scores
-them against applications assigned to that connection, links only unique
-high-confidence Message-IDs, and stores the new cursor in the same transaction
-as the evidence and MCP audit event. Ambiguous, conflicting, marketing, and
+the last successful cursor. The server reads one bounded chronological batch,
+scores at most 50 messages against applications assigned to that connection,
+links only unique high-confidence Message-IDs, and stores the new cursor in the
+same transaction as the evidence and MCP audit event. When a look-ahead message
+shows that more mail remains, the batch excludes every message sharing the
+look-ahead timestamp, advances only through the last complete timestamp group,
+and returns `reconciliation.hasMore: true`. Repeat the call with the same
+connection until `hasMore` is false. Ambiguous, conflicting, marketing, and
 unmatched messages are reported without being linked. The mailbox remains
 read-only.
 
@@ -223,7 +227,7 @@ Stable operational errors include:
 | `outlook_graph_connection_not_found`    | No exact ID, name, or mailbox matched          |
 | `outlook_graph_connection_ambiguous`    | Selector matched more than one connection      |
 | `outlook_graph_reconciliation_conflict` | Connection or cursor changed during the run    |
-| `outlook_reconcile_message_limit`       | More than 50 new messages were found           |
+| `outlook_reconcile_message_limit`       | No safe timestamp checkpoint fits in one batch |
 | `outlook_existing_evidence_limit`       | Application exceeds the validation bound       |
 | `outlook_email_verification_failed`     | Stored evidence failed transactional read-back |
 
