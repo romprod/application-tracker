@@ -293,10 +293,125 @@ describe("OutlookConnectionReconciliationService", () => {
     });
   });
 
-  it("fails closed and preserves the cursor when the bounded mailbox page is truncated", async () => {
+  it("commits a bounded batch and leaves a continuation signal when more than 50 messages are pending", async () => {
     const value = harness();
     const { connectionId } = await createConnectionAndApplication(value);
     value.setNow("2026-07-29T11:00:00.000Z");
+    value.setMessages(
+      Array.from({ length: 51 }, (_, index) =>
+        message({
+          body: { content: "Daily job recommendations", contentType: "text" },
+          bodyPreview: "Daily job recommendations",
+          from: { address: "alerts@example.com", name: "Job alerts" },
+          id: `message-${index + 1}`,
+          internetMessageId: `<message-${index + 1}@example.com>`,
+          receivedAt: `2026-07-29T10:${String(index + 1).padStart(2, "0")}:00.000Z`,
+          subject: "Daily job alert",
+        }),
+      ),
+    );
+    value.setTruncated(true);
+
+    const first = value.reconcile.commit(
+      value.actor,
+      await value.reconcile.prepare(value.actor, connectionId),
+    );
+
+    expect(first.reconciliation).toMatchObject({
+      hasMore: true,
+      messagesRetrieved: 50,
+    });
+    expect(first.window).toMatchObject({
+      storedLastReconciledAt: "2026-07-29T10:50:00.000Z",
+      through: "2026-07-29T10:50:00.000Z",
+    });
+    expect(
+      value.connectionRepository.find(value.actor.workspaceId, connectionId),
+    ).toMatchObject({ lastReconciledAt: "2026-07-29T10:50:00.000Z" });
+
+    value.setTruncated(false);
+    const second = value.reconcile.commit(
+      value.actor,
+      await value.reconcile.prepare(value.actor, connectionId),
+    );
+
+    expect(second.reconciliation).toMatchObject({
+      hasMore: false,
+      messagesRetrieved: 1,
+    });
+    expect(second.window).toMatchObject({
+      previousReconciledAt: "2026-07-29T10:50:00.000Z",
+      storedLastReconciledAt: "2026-07-29T11:00:00.000Z",
+      through: "2026-07-29T11:00:00.000Z",
+    });
+  });
+
+  it("keeps every message sharing the overflow timestamp for the next batch", async () => {
+    const value = harness();
+    const { connectionId } = await createConnectionAndApplication(value);
+    value.setNow("2026-07-29T11:00:00.000Z");
+    value.setMessages([
+      ...Array.from({ length: 48 }, (_, index) =>
+        message({
+          id: `message-${index + 1}`,
+          internetMessageId: `<message-${index + 1}@example.com>`,
+          receivedAt: `2026-07-29T10:${String(index + 1).padStart(2, "0")}:00.000Z`,
+        }),
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        message({
+          id: `boundary-message-${index + 1}`,
+          internetMessageId: `<boundary-message-${index + 1}@example.com>`,
+          receivedAt: "2026-07-29T10:49:00.000Z",
+        }),
+      ),
+    ]);
+    value.setTruncated(true);
+
+    const first = value.reconcile.commit(
+      value.actor,
+      await value.reconcile.prepare(value.actor, connectionId),
+    );
+
+    expect(first.messages).toHaveLength(48);
+    expect(first.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ receivedAt: "2026-07-29T10:49:00.000Z" }),
+      ]),
+    );
+    expect(first.reconciliation.hasMore).toBe(true);
+    expect(first.window.storedLastReconciledAt).toBe(
+      "2026-07-29T10:48:00.000Z",
+    );
+
+    value.setTruncated(false);
+    const second = value.reconcile.commit(
+      value.actor,
+      await value.reconcile.prepare(value.actor, connectionId),
+    );
+
+    expect(second.messages).toHaveLength(3);
+    expect(
+      second.messages.every(
+        ({ receivedAt }) => receivedAt === "2026-07-29T10:49:00.000Z",
+      ),
+    ).toBe(true);
+    expect(second.reconciliation.hasMore).toBe(false);
+  });
+
+  it("fails closed when no complete timestamp group fits in the bounded batch", async () => {
+    const value = harness();
+    const { connectionId } = await createConnectionAndApplication(value);
+    value.setNow("2026-07-29T11:00:00.000Z");
+    value.setMessages(
+      Array.from({ length: 51 }, (_, index) =>
+        message({
+          id: `boundary-message-${index + 1}`,
+          internetMessageId: `<boundary-message-${index + 1}@example.com>`,
+          receivedAt: "2026-07-29T10:30:00.000Z",
+        }),
+      ),
+    );
     value.setTruncated(true);
 
     await expect(

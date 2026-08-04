@@ -170,8 +170,9 @@ To process new mail for one configured connection, call
 `reconcile_outlook_graph_connection` directly with `connection` set to its
 exact ID, name, or mailbox. Do not call `get_tracker_context`, a separate
 Microsoft 365 MCP, or the one-application tool around it. The result reports
-the previous and stored cursors, bounded per-message outcomes, link counts, and
-cursor verification.
+the previous and stored cursors, bounded per-message outcomes, link counts,
+`reconciliation.hasMore`, and cursor verification. Repeat the same call while
+`hasMore` is true so a backlog drains through timestamp-safe batches.
 
 To find older digests without a separate mailbox connector, call
 `search_outlook_job_digests` with the exact connection and a fixed `after` /

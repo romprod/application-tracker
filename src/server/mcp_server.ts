@@ -570,6 +570,7 @@ const outlookConnectionReconciliationResultSchema = z.strictObject({
     assignedApplications: z.number().int().nonnegative(),
     conflicts: z.number().int().nonnegative().max(50),
     detailsRead: z.number().int().nonnegative().max(50),
+    hasMore: z.boolean(),
     linked: z.number().int().nonnegative().max(50),
     messagesRetrieved: z.number().int().nonnegative().max(50),
     noMatch: z.number().int().nonnegative().max(50),
@@ -1888,7 +1889,7 @@ export function createApplicationMcpServer(
     {
       annotations: openWorldWriteAnnotations,
       description:
-        "Resolve one enabled Graph connection by exact ID, name, or mailbox; read only messages received after its last successful reconciliation; deterministically match them against applications assigned to that connection; link only unique high-confidence RFC Message-ID evidence; then atomically store and verify the new connection cursor. The tool never changes mailbox state.",
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox; process one timestamp-safe batch after its last successful reconciliation; deterministically match assigned applications; link only unique high-confidence RFC Message-ID evidence; then atomically store and verify the new cursor. Repeat with the same connection while reconciliation.hasMore is true. The tool never changes mailbox state.",
       inputSchema: reconcileOutlookGraphConnectionSchema,
       outputSchema: outlookConnectionReconciliationResultSchema,
       title: "Reconcile Outlook Graph connection",
