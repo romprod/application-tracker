@@ -174,6 +174,9 @@ function fakeTools(): McpApplicationTools {
     prepareReconcileOutlookGraphConnection: vi.fn(() =>
       Promise.reject(new Error("not configured")),
     ),
+    prepareReviewNewOutlookJobDigests: vi.fn(() =>
+      Promise.reject(new Error("not configured")),
+    ),
     processOutlookJobDigest: vi.fn(() =>
       Promise.resolve(outlookJobDigestResult()),
     ),
@@ -414,6 +417,49 @@ function outlookJobDigestSearchResult() {
   };
 }
 
+function outlookJobDigestReviewResult() {
+  return {
+    checkpoint: {
+      hasMore: false,
+      initializationReason: "first_use" as const,
+      initialized: true,
+      previousCompletedAt: null,
+      storedCompletedAt: "2026-08-06T09:00:00.000Z",
+    },
+    connection: {
+      folderPath: "Inbox\\Jobs",
+      id: "22222222-2222-4222-8222-222222222222",
+      mailbox: "jobs@example.com",
+      name: "Work tenant",
+    },
+    counts: {
+      alreadyReviewedMessages: 0,
+      alreadyTracked: 0,
+      ambiguous: 0,
+      conflicting: 0,
+      detailsRead: 0,
+      digestsProcessed: 0,
+      expired: 0,
+      messagesScanned: 0,
+      postingsInspected: 0,
+      unavailable: 0,
+      unprocessed: 0,
+    },
+    digests: [],
+    outcome: "initialized" as const,
+    reviewedMessageIds: [],
+    unavailableReasons: [],
+    verification: {
+      applicationStateChanged: false as const,
+      checkpointStored: true as const,
+      mailboxReadOnly: true as const,
+      messageBodyPersisted: false as const,
+      messageBodyReturned: false as const,
+    },
+    window: { after: null, through: "2026-08-06T09:00:00.000Z" },
+  };
+}
+
 describe("local MCP server", () => {
   it("registers bounded read and write tools without actor selection arguments", async () => {
     const tools = fakeTools();
@@ -480,6 +526,7 @@ describe("local MCP server", () => {
     const openWorldWriteTools = new Set([
       "sync_outlook_email_evidence",
       "reconcile_outlook_graph_connection",
+      "review_new_outlook_job_digests",
     ]);
     const nonIdempotentWriteTools = new Set([
       "create_application",
@@ -492,6 +539,7 @@ describe("local MCP server", () => {
       "restore_application",
       "recover_application_merge",
       "reconcile_outlook_graph_connection",
+      "review_new_outlook_job_digests",
     ]);
     for (const tool of listed.tools) {
       if (readOnlyTools.has(tool.name)) {
@@ -904,6 +952,49 @@ describe("local MCP server", () => {
     });
     expect(record).toHaveBeenCalledWith({
       action: "process_outlook_job_digest",
+      actorUserId: "actor-user-1",
+      result: "success",
+      targetType: "job_email",
+      transport: "local_stdio",
+      workspaceId: "workspace-1",
+    });
+  });
+
+  it("reviews new Outlook digests and audits the checkpoint atomically", async () => {
+    const tools = fakeTools();
+    const commit = vi.fn(() => outlookJobDigestReviewResult());
+    const prepare = vi.fn(() => Promise.resolve({ commit }));
+    tools.prepareReviewNewOutlookJobDigests = prepare;
+    const record = vi.fn();
+    const runAtomically = vi.fn((operation: () => object) => operation());
+    const server = createLocalMcpServer(tools, {
+      audit: {
+        actorUserId: "actor-user-1",
+        recorder: { record },
+        runAtomically,
+        workspaceId: "workspace-1",
+      },
+    });
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    servers.push(server);
+    clients.push(client);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const result = await client.callTool({
+      arguments: { connection: "jobs@example.com" },
+      name: "review_new_outlook_job_digests",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(outlookJobDigestReviewResult());
+    expect(prepare).toHaveBeenCalledWith({ connection: "jobs@example.com" });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(runAtomically).toHaveBeenCalledOnce();
+    expect(record).toHaveBeenCalledWith({
+      action: "review_new_outlook_job_digests",
       actorUserId: "actor-user-1",
       result: "success",
       targetType: "job_email",

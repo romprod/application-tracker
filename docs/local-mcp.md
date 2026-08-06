@@ -57,7 +57,7 @@ the value requires restarting that local MCP process.
 
 ## Tools
 
-The local server registers 43 tools:
+The local server registers 44 tools:
 
 | Tool                                  | Result                                                     |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -83,6 +83,7 @@ The local server registers 43 tools:
 | `reconcile_outlook_graph_connection`  | Incremental Graph connection evidence reconciliation       |
 | `search_outlook_job_digests`          | Read-only bounded backward Graph digest search             |
 | `process_outlook_job_digest`          | Read-only exact digest resolution and posting inspection   |
+| `review_new_outlook_job_digests`      | Incremental digest review with a separate checkpoint       |
 | `extract_job_links`                   | Offline canonical job-link candidates                      |
 | `resolve_job_links`                   | Allowlisted tracking-link resolution                       |
 | `inspect_job_posting`                 | Structured canonical posting metadata                      |

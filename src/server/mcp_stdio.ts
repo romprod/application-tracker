@@ -18,6 +18,7 @@ import { JobPostingInspectionService } from "../application/job_posting_inspecti
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { OutlookConnectionReconciliationService } from "../application/outlook_connection_reconciliation.js";
 import { OutlookJobDigestProcessingService } from "../application/outlook_job_digest.js";
+import { OutlookJobDigestReviewService } from "../application/outlook_job_digest_review.js";
 import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { ReferenceValuesService } from "../application/reference_values.js";
 import { SqliteApplicationsRepository } from "../infrastructure/database/applications_repository.js";
@@ -28,6 +29,7 @@ import { SqliteMcpAuditRepository } from "../infrastructure/database/mcp_audit_r
 import { SqliteJobEmailReconciliationRepository } from "../infrastructure/database/job_email_reconciliation_repository.js";
 import { SqliteReferenceValuesRepository } from "../infrastructure/database/reference_values_repository.js";
 import { SqliteOutlookGraphConnectionsRepository } from "../infrastructure/database/outlook_graph_connections_repository.js";
+import { SqliteOutlookJobDigestReviewRepository } from "../infrastructure/database/outlook_job_digest_review_repository.js";
 import { AesGcmOutlookGraphSecretCipher } from "../infrastructure/auth/outlook_graph_secret_cipher.js";
 import { MicrosoftGraphOutlookConnectionAdapter } from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { parseRuntimeConfig } from "./config.js";
@@ -104,6 +106,14 @@ async function startLocalMcpServer(): Promise<void> {
           jobPostingInspectionService,
         )
       : undefined;
+    const outlookJobDigestReviewService =
+      outlookGraphConnectionsService && outlookJobDigestProcessingService
+        ? new OutlookJobDigestReviewService(
+            outlookGraphConnectionsService,
+            outlookJobDigestProcessingService,
+            new SqliteOutlookJobDigestReviewRepository(database),
+          )
+        : undefined;
     const tools = new ApplicationMcpService(
       actorProvider,
       applicationsService,
@@ -122,6 +132,7 @@ async function startLocalMcpServer(): Promise<void> {
       undefined,
       undefined,
       jobPostingInspectionService,
+      outlookJobDigestReviewService,
     );
     const auditService = new McpAuditService(
       new SqliteMcpAuditRepository(database),

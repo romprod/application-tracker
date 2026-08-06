@@ -103,6 +103,17 @@ without email bodies. Server-issued continuations resume after each bounded
 stateless request data. The search is read-only, never advances the
 reconciliation cursor, and never changes application or evidence records.
 
+For routine new-digest review, the MCP client calls
+`review_new_outlook_job_digests`. First use initializes a dedicated boundary at
+the current server time without rereading historical mail. Later calls inspect
+one bounded timestamp-safe batch and atomically persist only the completed
+boundary, reviewed RFC Message-IDs, posting identities, outcome and retry
+metadata, and the immutable MCP audit row. The response never contains an
+email body or posting description. This operational checkpoint write requires
+read-and-write access but does not change mailbox or application state. The
+historical search and exact-message tools remain independent for explicit
+rescans.
+
 An administrator manages one or more named Graph connections under **Settings
 → Connections**. Application Tracker verifies each tenant, application, client
 secret, mailbox, and Inbox child folder before saving or enabling it. The

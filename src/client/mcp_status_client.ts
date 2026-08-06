@@ -107,6 +107,7 @@ export interface McpAuditEvent {
     | "merge_applications"
     | "list_deleted_applications"
     | "process_outlook_job_digest"
+    | "review_new_outlook_job_digests"
     | "preview_application_restore"
     | "query_application_attention"
     | "record_application_field_provenance"
@@ -222,6 +223,7 @@ function parseAuditEvent(value: unknown): McpAuditEvent {
       value.action !== "merge_applications" &&
       value.action !== "list_deleted_applications" &&
       value.action !== "process_outlook_job_digest" &&
+      value.action !== "review_new_outlook_job_digests" &&
       value.action !== "preview_application_restore" &&
       value.action !== "query_application_attention" &&
       value.action !== "record_application_field_provenance" &&

@@ -201,6 +201,18 @@ at most 31 days, uses exact offsets within resumable 500-message batches up to
 Message-IDs and classifications without bodies, and changes neither mailbox,
 cursor, application, nor evidence state.
 
+For routine incremental digest review, call
+`review_new_outlook_job_digests` with the exact Graph connection selector and
+repeat only while `checkpoint.hasMore` is true. First use initializes the
+dedicated review checkpoint at the current server time without reading older
+mail. Later calls inspect at most five timestamp-safe messages, handle every
+posting inside qualifying digests, and atomically store the checkpoint,
+reviewed RFC Message-IDs, posting identities, retry metadata, and audit event.
+It requires read-and-write access for that operational checkpoint, but never
+returns or persists message bodies, changes mailbox state, or creates or
+updates applications. Use the historical tools for an explicit rescan; they
+remain checkpoint-independent.
+
 ## Request controls
 
 The endpoint checks Host and Origin, authenticates the bearer token, and then

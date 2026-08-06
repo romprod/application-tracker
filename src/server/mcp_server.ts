@@ -111,6 +111,7 @@ import {
   processOutlookJobDigestSchema,
   searchOutlookJobDigestsSchema,
 } from "../domain/outlook_job_digest.js";
+import { reviewNewOutlookJobDigestsSchema } from "../domain/outlook_job_digest_review.js";
 import {
   OutlookEmailSyncOperationalError,
   OutlookEmailSyncVerificationError,
@@ -716,6 +717,95 @@ const outlookJobDigestProcessingResultSchema = z.strictObject({
     exactMessageMatches: z.number().int().min(0).max(2),
     mailboxReadOnly: z.literal(true),
     messageBodyReturned: z.literal(false),
+  }),
+});
+const outlookJobDigestReviewPostingSchema = z.strictObject({
+  candidate: resolvedJobLinkCandidateSchema,
+  digestFallback: z.strictObject({
+    attempted: z.boolean(),
+    unavailableReason: digestEmailJobCardUnavailableReasonSchema.nullable(),
+  }),
+  inspection: jobPostingInspectionResultSchema.omit({ description: true }),
+  inspectionSource: z.enum(["digest_email", "provider_page"]),
+  match: jobEmailMatchResultSchema,
+  outcome: z.enum([
+    "already_tracked",
+    "ambiguous",
+    "conflict",
+    "expired",
+    "unavailable",
+    "unprocessed",
+  ]),
+  postingIdentity: z.string().regex(/^[a-f0-9]{64}$/),
+  retry: z.strictObject({
+    eligible: z.boolean(),
+    retryAfter: z.iso.datetime().nullable(),
+  }),
+});
+const outlookJobDigestReviewResultSchema = z.strictObject({
+  checkpoint: z.strictObject({
+    hasMore: z.boolean(),
+    initializationReason: z
+      .enum(["connection_changed", "first_use"])
+      .nullable(),
+    initialized: z.boolean(),
+    previousCompletedAt: z.iso.datetime().nullable(),
+    storedCompletedAt: z.iso.datetime(),
+  }),
+  connection: z.strictObject({
+    folderPath: z.string(),
+    id: z.uuid(),
+    mailbox: z.string().email().max(254),
+    name: z.string(),
+  }),
+  counts: z.strictObject({
+    alreadyReviewedMessages: z.number().int().min(0).max(5),
+    alreadyTracked: z.number().int().min(0).max(100),
+    ambiguous: z.number().int().min(0).max(100),
+    conflicting: z.number().int().min(0).max(100),
+    detailsRead: z.number().int().min(0).max(5),
+    digestsProcessed: z.number().int().min(0).max(5),
+    expired: z.number().int().min(0).max(100),
+    messagesScanned: z.number().int().min(0).max(5),
+    postingsInspected: z.number().int().min(0).max(100),
+    unavailable: z.number().int().min(0).max(100),
+    unprocessed: z.number().int().min(0).max(100),
+  }),
+  digests: z
+    .array(
+      z.strictObject({
+        classification: z.literal("marketing_or_digest"),
+        digest: z.strictObject({
+          messageId: z.string().max(998),
+          receivedAt: z.iso.datetime(),
+          sender: z.string().email().max(254).nullable(),
+          subject: z.string().max(255),
+        }),
+        postings: z.array(outlookJobDigestReviewPostingSchema).max(20),
+        tracking: jobLinkResolutionResultSchema.shape.tracking,
+      }),
+    )
+    .max(5),
+  outcome: z.enum(["initialized", "reviewed", "up_to_date"]),
+  reviewedMessageIds: z.array(z.string().max(998)).max(5),
+  unavailableReasons: z
+    .array(
+      z.strictObject({
+        count: z.number().int().positive().max(200),
+        reason: z.string().min(1).max(80),
+      }),
+    )
+    .max(32),
+  verification: z.strictObject({
+    applicationStateChanged: z.literal(false),
+    checkpointStored: z.literal(true),
+    mailboxReadOnly: z.literal(true),
+    messageBodyPersisted: z.literal(false),
+    messageBodyReturned: z.literal(false),
+  }),
+  window: z.strictObject({
+    after: z.iso.datetime().nullable(),
+    through: z.iso.datetime(),
   }),
 });
 const outlookJobDigestSearchMessageSchema = z.strictObject({
@@ -1947,6 +2037,26 @@ export function createApplicationMcpServer(
   );
 
   server.registerTool(
+    "review_new_outlook_job_digests",
+    {
+      annotations: openWorldWriteAnnotations,
+      description:
+        "Resolve one enabled Graph connection by exact ID, name, or mailbox and incrementally inspect only mail after its separate digest-review checkpoint. First use atomically bootstraps the checkpoint at the current server time without reading historical mail. Later calls scan at most five timestamp-safe messages, fully inspect every posting in qualifying marketing or digest messages, store only RFC Message-IDs, posting identities, outcomes, and retry metadata, and atomically advance the checkpoint. Repeat while checkpoint.hasMore is true. This tool requires tracker write access because it changes review checkpoint state, but it never stores or returns message bodies, changes mailbox state, or creates or updates applications. Use search_outlook_job_digests and process_outlook_job_digest for explicit historical rescans.",
+      inputSchema: reviewNewOutlookJobDigestsSchema,
+      outputSchema: outlookJobDigestReviewResultSchema,
+      title: "Review new Outlook job digests",
+    },
+    (input) =>
+      executePreparedWriteTool(
+        "review_new_outlook_job_digests",
+        "job_email",
+        logger,
+        options.audit,
+        () => tools.prepareReviewNewOutlookJobDigests(input),
+      ),
+  );
+
+  server.registerTool(
     "extract_job_links",
     {
       annotations: readOnlyAnnotations,
@@ -2383,7 +2493,7 @@ export function createLocalMcpServer(
       ? { audit: { ...options.audit, transport: "local_stdio" } }
       : {}),
     instructions:
-      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires an explicit reason and confirmation.",
+      "This local server is bound to one operator-selected actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. For routine new digest review without reprocessing completed mail, call review_new_outlook_job_digests with the exact connection and repeat only while checkpoint.hasMore is true; first use starts the checkpoint at the current server time without reading history. To search backward for older digests, call search_outlook_job_digests with a fixed bounded window, then process only exact returned marketing_or_digest RFC Message-IDs with process_outlook_job_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when MCP_LOCAL_ACCESS_MODE is read_write, and delete_application also requires an explicit reason and confirmation.",
     ...(options.logger ? { logger: options.logger } : {}),
   });
 }

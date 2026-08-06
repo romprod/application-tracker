@@ -29,6 +29,7 @@ import { ReferenceValuesService } from "../application/reference_values.js";
 import { OutlookEmailSyncService } from "../application/outlook_email_sync.js";
 import { OutlookConnectionReconciliationService } from "../application/outlook_connection_reconciliation.js";
 import { OutlookJobDigestProcessingService } from "../application/outlook_job_digest.js";
+import { OutlookJobDigestReviewService } from "../application/outlook_job_digest_review.js";
 import { OutlookGraphConnectionsService } from "../application/outlook_graph_connections.js";
 import { SetupService } from "../application/setup.js";
 import { UserAdministrationService } from "../application/users.js";
@@ -54,6 +55,7 @@ import { SqliteReferenceValuesRepository } from "../infrastructure/database/refe
 import { SqliteSetupRepository } from "../infrastructure/database/setup_repository.js";
 import { SqliteUsersRepository } from "../infrastructure/database/users_repository.js";
 import { SqliteOutlookGraphConnectionsRepository } from "../infrastructure/database/outlook_graph_connections_repository.js";
+import { SqliteOutlookJobDigestReviewRepository } from "../infrastructure/database/outlook_job_digest_review_repository.js";
 import { MicrosoftGraphOutlookConnectionAdapter } from "../infrastructure/microsoft_graph_outlook_mail.js";
 import { createApp } from "./app.js";
 import { parseRuntimeConfig } from "./config.js";
@@ -130,6 +132,14 @@ async function startApplication(): Promise<void> {
           jobPostingInspectionService,
         )
       : undefined;
+    const outlookJobDigestReviewService =
+      outlookGraphConnectionsService && outlookJobDigestProcessingService
+        ? new OutlookJobDigestReviewService(
+            outlookGraphConnectionsService,
+            outlookJobDigestProcessingService,
+            new SqliteOutlookJobDigestReviewRepository(database),
+          )
+        : undefined;
     const documentsRepository = new SqliteDocumentsRepository(
       database,
       config.documents,
@@ -238,6 +248,7 @@ async function startApplication(): Promise<void> {
                 undefined,
                 undefined,
                 jobPostingInspectionService,
+                outlookJobDigestReviewService,
               ),
               {
                 audit: {
@@ -249,7 +260,7 @@ async function startApplication(): Promise<void> {
                   workspaceId: actor.workspaceId,
                 },
                 instructions:
-                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. To search backward for older digests without exposing bodies, call search_outlook_job_digests with a fixed bounded window, then call process_outlook_job_digest only with exact returned RFC Message-IDs classified as marketing_or_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires an explicit reason and confirmation.",
+                  "This authenticated remote server is bound to one actor, workspace, and connection permission. For one known application's Outlook evidence workflow, call sync_outlook_email_evidence directly with applicationId. To process only new mail for one configured Graph connection, call reconcile_outlook_graph_connection directly with its exact ID, name, or mailbox. For routine new digest review without reprocessing completed mail, call review_new_outlook_job_digests with the exact connection and repeat only while checkpoint.hasMore is true; first use starts the checkpoint at the current server time without reading history. To search backward for older digests, call search_outlook_job_digests with a fixed bounded window, then process only exact returned marketing_or_digest RFC Message-IDs with process_outlook_job_digest. These tools perform all required tracker and Microsoft Graph reads, writes, and verification, so do not use a separate Microsoft 365 connector around them. Call get_tracker_context before other workspace operations. Mutation tools work only when this connection has read-and-write access, and delete_application also requires an explicit reason and confirmation.",
                 logger,
               },
             ),

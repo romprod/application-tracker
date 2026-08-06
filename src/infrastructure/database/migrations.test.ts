@@ -100,7 +100,7 @@ describe("migrateDatabase", () => {
       ).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
-        39,
+        39, 40,
       ]);
       expect(
         database
@@ -178,6 +178,30 @@ describe("migrateDatabase", () => {
           .pluck()
           .get(),
       ).toContain("query_application_attention");
+      expect(
+        database
+          .prepare(
+            `SELECT sql FROM sqlite_master
+             WHERE type = 'table' AND name = 'mcp_audit_events'`,
+          )
+          .pluck()
+          .get(),
+      ).toContain("review_new_outlook_job_digests");
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table'
+               AND name LIKE 'outlook_job_digest_review_%'
+             ORDER BY name`,
+          )
+          .pluck()
+          .all(),
+      ).toEqual([
+        "outlook_job_digest_review_checkpoints",
+        "outlook_job_digest_review_messages",
+        "outlook_job_digest_review_postings",
+      ]);
       expect(
         database
           .prepare(

@@ -84,6 +84,7 @@ import type {
   ProcessOutlookJobDigestInput,
   SearchOutlookJobDigestsInput,
 } from "../domain/outlook_job_digest.js";
+import type { ReviewNewOutlookJobDigestsInput } from "../domain/outlook_job_digest_review.js";
 import { applicationMcpSchemaManifest } from "./mcp_schema_manifest.js";
 import { applicationMcpPublishedSchema } from "./mcp_published_schema.js";
 import {
@@ -100,10 +101,14 @@ import type {
   OutlookJobDigestProcessingService,
   OutlookJobDigestSearchResult,
 } from "./outlook_job_digest.js";
+import type {
+  OutlookJobDigestReviewResult,
+  OutlookJobDigestReviewService,
+} from "./outlook_job_digest_review.js";
 
 export { applicationMcpSchemaManifest, applicationMcpPublishedSchema };
 
-export const applicationMcpSchemaVersion = 23;
+export const applicationMcpSchemaVersion = 24;
 export const mcpSchemaPublicationDocumentationUrl =
   "https://developers.openai.com/apps-sdk/deploy/submission#how-published-app-metadata-versions-work";
 
@@ -130,6 +135,7 @@ export const applicationMcpToolNames = [
   "reconcile_outlook_graph_connection",
   "search_outlook_job_digests",
   "process_outlook_job_digest",
+  "review_new_outlook_job_digests",
   "extract_job_links",
   "resolve_job_links",
   "inspect_job_posting",
@@ -585,6 +591,9 @@ export interface McpApplicationTools {
   processOutlookJobDigest(
     input: ProcessOutlookJobDigestInput,
   ): Promise<OutlookJobDigestProcessingResult>;
+  prepareReviewNewOutlookJobDigests(
+    input: ReviewNewOutlookJobDigestsInput,
+  ): Promise<PreparedMcpWriteOperation<OutlookJobDigestReviewResult>>;
   searchOutlookJobDigests(
     input: SearchOutlookJobDigestsInput,
   ): Promise<OutlookJobDigestSearchResult>;
@@ -711,6 +720,7 @@ export class ApplicationMcpService implements McpApplicationTools {
     private readonly clock: () => Date = () => new Date(),
     private readonly jobLinkResolver = new JobLinkResolutionService(emailLinks),
     private readonly jobPostingInspector = new JobPostingInspectionService(),
+    private readonly outlookJobDigestReview?: OutlookJobDigestReviewService,
   ) {}
 
   public getTrackerContext(): LocalMcpTrackerContext {
@@ -1077,6 +1087,28 @@ export class ApplicationMcpService implements McpApplicationTools {
     return this.outlookJobDigestProcessingService().process(actor, input);
   }
 
+  public async prepareReviewNewOutlookJobDigests(
+    input: ReviewNewOutlookJobDigestsInput,
+  ): Promise<PreparedMcpWriteOperation<OutlookJobDigestReviewResult>> {
+    const actor = this.actorProvider.getActor();
+    this.accessPolicy.requireWriteAccess(actor);
+    const service = this.outlookJobDigestReviewService();
+    const prepared = await service.prepare(actor, input);
+    return {
+      commit: () => {
+        const currentActor = this.actorProvider.getActor();
+        if (
+          currentActor.userId !== actor.userId ||
+          currentActor.workspaceId !== actor.workspaceId
+        ) {
+          throw new LocalMcpActorUnavailableError();
+        }
+        this.accessPolicy.requireWriteAccess(currentActor);
+        return service.commit(currentActor, prepared);
+      },
+    };
+  }
+
   public searchOutlookJobDigests(
     input: SearchOutlookJobDigestsInput,
   ): Promise<OutlookJobDigestSearchResult> {
@@ -1315,5 +1347,14 @@ export class ApplicationMcpService implements McpApplicationTools {
       );
     }
     return this.outlookJobDigestProcessing;
+  }
+
+  private outlookJobDigestReviewService(): OutlookJobDigestReviewService {
+    if (!this.outlookJobDigestReview) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_email_sync_unavailable",
+      );
+    }
+    return this.outlookJobDigestReview;
   }
 }
