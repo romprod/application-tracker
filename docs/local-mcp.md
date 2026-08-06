@@ -176,11 +176,15 @@ the previous and stored cursors, bounded per-message outcomes, link counts,
 
 To find older digests without a separate mailbox connector, call
 `search_outlook_job_digests` with the exact connection and a fixed `after` /
-`before` window of at most 31 days. Page with the returned exact offset. The
-server classifies at most 20 messages per page and scans at most 500 messages,
+`before` window of at most 31 days. Page with the returned exact offset inside
+each batch, then use the exact returned cursor to continue after a bounded
+500-message batch. The server classifies at most 20 messages per page and
+supports up to 100,000 messages in one fixed window,
 returns no body, leaves the mailbox and reconciliation cursor unchanged, and
-does not modify application or evidence records. Only exact Message-IDs returned with
-`marketing_or_digest` classification may be passed to the digest processor.
+does not modify application or evidence records. The continuation is stateless;
+it is not a stored mailbox or reconciliation cursor. Only exact Message-IDs
+returned with `marketing_or_digest` classification may be passed to the digest
+processor.
 
 To inspect one exact digest returned by a prior pass or otherwise identified by
 its RFC Message-ID, call `process_outlook_job_digest` with `connection`,

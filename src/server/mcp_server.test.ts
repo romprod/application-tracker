@@ -391,9 +391,11 @@ function outlookJobDigestSearchResult() {
       },
     ],
     page: {
+      batchStartOffset: 0,
       detailsRead: 1,
       limit: 20,
       limitReached: false,
+      nextCursor: null,
       nextOffset: null,
       offset: 0,
       scanned: 1,
@@ -969,7 +971,7 @@ describe("local MCP server", () => {
         before: "2026-07-30T09:00:00.000Z",
         connection: "jobs@example.com",
         limit: 20,
-        offset: 490,
+        offset: 500,
       },
     ]) {
       const invalid = await client.callTool({

@@ -64,7 +64,8 @@ For a bounded historical search for digest Message-IDs, require only:
 - `search_outlook_job_digests`.
 
 Call it with the exact `connection`, fixed `after` and `before` timestamps, and
-the returned pagination offset. Do not call `get_tracker_context`, retrieve
+the returned pagination offset or continuation cursor. Do not call
+`get_tracker_context`, retrieve
 mail through Outlook or Microsoft 365, or move the fixed search window while
 paging. The server owns the Graph folder search, detail reads, classification,
 and privacy verification. It returns no message body, changes no mailbox,
@@ -311,23 +312,30 @@ Use this path when the user asks Application Tracker to search backward for
 older job-alert or digest messages.
 
 1. Call `search_outlook_job_digests` with `connection`, fixed ISO `after` and
-   `before` timestamps, `offset: 0`, and a limit from 1 through 20.
+   `before` timestamps, `offset: 0`, and a limit from 1 through 20. Omit
+   `cursor` for the first batch.
 2. Treat only messages whose returned `classification` is
    `marketing_or_digest` and whose exact returned `messageId` is non-null as
    digest-processing candidates.
 3. When `page.nextOffset` is non-null, repeat with the same connection, fixed
-   window, limit, and that exact offset.
-4. Stop if `page.limitReached` is true; do not widen the 31-day or 500-message
-   boundary or guess around unavailable details.
-5. Confirm `verification.mailboxReadOnly`,
+   window, limit, current cursor when present, and that exact offset.
+4. When `page.nextOffset` is null and `page.nextCursor` is non-null, repeat
+   with the identical connection, fixed window, and limit, that exact cursor,
+   and `offset: 0`. Never decode, edit, or invent a cursor.
+5. Stop only when both `page.nextOffset` and `page.nextCursor` are null. A true
+   `page.limitReached` marks the end of one bounded 500-message batch, not the
+   end of the fixed search while `nextCursor` is available.
+6. Confirm `verification.mailboxReadOnly`,
    `verification.messageBodyReturned`, `verification.cursorChanged`, and
    `verification.applicationStateChanged`.
 
 The search reads and classifies at most 20 messages per page in a caller-fixed
-window of at most 31 days and scans at most 500 messages. It returns bounded
+window of at most 31 days. It uses resumable 500-message batches and a bounded
+overall ceiling of 100,000 messages per fixed window. It returns bounded
 subject, sender, received time, classification, and exact RFC Message-ID only.
-It does not return bodies, change mailbox state, store digest content, advance
-the reconciliation cursor, or change applications. Process each qualifying
+The continuation cursor is stateless request data; it does not advance the
+stored reconciliation cursor. The search does not return bodies, change
+mailbox state, store digest content, or change applications. Process each qualifying
 Message-ID with `process_outlook_job_digest` before assessing or tracking any
 posting.
 

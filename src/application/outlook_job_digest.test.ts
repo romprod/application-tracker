@@ -659,9 +659,11 @@ describe("OutlookJobDigestProcessingService", () => {
         },
       ],
       page: {
+        batchStartOffset: 0,
         detailsRead: 2,
         limit: 20,
         limitReached: false,
+        nextCursor: null,
         nextOffset: null,
         offset: 0,
         scanned: 2,
@@ -708,9 +710,11 @@ describe("OutlookJobDigestProcessingService", () => {
 
     expect(result.messages).toEqual([]);
     expect(result.page).toEqual({
+      batchStartOffset: 0,
       detailsRead: 0,
       limit: 1,
       limitReached: false,
+      nextCursor: null,
       nextOffset: 5,
       offset: 4,
       scanned: 1,
@@ -725,7 +729,7 @@ describe("OutlookJobDigestProcessingService", () => {
     ]);
   });
 
-  it("stops instead of returning an offset beyond the 500-message ceiling", async () => {
+  it("returns a bound continuation cursor after each 500-message batch", async () => {
     const value = harness([message()]);
     value.listMessagesReceivedBackward.mockResolvedValue({
       messages: [summary(message())],
@@ -741,10 +745,61 @@ describe("OutlookJobDigestProcessingService", () => {
     });
 
     expect(result.page).toMatchObject({
+      batchStartOffset: 0,
       limitReached: true,
       nextOffset: null,
       offset: 499,
       scanned: 1,
     });
+    expect(result.page.nextCursor).toEqual(expect.any(String));
+
+    const continued = await value.service.search(actor, {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "Work tenant",
+      cursor: result.page.nextCursor!,
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(continued.page).toMatchObject({
+      batchStartOffset: 500,
+      limitReached: false,
+      nextCursor: null,
+      nextOffset: 1,
+      offset: 0,
+    });
+    expect(value.listMessagesReceivedBackward).toHaveBeenLastCalledWith({
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      limit: 1,
+      offset: 500,
+    });
+  });
+
+  it("rejects a continuation cursor when its fixed search changes", async () => {
+    const value = harness([message()]);
+    value.listMessagesReceivedBackward.mockResolvedValue({
+      messages: [summary(message())],
+      truncated: true,
+    });
+    const first = await value.service.search(actor, {
+      after: "2026-07-23T00:00:00.000Z",
+      before: "2026-07-30T09:00:00.000Z",
+      connection: "Work tenant",
+      limit: 1,
+      offset: 499,
+    });
+
+    await expect(
+      value.service.search(actor, {
+        after: "2026-07-24T00:00:00.000Z",
+        before: "2026-07-30T09:00:00.000Z",
+        connection: "Work tenant",
+        cursor: first.page.nextCursor!,
+        limit: 1,
+        offset: 0,
+      }),
+    ).rejects.toMatchObject({ code: "outlook_digest_search_cursor_invalid" });
   });
 });

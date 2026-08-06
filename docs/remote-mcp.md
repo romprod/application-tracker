@@ -196,7 +196,8 @@ unavailable reason when it failed.
 
 For older digest discovery, `search_outlook_job_digests` performs the bounded
 backward Graph search inside Application Tracker. It accepts a fixed window of
-at most 31 days, pages across at most 500 messages, returns exact RFC
+at most 31 days, uses exact offsets within resumable 500-message batches up to
+100,000 messages per fixed window, returns exact RFC
 Message-IDs and classifications without bodies, and changes neither mailbox,
 cursor, application, nor evidence state.
 

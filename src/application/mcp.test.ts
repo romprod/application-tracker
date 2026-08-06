@@ -131,9 +131,11 @@ describe("ApplicationMcpService", () => {
       },
       messages: [],
       page: {
+        batchStartOffset: 0,
         detailsRead: 0,
         limit: 20,
         limitReached: false,
+        nextCursor: null,
         nextOffset: null,
         offset: 0,
         scanned: 0,
