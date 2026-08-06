@@ -59,6 +59,20 @@ lookup, digest classification, bounded link resolution, structured posting
 inspection, deterministic tracker matching, and privacy verification. This
 tool is read-only and never creates prospects.
 
+For routine review of only new job-alert and digest mail, require only:
+
+- `review_new_outlook_job_digests`.
+
+Call it with the exact `connection` selector and repeat with that identical
+selector only while `checkpoint.hasMore` is true. First use initializes the
+dedicated review boundary at the current server time without reading existing
+mail; use the historical workflow below when the user explicitly requests a
+backfill or rescan. The tool requires `read_write` because it atomically stores
+the operational checkpoint, reviewed RFC Message-IDs, posting identities,
+outcome and retry metadata, and audit event. It never stores or returns message
+bodies, changes mailbox state, or creates or updates applications. Do not place
+another connector or tracker operation between its bounded batches.
+
 For a bounded historical search for digest Message-IDs, require only:
 
 - `search_outlook_job_digests`.
@@ -269,6 +283,31 @@ page contains no complete timestamp group that can advance safely. The tool
 never changes mailbox state, creates opportunities, changes application fields
 or statuses, or stores subjects, senders, bodies, tokens, or credentials in
 SQLite.
+
+## Server-side incremental digest review
+
+Use this path for normal recurring Jobs-folder review after the user has opted
+into the separate review checkpoint.
+
+1. Call `review_new_outlook_job_digests` with only the exact `connection`.
+2. On `outcome: initialized`, report that the boundary now starts at
+   `checkpoint.storedCompletedAt`; do not claim historical mail was reviewed.
+3. On `reviewed`, treat every returned posting separately and preserve its
+   exact `unprocessed`, `already_tracked`, `ambiguous`, `conflict`, `expired`,
+   or `unavailable` outcome and stable unavailable reasons.
+4. Repeat only while `checkpoint.hasMore` is true. Confirm each successful
+   stored boundary before requesting the next batch.
+5. Confirm all privacy flags: mailbox read-only, application state unchanged,
+   checkpoint stored, and message body neither returned nor persisted.
+6. Stop on `outlook_digest_review_conflict` or
+   `outlook_digest_review_message_limit`; do not force or switch connectors.
+
+Each batch scans at most five complete timestamp-group messages and fully
+inspects up to 20 postings per qualifying digest. Posting descriptions are
+omitted from the result. Mailbox or folder changes cause the next call to
+initialize a new boundary rather than applying an old mailbox boundary to a new
+source. Historical search and exact-message processing never read or
+advance this checkpoint.
 
 ## Server-side digest processing
 

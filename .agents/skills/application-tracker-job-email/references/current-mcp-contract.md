@@ -46,6 +46,13 @@ For one exact digest RFC Message-ID, call only
 optional result-page offset. Do not fetch or pass the message body through
 another connector. The tool is read-only and does not create prospects.
 
+For routine review of only new digest mail, call only
+`review_new_outlook_job_digests` with the exact connection selector. Repeat
+only while `checkpoint.hasMore` is true. First use initializes its dedicated
+boundary at the current server time without reading older mail. The tool
+requires `read_write` for this operational checkpoint, but does not change
+mailbox or application state and never stores or returns message bodies.
+
 For a bounded historical digest search, call only
 `search_outlook_job_digests` with an exact connection selector, fixed `after`
 and `before` timestamps, and the returned result-page offset or continuation
@@ -88,7 +95,7 @@ through an external managed distribution channel is separate from this
 contract and requires an explicit user request; schema drift alone is not
 authorization to register or submit a plugin.
 
-The current direct MCP contract is schema version 23 with 43 tools. This
+The current direct MCP contract is schema version 24 with 44 tools. This
 reference does not represent optional externally managed publication state.
 
 ## Server-side one-application Outlook sync
@@ -186,6 +193,33 @@ advancing the cursor. Other stable connection-specific errors are
 `outlook_graph_connection_ambiguous`, and
 `outlook_graph_reconciliation_conflict`, in addition to normal Graph errors.
 
+## Server-side incremental Outlook digest review
+
+`review_new_outlook_job_digests` accepts one strict object:
+
+- `connection`, an exact configured connection ID, name, or mailbox.
+
+It requires connection-bound `read_write` access because every successful call
+atomically stores a separate digest-review checkpoint and MCP audit row. First
+use stores the current server time as the boundary and performs no historical
+Graph read. Later calls request only mail after the completed boundary, inspect
+at most five complete timestamp-group messages, and fully inspect every posting
+inside each qualifying digest. Repeat the identical call only while
+`checkpoint.hasMore` is true.
+
+The persisted state contains the boundary, reviewed RFC Message-IDs, posting
+identities, outcomes, stable unavailable reason, and retry eligibility. It does
+not contain message bodies, subjects, senders, posting descriptions, tokens, or
+credentials. The result reports all posting outcome counts and stable reasons,
+omits descriptions, and verifies `checkpointStored`, `mailboxReadOnly`,
+`applicationStateChanged: false`, `messageBodyReturned: false`, and
+`messageBodyPersisted: false`. A mailbox or folder change initializes a new
+boundary. `outlook_digest_review_conflict` and
+`outlook_digest_review_message_limit` never force checkpoint advancement.
+
+Historical search and exact-message processing remain read-only and independent
+of this checkpoint for explicit rescans.
+
 ## Server-side Outlook digest processing
 
 `process_outlook_job_digest` accepts one strict object:
@@ -263,7 +297,8 @@ is still recorded.
 ## Microsoft 365 connector discovery
 
 This section applies only to broader folder enrichment and attachment workflows,
-not to `sync_outlook_email_evidence` or `process_outlook_job_digest`.
+not to `sync_outlook_email_evidence`, `process_outlook_job_digest`, or
+`review_new_outlook_job_digests`.
 
 Discover an already-connected `@softeria/ms-365-mcp-server` instance from the
 current task's MCP inventory. Do not require a fixed server name, URL, or

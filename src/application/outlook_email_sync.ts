@@ -209,6 +209,8 @@ export interface OutlookEmailSyncResult {
 }
 
 export type OutlookEmailSyncOperationalErrorCode =
+  | "outlook_digest_review_conflict"
+  | "outlook_digest_review_message_limit"
   | "outlook_digest_search_cursor_invalid"
   | "outlook_email_sync_unavailable"
   | "outlook_existing_evidence_limit"

@@ -205,6 +205,12 @@ used. Merge rows gain an optional merge-time recovery snapshot. Recovery never
 updates or removes deletion, merge, event, restoration, or recovery history;
 multi-record restoration and its audit event commit atomically.
 
+The fortieth migration adds a separate, connection-scoped Outlook digest-review
+checkpoint plus reviewed Message-ID and posting-identity metadata. It stores no
+message body. Optimistic checkpoint writes and the successful MCP audit event
+share one immediate transaction, and the audit allowlist adds only the
+incremental digest-review action.
+
 ## Backup and restore
 
 The operator commands create online backups through SQLite's backup API and

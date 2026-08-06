@@ -212,6 +212,28 @@ describe("OutlookJobDigestProcessingService", () => {
     });
   });
 
+  it("inspects every bounded posting when called by incremental review", async () => {
+    const digest = message();
+    const value = harness([digest]);
+    const target = value.connections.forReconciliation();
+
+    const result = await value.service.reviewMessage(
+      actor,
+      target.connection,
+      digest,
+    );
+
+    expect(result.page).toEqual({
+      nextOffset: null,
+      offset: 0,
+      returned: 6,
+      total: 6,
+    });
+    expect(result.postings).toHaveLength(6);
+    expect(value.inspect).toHaveBeenCalledTimes(6);
+    expect(value.findMessagesByInternetMessageId).not.toHaveBeenCalled();
+  });
+
   it("uses an explicitly paired digest card when a provider challenge blocks inspection", async () => {
     const value = harness([
       message({

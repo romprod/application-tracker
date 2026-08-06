@@ -164,6 +164,26 @@ connection until `hasMore` is false. Ambiguous, conflicting, marketing, and
 unmatched messages are reported without being linked. The mailbox remains
 read-only.
 
+For routine review of new job-alert and digest mail, call
+`review_new_outlook_job_digests` with the exact connection selector. This is a
+separate write-audited workflow from application-evidence reconciliation. On
+first use it atomically initializes its review checkpoint at the current
+server time without reading existing mail. Later calls inspect at most five
+complete timestamp-group messages after that checkpoint, fully inspect every
+posting in each qualifying digest, and advance the checkpoint only in the same
+transaction as the stored RFC Message-IDs, posting identities, retry metadata,
+and MCP audit event. Repeat while `checkpoint.hasMore` is true.
+
+The incremental result omits posting descriptions and all message bodies. It
+reports unprocessed, already-tracked, ambiguous, conflicting, expired, and
+unavailable outcomes plus every stable unavailable reason. The checkpoint is
+internal tracker state, so the tool requires `read_write` access, but
+`verification` confirms that application state and mailbox state did not
+change and that no body was returned or persisted. Changing the configured
+mailbox or folder resets this review boundary at the next call. Use the historical
+tools below when an explicit rescan is required; they do not read or modify the
+incremental checkpoint.
+
 For a bounded historical search before processing older digests, call
 `search_outlook_job_digests` with the same exact connection selector, a fixed
 `after` / `before` window no longer than 31 days, `offset: 0`, and a limit no

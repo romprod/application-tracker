@@ -36,6 +36,11 @@ import {
 
 export const maximumOutlookDigestPostingsPerPage = 5;
 export const maximumOutlookDigestDescriptionCharacters = 4_000;
+export const maximumOutlookDigestPostingsPerMessage = 20;
+
+export type OutlookJobDigestConnection = ReturnType<
+  OutlookGraphConnectionsService["forReconciliation"]
+>["connection"];
 
 export type OutlookJobDigestProcessingOutcome =
   "ambiguous" | "not_digest" | "not_found" | "processed";
@@ -151,9 +156,7 @@ const emptyTracking: JobLinkResolutionResult["tracking"] = {
 };
 
 function connectionResult(
-  connection: ReturnType<
-    OutlookGraphConnectionsService["forReconciliation"]
-  >["connection"],
+  connection: OutlookJobDigestConnection,
 ): OutlookJobDigestProcessingResult["connection"] {
   return {
     folderPath: connection.folderPath,
@@ -264,7 +267,50 @@ export class OutlookJobDigestProcessingService {
       };
     }
 
-    const message = messages[0]!;
+    return this.processMessage(
+      actor,
+      target.connection,
+      messages[0]!,
+      input.offset,
+      maximumOutlookDigestPostingsPerPage,
+      1,
+    );
+  }
+
+  public reviewMessage(
+    actor: AuthenticatedActor,
+    connection: OutlookJobDigestConnection,
+    message: OutlookMailMessageDetail,
+  ): Promise<OutlookJobDigestProcessingResult> {
+    return this.processMessage(
+      actor,
+      connection,
+      message,
+      0,
+      maximumOutlookDigestPostingsPerMessage,
+      1,
+    );
+  }
+
+  private async processMessage(
+    actor: AuthenticatedActor,
+    connection: OutlookJobDigestConnection,
+    message: OutlookMailMessageDetail,
+    offset: number,
+    limit: number,
+    exactMessageMatches: number,
+  ): Promise<OutlookJobDigestProcessingResult> {
+    const base = {
+      connection: connectionResult(connection),
+      page: emptyPage(offset),
+      postings: [],
+      tracking: emptyTracking,
+      verification: {
+        exactMessageMatches,
+        mailboxReadOnly: true as const,
+        messageBodyReturned: false as const,
+      },
+    };
     const classification = classifyOutlookMailMessage(message);
     if (classification !== "marketing_or_digest") {
       return {
@@ -282,10 +328,7 @@ export class OutlookJobDigestProcessingService {
       message.body.content.slice(0, 200_000),
       message.body.contentType,
     );
-    const selected = resolution.candidates.slice(
-      input.offset,
-      input.offset + maximumOutlookDigestPostingsPerPage,
-    );
+    const selected = resolution.candidates.slice(offset, offset + limit);
     const postings = await Promise.all(
       selected.map(async (candidate): Promise<OutlookJobDigestPosting> => {
         const providerInspection = await this.jobPostingInspector.inspect({
@@ -333,23 +376,23 @@ export class OutlookJobDigestProcessingService {
         };
       }),
     );
-    const nextOffset = input.offset + postings.length;
+    const nextOffset = offset + postings.length;
     return {
       classification,
-      connection: connectionResult(target.connection),
+      connection: connectionResult(connection),
       digest: digestResult(message),
       outcome: "processed",
       page: {
         nextOffset:
           nextOffset < resolution.candidates.length ? nextOffset : null,
-        offset: input.offset,
+        offset,
         returned: postings.length,
         total: resolution.candidates.length,
       },
       postings,
       tracking: resolution.tracking,
       verification: {
-        exactMessageMatches: 1,
+        exactMessageMatches,
         mailboxReadOnly: true,
         messageBodyReturned: false,
       },

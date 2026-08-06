@@ -41,6 +41,7 @@ import { applicationActivityTimelineMigration } from "./migrations/036_applicati
 import { applicationFieldProvenanceMigration } from "./migrations/037_application_field_provenance.js";
 import { applicationAttentionQueueMigration } from "./migrations/038_application_attention_queue.js";
 import { applicationRecoveryMigration } from "./migrations/039_application_recovery.js";
+import { outlookJobDigestReviewMigration } from "./migrations/040_outlook_job_digest_review.js";
 
 export interface Migration {
   name: string;
@@ -101,6 +102,7 @@ export const applicationMigrations: readonly Migration[] = [
   applicationFieldProvenanceMigration,
   applicationAttentionQueueMigration,
   applicationRecoveryMigration,
+  outlookJobDigestReviewMigration,
 ];
 
 const createMigrationTable = `
