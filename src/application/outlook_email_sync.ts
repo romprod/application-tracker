@@ -209,6 +209,7 @@ export interface OutlookEmailSyncResult {
 }
 
 export type OutlookEmailSyncOperationalErrorCode =
+  | "outlook_digest_search_cursor_invalid"
   | "outlook_email_sync_unavailable"
   | "outlook_existing_evidence_limit"
   | "outlook_folder_not_found"

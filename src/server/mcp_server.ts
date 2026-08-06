@@ -735,9 +735,11 @@ const outlookJobDigestSearchResultSchema = z.strictObject({
   }),
   messages: z.array(outlookJobDigestSearchMessageSchema).max(20),
   page: z.strictObject({
+    batchStartOffset: z.number().int().min(0).max(99_500),
     detailsRead: z.number().int().min(0).max(20),
     limit: z.number().int().min(1).max(20),
     limitReached: z.boolean(),
+    nextCursor: z.string().min(1).max(2_048).nullable(),
     nextOffset: z.number().int().min(1).max(499).nullable(),
     offset: z.number().int().min(0).max(499),
     scanned: z.number().int().min(0).max(20),
@@ -1909,7 +1911,7 @@ export function createApplicationMcpServer(
     {
       annotations: openWorldReadOnlyAnnotations,
       description:
-        "Resolve one enabled Graph connection and search a bounded fixed window backward through its configured folder. Classify at most 20 messages per page and return exact RFC Message-IDs and bounded metadata without returning bodies, changing mailbox state, advancing the reconciliation cursor, or changing tracker records.",
+        "Resolve one enabled Graph connection and search a fixed window backward through its configured folder in bounded 500-message batches. Classify at most 20 messages per page and return exact RFC Message-IDs and bounded metadata. Follow page.nextOffset inside a batch; when page.nextCursor is non-null, start the next batch with that cursor and offset 0. The cursor is bound to the identical connection, window, and limit. The tool returns no bodies and does not change mailbox state, advance the reconciliation cursor, or change tracker records.",
       inputSchema: searchOutlookJobDigestsSchema,
       outputSchema: outlookJobDigestSearchResultSchema,
       title: "Search Outlook job digests",

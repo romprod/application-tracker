@@ -167,11 +167,14 @@ read-only.
 For a bounded historical search before processing older digests, call
 `search_outlook_job_digests` with the same exact connection selector, a fixed
 `after` / `before` window no longer than 31 days, `offset: 0`, and a limit no
-greater than 20. Follow `page.nextOffset` without changing the window. The
-server scans at most 500 messages, classifies each message inside Application
-Tracker, and returns bounded metadata and exact RFC Message-IDs without
-returning bodies. It does not change mailbox, application, or evidence state,
-or the reconciliation cursor. Only messages returned as
+greater than 20. Follow `page.nextOffset` without changing the window. At the
+end of a 500-message batch, follow the exact `page.nextCursor` with `offset: 0`
+and otherwise identical input. Stop when both values are null. The server
+supports up to 100,000 messages per fixed window and classifies each message
+inside Application Tracker. It returns bounded metadata and exact RFC
+Message-IDs without returning bodies. The continuation is stateless and does
+not change mailbox, application, or evidence state, or the reconciliation
+cursor. Only messages returned as
 `marketing_or_digest` with a non-null Message-ID may be sent to
 `process_outlook_job_digest`.
 

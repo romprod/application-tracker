@@ -22,6 +22,12 @@ import type {
   ProcessOutlookJobDigestInput,
   SearchOutlookJobDigestsInput,
 } from "../domain/outlook_job_digest.js";
+import {
+  decodeHistoricalDigestSearchCursor,
+  encodeHistoricalDigestSearchCursor,
+  maximumHistoricalDigestSearchBatchMessages,
+  maximumHistoricalDigestSearchMessages,
+} from "../domain/outlook_job_digest.js";
 import type { EmailLinkExtractionService } from "./email_links.js";
 import {
   digestEmailJobCardInspections,
@@ -97,9 +103,11 @@ export interface OutlookJobDigestSearchResult {
   };
   messages: OutlookJobDigestSearchMessage[];
   page: {
+    batchStartOffset: number;
     detailsRead: number;
     limit: number;
     limitReached: boolean;
+    nextCursor: string | null;
     nextOffset: number | null;
     offset: number;
     scanned: number;
@@ -361,11 +369,31 @@ export class OutlookJobDigestProcessingService {
         "outlook_email_sync_unavailable",
       );
     }
+    const cursor = input.cursor
+      ? decodeHistoricalDigestSearchCursor(input.cursor)
+      : null;
+    if (
+      input.cursor &&
+      (!cursor ||
+        cursor.after !== input.after ||
+        cursor.before !== input.before ||
+        cursor.connection !== input.connection ||
+        cursor.limit !== input.limit)
+    ) {
+      throw new OutlookEmailSyncOperationalError(
+        "outlook_digest_search_cursor_invalid",
+      );
+    }
+    const batchStartOffset = cursor?.startOffset ?? 0;
+    const effectiveLimit = Math.min(
+      input.limit,
+      maximumHistoricalDigestSearchBatchMessages - input.offset,
+    );
     const listed = await target.mail.listMessagesReceivedBackward({
       after: input.after,
       before: input.before,
-      limit: input.limit,
-      offset: input.offset,
+      limit: effectiveLimit,
+      offset: batchStartOffset + input.offset,
     });
     const details = await target.mail.getMessages(
       listed.messages.map(({ id }) => id),
@@ -395,6 +423,22 @@ export class OutlookJobDigestProcessingService {
       });
     }
     const candidateNextOffset = input.offset + listed.messages.length;
+    const batchLimitReached =
+      listed.truncated &&
+      candidateNextOffset >= maximumHistoricalDigestSearchBatchMessages;
+    const nextBatchStartOffset = batchStartOffset + candidateNextOffset;
+    const nextCursor =
+      batchLimitReached &&
+      nextBatchStartOffset < maximumHistoricalDigestSearchMessages
+        ? encodeHistoricalDigestSearchCursor({
+            after: input.after,
+            before: input.before,
+            connection: input.connection,
+            limit: input.limit,
+            startOffset: nextBatchStartOffset,
+            version: 1,
+          })
+        : null;
     return {
       connection: {
         ...connectionResult(target.connection),
@@ -402,11 +446,14 @@ export class OutlookJobDigestProcessingService {
       },
       messages,
       page: {
+        batchStartOffset,
         detailsRead: details.length,
         limit: input.limit,
-        limitReached: listed.truncated && candidateNextOffset >= 500,
+        limitReached: batchLimitReached,
+        nextCursor,
         nextOffset:
-          listed.truncated && candidateNextOffset < 500
+          listed.truncated &&
+          candidateNextOffset < maximumHistoricalDigestSearchBatchMessages
             ? candidateNextOffset
             : null,
         offset: input.offset,

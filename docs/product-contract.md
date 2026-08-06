@@ -98,7 +98,9 @@ For historical digest discovery, the MCP client calls
 `search_outlook_job_digests` with one exact connection and a caller-fixed
 window. Application Tracker searches backward through the configured Graph
 folder, classifies bounded pages server-side, and returns exact RFC Message-IDs
-without email bodies. The search is read-only, never advances the
+without email bodies. Server-issued continuations resume after each bounded
+500-message batch without changing the fixed window. Continuations are
+stateless request data. The search is read-only, never advances the
 reconciliation cursor, and never changes application or evidence records.
 
 An administrator manages one or more named Graph connections under **Settings

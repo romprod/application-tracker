@@ -48,7 +48,8 @@ another connector. The tool is read-only and does not create prospects.
 
 For a bounded historical digest search, call only
 `search_outlook_job_digests` with an exact connection selector, fixed `after`
-and `before` timestamps, and result-page offset. Do not fetch mail through
+and `before` timestamps, and the returned result-page offset or continuation
+cursor. Do not fetch mail through
 another connector or move the fixed window while paging.
 
 Use the following sequence only for broader Jobs-folder enrichment, creation,
@@ -87,7 +88,7 @@ through an external managed distribution channel is separate from this
 contract and requires an explicit user request; schema drift alone is not
 authorization to register or submit a plugin.
 
-The current direct MCP contract is schema version 22 with 43 tools. This
+The current direct MCP contract is schema version 23 with 43 tools. This
 reference does not represent optional externally managed publication state.
 
 ## Server-side one-application Outlook sync
@@ -228,8 +229,9 @@ separate authorized workflow.
 - `after` and `before`, ISO timestamps defining a fixed window no longer than
   31 days;
 - optional `limit`, 1 through 20 and defaulting to 20; and
-- optional `offset`, 0 through 499 and defaulting to 0, with offset plus limit
-  bounded to 500.
+- optional `offset`, 0 through 499 and defaulting to 0 within one batch; and
+- optional `cursor`, the exact server-issued continuation for a later bounded
+  batch. It is bound to the original connection, window, and limit.
 
 It accepts connection-bound `read_only` or `read_write` access. The server
 queries only the configured Graph folder in descending received-time order,
@@ -237,14 +239,21 @@ reads details inside Application Tracker, classifies each bounded message, and
 returns bounded metadata plus the exact RFC Message-ID when present. It never
 returns a message body.
 
-Follow `page.nextOffset` with the identical connection, window, and limit.
-Stop when it is null. If `page.limitReached` is true, the fixed 500-message
-ceiling was reached and callers must not widen or shift the window silently.
+Follow `page.nextOffset` with the identical connection, window, limit, and
+current cursor when present. When it is null and `page.nextCursor` is non-null,
+start the next batch with that exact cursor and `offset: 0`. Stop only when both
+values are null. `page.limitReached` means one 500-message batch ended; it is
+not terminal when `nextCursor` is available. The server rejects a cursor if
+the connection, window, or limit changed. Callers must never decode, modify,
+or invent cursors.
 Use only messages explicitly returned with classification
 `marketing_or_digest` and a non-null exact Message-ID as inputs to
 `process_outlook_job_digest`.
 
-The verification object reports `mailboxReadOnly: true`,
+Each page remains bounded to 20 messages, each continuation batch to 500, and
+one fixed window to 100,000. The continuation cursor is stateless request data,
+not a stored mailbox or reconciliation cursor. The verification object reports
+`mailboxReadOnly: true`,
 `messageBodyReturned: false`, `cursorChanged: false`, and
 `applicationStateChanged: false`. The tool does not mark, move, categorize,
 send, or delete mail; advance the reconciliation cursor; persist digest
