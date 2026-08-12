@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 export const compactWorkspaceQuery =
-  "(max-width: 680px), (max-width: 940px) and (max-height: 520px)";
+  "(max-width: 899px), (max-width: 1199px) and (max-height: 520px)";
 
 function compactQueryList(): MediaQueryList | undefined {
   if (typeof window === "undefined" || !window.matchMedia) return undefined;

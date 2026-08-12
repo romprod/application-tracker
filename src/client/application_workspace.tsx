@@ -33,7 +33,6 @@ import {
   ApplicationTable,
   applicationReference,
   filterApplicationsByColumns,
-  formatDate,
   type ApplicationColumnFilters,
 } from "./application_table";
 import type { AuthenticatedSession } from "./auth_client";
@@ -82,7 +81,9 @@ export function ApplicationWorkspace({
   applicationsClient: ApplicationsClient;
   emailLinksClient: EmailLinksClient;
   error?: string;
-  navigate: (page: "applications" | "opportunities" | "overview") => void;
+  navigate: (
+    page: "applications" | "documents" | "opportunities" | "overview",
+  ) => void;
   notice?: string;
   outlookConnectionsClient: OutlookConnectionsClient;
   page: "applications" | "opportunities" | "overview";
@@ -524,6 +525,7 @@ export function ApplicationWorkspace({
           attentionPage={attentionPage}
           loadError={loadError}
           onAdd={beginCreate}
+          onDocuments={() => navigate("documents")}
           onOpen={openApplication}
           onViewAll={() => navigate("applications")}
           referenceValues={referenceValues ?? []}
@@ -675,6 +677,7 @@ function DashboardView({
   attentionPage,
   loadError,
   onAdd,
+  onDocuments,
   onOpen,
   onViewAll,
   referenceValues,
@@ -685,6 +688,7 @@ function DashboardView({
   attentionPage: ApplicationAttentionPage | undefined;
   loadError: boolean;
   onAdd: () => void;
+  onDocuments: () => void;
   onOpen: (application: ApplicationRecord) => void;
   onViewAll: () => void;
   referenceValues: ReferenceValue[];
@@ -722,7 +726,7 @@ function DashboardView({
       nextActionDue <= weekEndKey,
   );
   const quietCutoff = new Date(today);
-  quietCutoff.setDate(quietCutoff.getDate() - 14);
+  quietCutoff.setDate(quietCutoff.getDate() - 21);
   const quiet = (applications ?? [])
     .filter(
       ({ statusIsTerminal, updatedAt }) =>
@@ -733,6 +737,13 @@ function DashboardView({
         new Date(left.updatedAt).getTime() -
         new Date(right.updatedAt).getTime(),
     );
+  const shortlist = (applications ?? [])
+    .filter(
+      ({ appliedOn, statusIsTerminal }) =>
+        appliedOn === null && !statusIsTerminal,
+    )
+    .sort((left, right) => (right.rating ?? -1) - (left.rating ?? -1))
+    .slice(0, 2);
   const dayLabel = new Intl.DateTimeFormat(undefined, {
     day: "numeric",
     month: "long",
@@ -869,7 +880,7 @@ function DashboardView({
               >
                 <header className="today-card-heading">
                   <div>
-                    <span className="eyebrow">No movement for 14 days</span>
+                    <span className="eyebrow">No movement for 21 days</span>
                     <h2 id="quiet-title">Gone quiet</h2>
                   </div>
                   <span>{quiet.length}</span>
@@ -896,7 +907,7 @@ function DashboardView({
                               {applicationReference(application.id)}
                             </small>
                             <time dateTime={application.updatedAt}>
-                              {formatDate(application.updatedAt)}
+                              {daysSince(application.updatedAt, today)}d idle
                             </time>
                           </span>
                         </button>
@@ -907,35 +918,81 @@ function DashboardView({
               </section>
 
               <section
-                className="today-card today-snapshot"
-                aria-labelledby="snapshot-title"
+                className="today-card today-shortlist"
+                aria-labelledby="shortlist-title"
               >
                 <header className="today-card-heading">
                   <div>
-                    <span className="eyebrow">Workspace</span>
-                    <h2 id="snapshot-title">At a glance</h2>
+                    <span className="eyebrow">Opportunities</span>
+                    <h2 id="shortlist-title">Shortlist</h2>
                   </div>
                 </header>
-                <dl>
-                  <div>
-                    <dt>Open records</dt>
-                    <dd>{open}</dd>
+                {shortlist.length === 0 ? (
+                  <div className="today-empty">
+                    <span aria-hidden="true">◎</span>
+                    <p>No opportunities are waiting for review.</p>
                   </div>
+                ) : (
+                  <ol className="today-shortlist-list">
+                    {shortlist.map((application) => (
+                      <li key={application.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpen(application)}
+                        >
+                          <span>
+                            <strong>{application.roleTitle}</strong>
+                            <small>{application.companyName}</small>
+                          </span>
+                          <span>
+                            <strong
+                              aria-label={`${application.rating ?? 0} out of 5 stars`}
+                            >
+                              {application.rating === null
+                                ? "Unrated"
+                                : "★".repeat(application.rating)}
+                            </strong>
+                            <small>
+                              {application.salary ?? "Salary not listed"}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+
+              <section
+                className="today-card today-shortcuts"
+                aria-labelledby="shortcuts-title"
+              >
+                <header className="today-card-heading">
                   <div>
-                    <dt>Saved opportunities</dt>
-                    <dd>{total - applied.length}</dd>
+                    <span className="eyebrow">Quick access</span>
+                    <h2 id="shortcuts-title">Shortcuts</h2>
                   </div>
-                  <div>
-                    <dt>Undated actions</dt>
-                    <dd>
-                      {
-                        activeFocus.filter(
-                          ({ nextActionDue }) => nextActionDue === null,
-                        ).length
-                      }
-                    </dd>
-                  </div>
-                </dl>
+                </header>
+                <div>
+                  <button type="button" onClick={onAdd}>
+                    Log application
+                  </button>
+                  <button type="button" onClick={onDocuments}>
+                    Upload document
+                  </button>
+                  <button type="button" onClick={onViewAll}>
+                    Review pipeline
+                  </button>
+                </div>
+                <p>
+                  {open} open · {total - applied.length} saved ·{" "}
+                  {
+                    activeFocus.filter(
+                      ({ nextActionDue }) => nextActionDue === null,
+                    ).length
+                  }{" "}
+                  undated
+                </p>
               </section>
             </aside>
           </div>
@@ -1109,6 +1166,13 @@ function localDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function daysSince(value: string, relativeTo: Date): number {
+  return Math.max(
+    0,
+    Math.floor((relativeTo.getTime() - new Date(value).getTime()) / 86_400_000),
+  );
+}
+
 function ApplicationsPage({
   applications,
   loadError,
@@ -1189,6 +1253,20 @@ function ApplicationsPage({
         appliedOn !== null && statusIsTerminal,
     ).length ?? 0;
   const shortlistCount = (applications?.length ?? 0) - appliedCount;
+  const applicationStages = useMemo(() => {
+    const stages = new Map<string, { count: number; label: string }>();
+    for (const application of visibleApplications) {
+      const current = stages.get(application.statusId);
+      stages.set(application.statusId, {
+        count: (current?.count ?? 0) + 1,
+        label: application.status,
+      });
+    }
+    return [...stages.entries()].sort((left, right) =>
+      left[1].label.localeCompare(right[1].label),
+    );
+  }, [visibleApplications]);
+  const selectedStages = columnFilters.status ?? [];
 
   return (
     <div className="workspace-page applications-page">
@@ -1238,6 +1316,44 @@ function ApplicationsPage({
         </div>
       </header>
 
+      {page === "applications" && applicationStages.length > 0 && (
+        <nav
+          className="tracker-stage-strip"
+          aria-label="Filter applications by stage"
+        >
+          <button
+            type="button"
+            aria-pressed={selectedStages.length === 0}
+            onClick={() =>
+              setColumnFilters((current) => {
+                const next = { ...current };
+                delete next.status;
+                return next;
+              })
+            }
+          >
+            All <span>{visibleApplications.length}</span>
+          </button>
+          {applicationStages.map(([statusId, stage]) => (
+            <button
+              key={statusId}
+              type="button"
+              aria-pressed={selectedStages.includes(statusId)}
+              onClick={() =>
+                setColumnFilters((current) => ({
+                  ...current,
+                  status: current.status?.includes(statusId)
+                    ? current.status.filter((value) => value !== statusId)
+                    : [statusId],
+                }))
+              }
+            >
+              {stage.label} <span>{stage.count}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
       <div
         className={`tracker-register-context ${page}`}
         aria-label={`${pageName} purpose`}
@@ -1258,6 +1374,8 @@ function ApplicationsPage({
             <strong>{shortlistCount} still to consider</strong>
             <span>·</span>
             <span>{appliedCount} already in your pipeline</span>
+            <span>·</span>
+            <span>Roles found and judged, before you apply</span>
           </p>
         )}
       </div>

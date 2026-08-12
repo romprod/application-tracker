@@ -356,9 +356,11 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     .fill(e2eAdministrator.password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByRole("status")).toHaveText(
-    `Welcome, ${e2eAdministrator.displayName}.`,
-  );
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: `Welcome, ${e2eAdministrator.displayName}.` }),
+  ).toHaveText(`Welcome, ${e2eAdministrator.displayName}.`);
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page).toHaveURL(/\/dashboard$/);
   const dashboardHero = page.getByRole("region", {
@@ -409,23 +411,21 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   });
   await expect(
     opportunitiesTable.getByRole("columnheader", {
-      name: /End company \/ role/,
+      name: /Role \/ company/,
     }),
   ).toBeVisible();
   await expect(
-    opportunitiesTable.getByRole("columnheader", { name: /Agency/ }),
-  ).toBeVisible();
-  await expect(
     opportunitiesTable.getByRole("columnheader", {
-      name: /Work arrangement/,
+      name: /Source/,
     }),
   ).toBeVisible();
   const appliedOpportunity = opportunitiesTable
     .getByRole("row")
     .filter({ hasText: "Example Studio" });
-  await expect(appliedOpportunity).toContainText("Example Recruitment");
+  await expect(
+    opportunitiesTable.getByRole("columnheader", { name: /Source/ }),
+  ).toBeVisible();
   await expect(appliedOpportunity).toContainText("£70,000–£80,000");
-  await expect(appliedOpportunity).toContainText("Hybrid");
   await expect(appliedOpportunity).toContainText("In pipeline");
 
   await appliedOpportunity
@@ -617,7 +617,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   }));
   expect(tableWidths.scrollWidth).toBeLessThanOrEqual(tableWidths.clientWidth);
   await expect(
-    opportunitiesTable.getByRole("columnheader", { name: /Updated/ }),
+    opportunitiesTable.getByRole("columnheader", { name: /Action/ }),
   ).toBeInViewport();
   await expect(
     appliedOpportunity.getByRole("button", { name: "Open Example Studio" }),
@@ -2235,6 +2235,7 @@ test("keeps mobile overlays, filters, keyboard, and menus usable", async ({
 
     await page
       .getByRole("button", { name: "Log application", exact: true })
+      .first()
       .click();
     const applicationDialog = page.getByRole("dialog", {
       name: "Log an application",
@@ -2466,7 +2467,10 @@ test("keeps the compact dashboard table contained on desktop", async ({
   `);
 
   expect(geometry.headerCount).toBe(6);
-  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(
+    geometry.scrollWidth,
+    `desktop register geometry: ${JSON.stringify(geometry)}`,
+  ).toBeLessThanOrEqual(geometry.clientWidth + 1);
   expect(geometry.tableRight).toBeLessThanOrEqual(geometry.shellRight + 1);
   expect(geometry.lastHeaderRight).toBeLessThanOrEqual(geometry.shellRight + 1);
   expect(geometry.referenceWhiteSpace).toBe("nowrap");
@@ -2478,9 +2482,9 @@ test("keeps the full desktop register contained with long record values", async 
 }) => {
   await authenticateMobileAudit(page);
   await page.setViewportSize({ height: 1271, width: 2262 });
-  await page.goto("/opportunities");
+  await page.goto("/applications");
   await expect(
-    page.getByRole("heading", { name: "Opportunities", exact: true }),
+    page.getByRole("heading", { name: "Applications", exact: true }),
   ).toBeVisible();
 
   const companyName = "Northern Manufacturing Group";
@@ -2502,6 +2506,7 @@ test("keeps the full desktop register contained with long record values", async 
   if (!hasStressRecord) {
     await page
       .getByRole("button", { name: "Log application", exact: true })
+      .first()
       .click();
     const applicationDialog = page.getByRole("dialog", {
       name: "Log an application",
@@ -2510,6 +2515,7 @@ test("keeps the full desktop register contained with long record values", async 
     await applicationDialog
       .getByLabel("Role title")
       .fill("Principal Infrastructure and Automation Lead");
+    await applicationDialog.getByLabel("Applied date").fill("2026-08-12");
     await applicationDialog
       .getByLabel("Next action")
       .fill(
@@ -2521,7 +2527,7 @@ test("keeps the full desktop register contained with long record values", async 
     await expect(applicationDialog).toBeHidden();
   }
 
-  const table = page.getByRole("table", { name: "Opportunities" });
+  const table = page.getByRole("table", { name: "Applications" });
   const stressRow = table.getByRole("row").filter({ hasText: companyName });
   await expect(stressRow).toBeVisible();
   const geometry = await stressRow.evaluate((row) => {
@@ -2550,7 +2556,10 @@ test("keeps the full desktop register contained with long record values", async 
     };
   });
 
-  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(
+    geometry.scrollWidth,
+    `full register geometry: ${JSON.stringify(geometry)}`,
+  ).toBeLessThanOrEqual(geometry.clientWidth + 1);
   expect(geometry.tableRight).toBeLessThanOrEqual(geometry.shellRight + 1);
   expect(geometry.companyCellWidth).toBeGreaterThanOrEqual(150);
   expect(geometry.nextActionWidth).toBeLessThanOrEqual(

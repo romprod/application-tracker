@@ -1026,9 +1026,7 @@ describe("application shell", () => {
     expect(
       within(opportunitiesTable).getByText("Product Designer"),
     ).toBeInTheDocument();
-    expect(
-      within(opportunitiesTable).getByText("Example Recruitment"),
-    ).toBeInTheDocument();
+    expect(within(opportunitiesTable).getAllByText("Referral")).toHaveLength(2);
     expect(
       within(opportunitiesTable).getByText("In pipeline"),
     ).toBeInTheDocument();
@@ -1038,7 +1036,7 @@ describe("application shell", () => {
       within(opportunitiesTable).getAllByRole("button", {
         name: /^Filter /,
       }),
-    ).toHaveLength(11);
+    ).toHaveLength(5);
     expect(
       screen.queryByRole("combobox", { name: "Filter by stage" }),
     ).not.toBeInTheDocument();
@@ -1047,12 +1045,12 @@ describe("application shell", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(
       within(opportunitiesTable).getByRole("button", {
-        name: "Filter Stage",
+        name: "Filter Location",
       }),
     );
-    const stageFilter = screen.getByRole("dialog", { name: "Filter Stage" });
+    const stageFilter = screen.getByRole("dialog", { name: "Filter Location" });
     fireEvent.click(
-      within(stageFilter).getByRole("checkbox", { name: /Prospect/ }),
+      within(stageFilter).getByRole("checkbox", { name: /London/ }),
     );
     expect(
       within(opportunitiesTable).getByText("Prospect Company"),
@@ -1062,11 +1060,11 @@ describe("application shell", () => {
     fireEvent.click(within(stageFilter).getByRole("button", { name: "Done" }));
     fireEvent.click(
       within(opportunitiesTable).getByRole("button", {
-        name: "Filter Stage, 1 selected",
+        name: "Filter Location, 1 selected",
       }),
     );
     fireEvent.click(
-      within(screen.getByRole("dialog", { name: "Filter Stage" })).getByRole(
+      within(screen.getByRole("dialog", { name: "Filter Location" })).getByRole(
         "button",
         { name: "Clear" },
       ),
@@ -1075,7 +1073,7 @@ describe("application shell", () => {
       within(opportunitiesTable).getByText("Example Studio"),
     ).toBeInTheDocument();
     const companySort = screen.getByRole("button", {
-      name: /End company \/ role, not sorted/,
+      name: /Role \/ company, not sorted/,
     });
     fireEvent.click(companySort);
     expect(companySort.closest("th")).toHaveAttribute("aria-sort", "ascending");
@@ -1133,7 +1131,7 @@ describe("application shell", () => {
     expect(screen.queryByText("Prospect Company")).not.toBeInTheDocument();
     expect(
       within(applicationsTable).getAllByRole("button", { name: /^Filter / }),
-    ).toHaveLength(11);
+    ).toHaveLength(6);
     expect(window.location.pathname).toBe("/applications");
   });
 

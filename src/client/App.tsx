@@ -525,7 +525,9 @@ function Sidebar({
   return (
     <aside className="sidebar workspace-sidebar">
       <div className="workspace-brand" aria-label="Application Tracker">
-        <span aria-hidden="true">AT</span>
+        <span aria-hidden="true" className="workspace-logo-mark">
+          <span />
+        </span>
         <div>
           <strong>Application Tracker</strong>
           <small>{session?.workspace.name ?? "Workspace"}</small>
@@ -547,7 +549,7 @@ function Sidebar({
               onPointerEnter={() => preloadWorkspacePage("overview")}
             >
               <span className="workspace-nav-number" aria-hidden="true">
-                01
+                <NavigationIcon name="today" />
               </span>
               <span className="workspace-nav-label" data-mobile-label="Today">
                 Today
@@ -568,7 +570,7 @@ function Sidebar({
               onPointerEnter={() => preloadWorkspacePage("opportunities")}
             >
               <span className="workspace-nav-number" aria-hidden="true">
-                02
+                <NavigationIcon name="opportunities" />
               </span>
               <span className="workspace-nav-label" data-mobile-label="Roles">
                 Opportunities
@@ -589,7 +591,7 @@ function Sidebar({
               onPointerEnter={() => preloadWorkspacePage("applications")}
             >
               <span className="workspace-nav-number" aria-hidden="true">
-                03
+                <NavigationIcon name="applications" />
               </span>
               <span className="workspace-nav-label" data-mobile-label="Applied">
                 Applications
@@ -610,7 +612,7 @@ function Sidebar({
               onPointerEnter={() => preloadWorkspacePage("documents")}
             >
               <span className="workspace-nav-number" aria-hidden="true">
-                04
+                <NavigationIcon name="documents" />
               </span>
               <span className="workspace-nav-label" data-mobile-label="Files">
                 Documents
@@ -630,12 +632,9 @@ function Sidebar({
               onClick={() => onNavigate("settings-lists")}
             >
               <span className="workspace-nav-number" aria-hidden="true">
-                05
+                <NavigationIcon name="settings" />
               </span>
-              <span
-                className="workspace-nav-label"
-                data-mobile-label="Settings"
-              >
+              <span className="workspace-nav-label" data-mobile-label="Setup">
                 Settings
               </span>
             </button>
@@ -643,7 +642,9 @@ function Sidebar({
         </ul>
       </nav>
       <div className="workspace-account">
-        <span className="live-dot" aria-hidden="true" />
+        <span className="workspace-avatar" aria-hidden="true">
+          {initials(session?.user.displayName)}
+        </span>
         <div>
           <strong>{session?.user.displayName}</strong>
           <small>{session?.user.role} · local account</small>
@@ -659,6 +660,57 @@ function Sidebar({
       </button>
     </aside>
   );
+}
+
+function initials(displayName: string | undefined): string {
+  if (!displayName) return "AT";
+  return displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1).toLocaleUpperCase())
+    .join("");
+}
+
+function NavigationIcon({
+  name,
+}: {
+  name: "applications" | "documents" | "opportunities" | "settings" | "today";
+}) {
+  const paths = {
+    applications: (
+      <>
+        <rect height="12" rx="1" width="14" x="1" y="3" />
+        <path d="M5 3V1h6v2M5 8h6M5 11h4" />
+      </>
+    ),
+    documents: (
+      <>
+        <path d="M3 1.5h6l4 4V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1Z" />
+        <path d="M9 1.5V6h4M5 9h6M5 12h4" />
+      </>
+    ),
+    opportunities: (
+      <>
+        <circle cx="8" cy="6" r="4" />
+        <path d="M6 10v2.5h4V10M6.5 15h3M8 1V0" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="8" cy="8" r="2.5" />
+        <path d="M6.7 1.5h2.6l.5 1.7 1.5.9 1.7-.4 1.3 2.2-1.2 1.3v1.7l1.2 1.3-1.3 2.2-1.7-.4-1.5.9-.5 1.7H6.7l-.5-1.7-1.5-.9-1.7.4-1.3-2.2 1.2-1.3V7.2L1.7 5.9 3 3.7l1.7.4 1.5-.9.5-1.7Z" />
+      </>
+    ),
+    today: (
+      <>
+        <rect height="12.5" rx="1" width="13" x="1.5" y="2.5" />
+        <path d="M4.5 1v3M11.5 1v3M1.5 6h13M5 9h2M9 9h2M5 12h2" />
+      </>
+    ),
+  } as const;
+
+  return <svg viewBox="0 0 16 16">{paths[name]}</svg>;
 }
 
 function LoadingView() {
