@@ -85,11 +85,16 @@ export function ApplicationTable({
   onOpen: (application: ApplicationRecord) => void;
   variant?: "applications" | "opportunities";
 }) {
-  const [sort, setSort] = useState<ApplicationSort | null>(null);
+  const [sort, setSort] = useState<ApplicationSort | null>(
+    variant === "applications"
+      ? { direction: "ascending", key: "nextAction" }
+      : null,
+  );
   const [openFilter, setOpenFilter] = useState<ApplicationSortKey | null>(null);
   const [filterAnchor, setFilterAnchor] = useState<HTMLButtonElement | null>(
     null,
   );
+  const [renderedAt] = useState(() => Date.now());
   const filteringEnabled =
     columnFilters !== undefined && onColumnFiltersChange !== undefined;
   const compactWorkspaceLayout = useCompactWorkspaceLayout();
@@ -297,30 +302,51 @@ export function ApplicationTable({
           </ol>
         </div>
       ) : (
-        <table className="tracker-applications-table" aria-label={label}>
+        <table
+          className={`tracker-applications-table ${variant}-register`}
+          aria-label={label}
+        >
           <thead>
-            <tr>
-              {sortableHeader("Ref", "reference")}
-              {sortableHeader("End company / role", "company")}
-              {!compact && sortableHeader("Agency", "agency")}
-              {sortableHeader("Stage", "status")}
-              {!compact && sortableHeader("Salary", "salary")}
-              {!compact && sortableHeader("Rating", "rating")}
-              {!compact && sortableHeader("Applied", "appliedOn")}
-              {!compact && sortableHeader("Location", "location")}
-              {!compact &&
-                sortableHeader("Work arrangement", "workArrangement")}
-              {sortableHeader("Next action", "nextAction")}
-              {sortableHeader("Updated", "updatedAt")}
-              <th scope="col">
-                <span className="sr-only">Open</span>
-              </th>
-            </tr>
+            {compact ? (
+              <tr>
+                {sortableHeader("Ref", "reference")}
+                {sortableHeader("Company / role", "company")}
+                {sortableHeader("Stage", "status")}
+                {sortableHeader("Next action", "nextAction")}
+                {sortableHeader("Updated", "updatedAt")}
+                <th scope="col">
+                  <span className="sr-only">Open</span>
+                </th>
+              </tr>
+            ) : variant === "opportunities" ? (
+              <tr>
+                {sortableHeader("Ref", "reference")}
+                {sortableHeader("Role / company", "company")}
+                {sortableHeader("Rating", "rating")}
+                {sortableHeader("Salary", "salary")}
+                {sortableHeader("Location", "location")}
+                <th scope="col">Source</th>
+                <th scope="col">Action</th>
+              </tr>
+            ) : (
+              <tr>
+                {sortableHeader("Ref", "reference")}
+                {sortableHeader("Company / role", "company")}
+                {sortableHeader("Stage", "status")}
+                {sortableHeader("Applied", "appliedOn")}
+                <th scope="col">Idle</th>
+                {sortableHeader("Next action", "nextAction")}
+                {sortableHeader("Rating", "rating")}
+                <th scope="col">
+                  <span className="sr-only">Open</span>
+                </th>
+              </tr>
+            )}
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr className="tracker-table-empty-row">
-                <td colSpan={compact ? 6 : 12}>
+                <td colSpan={compact ? 6 : variant === "opportunities" ? 7 : 8}>
                   <span aria-hidden="true">⌕</span>
                   <strong>No records match these filters.</strong>
                   <small>
@@ -339,14 +365,6 @@ export function ApplicationTable({
                       : undefined
                   }
                   key={application.id}
-                  tabIndex={0}
-                  onClick={() => onOpen(application)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onOpen(application);
-                    }
-                  }}
                 >
                   <td>
                     <span className="tracker-reference">
@@ -354,47 +372,79 @@ export function ApplicationTable({
                     </span>
                   </td>
                   <td>
-                    <strong>{application.companyName}</strong>
-                    <span>{application.roleTitle}</span>
+                    {compact || variant === "applications" ? (
+                      <>
+                        <strong>{application.companyName}</strong>
+                        <span>{application.roleTitle}</span>
+                      </>
+                    ) : (
+                      <button
+                        className="tracker-role-link"
+                        type="button"
+                        aria-label={`Open ${application.companyName}`}
+                        onClick={() => onOpen(application)}
+                      >
+                        <strong>{application.roleTitle}</strong>
+                        <span>{application.companyName}</span>
+                      </button>
+                    )}
                   </td>
-                  {!compact && <td>{application.agency ?? "—"}</td>}
-                  <td>
-                    <span className="tracker-stage-stack">
-                      <StatusChip status={application.status} />
-                      {variant === "opportunities" &&
-                        application.appliedOn !== null && (
-                          <small>In pipeline</small>
+                  {compact ? (
+                    <>
+                      <td>
+                        <StatusChip status={application.status} />
+                      </td>
+                      <NextActionCell application={application} />
+                      <td>{formatDate(application.updatedAt)}</td>
+                      <OpenApplicationCell
+                        application={application}
+                        onOpen={onOpen}
+                      />
+                    </>
+                  ) : variant === "opportunities" ? (
+                    <>
+                      <td>
+                        <RatingStars rating={application.rating} />
+                      </td>
+                      <td>{application.salary ?? "—"}</td>
+                      <td>{application.location ?? "—"}</td>
+                      <td>{application.source ?? "—"}</td>
+                      <td>
+                        {application.appliedOn !== null ? (
+                          <span className="tracker-in-pipeline">
+                            In pipeline
+                          </span>
+                        ) : (
+                          <button
+                            className="tracker-row-action"
+                            type="button"
+                            onClick={() => onOpen(application)}
+                          >
+                            Review
+                          </button>
                         )}
-                    </span>
-                  </td>
-                  {!compact && <td>{application.salary ?? "—"}</td>}
-                  {!compact && (
-                    <td>
-                      <RatingStars rating={application.rating} />
-                    </td>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>
+                        <StatusChip status={application.status} />
+                      </td>
+                      <td>{formatDate(application.appliedOn)}</td>
+                      <IdleCell
+                        renderedAt={renderedAt}
+                        updatedAt={application.updatedAt}
+                      />
+                      <NextActionCell application={application} />
+                      <td>
+                        <RatingStars rating={application.rating} />
+                      </td>
+                      <OpenApplicationCell
+                        application={application}
+                        onOpen={onOpen}
+                      />
+                    </>
                   )}
-                  {!compact && <td>{formatDate(application.appliedOn)}</td>}
-                  {!compact && <td>{application.location ?? "—"}</td>}
-                  {!compact && (
-                    <td>
-                      {formatWorkArrangement(application.workArrangement)}
-                    </td>
-                  )}
-                  <NextActionCell application={application} />
-                  <td>{formatDate(application.updatedAt)}</td>
-                  <td>
-                    <button
-                      className="tracker-open-row"
-                      type="button"
-                      aria-label={`Open ${application.companyName}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onOpen(application);
-                      }}
-                    >
-                      <span aria-hidden="true">›</span>
-                    </button>
-                  </td>
                 </tr>
               ))
             )}
@@ -418,6 +468,44 @@ export function ApplicationTable({
           document.querySelector(".workspace-app-shell") ?? document.body,
         )}
     </div>
+  );
+}
+
+function OpenApplicationCell({
+  application,
+  onOpen,
+}: {
+  application: ApplicationRecord;
+  onOpen: (application: ApplicationRecord) => void;
+}) {
+  return (
+    <td>
+      <button
+        className="tracker-open-row"
+        type="button"
+        aria-label={`Open ${application.companyName}`}
+        onClick={() => onOpen(application)}
+      >
+        <span aria-hidden="true">›</span>
+      </button>
+    </td>
+  );
+}
+
+function IdleCell({
+  renderedAt,
+  updatedAt,
+}: {
+  renderedAt: number;
+  updatedAt: string;
+}) {
+  const elapsed = renderedAt - new Date(updatedAt).getTime();
+  const days = Math.max(0, Math.floor(elapsed / 86_400_000));
+  const tone = days >= 28 ? "idle-critical" : days >= 14 ? "idle-warning" : "";
+  return (
+    <td>
+      <span className={`tracker-idle ${tone}`.trim()}>{days}d</span>
+    </td>
   );
 }
 
