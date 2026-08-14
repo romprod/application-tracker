@@ -945,6 +945,45 @@ describe("application shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the attention queue focused on the three most urgent records", async () => {
+    const applications = Array.from({ length: 5 }, (_, index) => ({
+      ...applicationRecord,
+      companyName: `Studio ${String(index + 1)}`,
+      id: `0000000${String(index)}-0000-4000-8000-00000000000${String(index)}`,
+    }));
+    render(
+      <App
+        applicationsClient={createApplicationsClient(applications)}
+        referenceValuesClient={createReferenceValuesClient()}
+        authClient={createAuthClient(authenticatedSession)}
+        setupClient={createSetupClient({
+          required: false,
+          tokenConfigured: false,
+        })}
+      />,
+    );
+
+    const attentionQueue = await screen.findByRole("region", {
+      name: "Needs attention",
+    });
+    expect(within(attentionQueue).getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      within(attentionQueue).getByText("Showing 3 of 5"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(attentionQueue).getByRole("button", {
+        name: "View all in register",
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Applications",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("returns to sign-in when the session expires during a list request", async () => {
     vi.stubGlobal(
       "fetch",
@@ -1274,6 +1313,7 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const reviewButton = await screen.findByRole("button", {
       name: "Review duplicates",
     });
@@ -1389,6 +1429,7 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Deleted applications" }),
     );
@@ -1536,6 +1577,7 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Deleted applications" }),
     );
@@ -1682,6 +1724,7 @@ describe("application shell", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Applications" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Deleted applications" }),
     );

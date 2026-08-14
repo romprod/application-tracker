@@ -25,7 +25,7 @@
   --archive-shadow:
     0 8px 24px oklch(0.215 0.024 55 / 12%), 0 2px 6px oklch(0.215 0.024 55 / 8%);
   --archive-header-height: 68px;
-  --archive-sidebar-width: 232px;
+  --archive-sidebar-width: 256px;
 }
 
 * {
@@ -908,6 +908,53 @@ a {
   gap: 8px;
 }
 
+.tracker-maintenance-actions {
+  position: relative;
+}
+
+.tracker-maintenance-actions > .tracker-button[aria-expanded="true"] {
+  color: var(--archive-action);
+  background: var(--archive-action-soft);
+  border-color: var(--archive-action);
+}
+
+.tracker-maintenance-actions > .tracker-button > span {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.tracker-maintenance-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  width: max-content;
+  min-width: 210px;
+  padding: 6px;
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-line-strong);
+  box-shadow: var(--archive-shadow);
+}
+
+.tracker-maintenance-menu button {
+  min-height: 44px;
+  padding: 0 11px;
+  color: var(--archive-ink);
+  background: transparent;
+  border: 0;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: left;
+}
+
+.tracker-maintenance-menu button:hover,
+.tracker-maintenance-menu button:focus-visible {
+  color: var(--archive-action-hover);
+  background: var(--archive-action-soft);
+}
+
 .tracker-button {
   display: inline-flex;
   min-height: 44px;
@@ -1474,6 +1521,22 @@ a {
   min-height: 82px;
 }
 
+.today-card-footer {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 14px 4px 18px;
+  color: var(--archive-ink-3);
+  background: var(--archive-sunken);
+  border-top: 1px solid var(--archive-line);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .today-open-label {
   color: var(--archive-action);
   font-size: 11.5px;
@@ -1854,7 +1917,7 @@ a {
   display: flex;
   min-height: 38px;
   align-items: center;
-  gap: 1px;
+  gap: 0;
 }
 
 .tracker-sort-button,
@@ -1871,9 +1934,27 @@ a {
 }
 
 .tracker-column-filter-button svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   fill: currentColor;
+}
+
+.tracker-column-filter-button {
+  width: 27px;
+  justify-content: center;
+  padding: 0;
+  color: var(--archive-ink-3);
+  opacity: 0.32;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease,
+    background 120ms ease;
+}
+
+.tracker-column-header:hover .tracker-column-filter-button,
+.tracker-column-header:focus-within .tracker-column-filter-button,
+.tracker-column-filtered .tracker-column-filter-button {
+  opacity: 1;
 }
 
 .tracker-column-filter-button[aria-expanded="true"],
@@ -5065,6 +5146,47 @@ a {
   }
 }
 
+@media (min-width: 720px) and (max-width: 1199px) {
+  .workspace-nav-label {
+    display: none;
+  }
+
+  .workspace-tab-button {
+    position: relative;
+  }
+
+  .workspace-tab-button::after {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 10px);
+    z-index: 120;
+    width: max-content;
+    padding: 7px 9px;
+    pointer-events: none;
+    color: var(--archive-surface);
+    background: var(--archive-ink);
+    border: 1px solid rgb(255 253 248 / 18%);
+    box-shadow: var(--archive-shadow);
+    content: attr(aria-label);
+    font-family: "IBM Plex Sans Variable", sans-serif;
+    font-size: 11px;
+    font-weight: 560;
+    letter-spacing: 0.02em;
+    opacity: 0;
+    transform: translate(-4px, -50%);
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease;
+    white-space: nowrap;
+  }
+
+  .workspace-tab-button:hover::after,
+  .workspace-tab-button:focus-visible::after {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
 @media (max-width: 719px) {
   :root {
     --archive-header-height: 52px;
@@ -5075,7 +5197,7 @@ a {
     html:has(.workspace-app-shell),
     body:has(.workspace-app-shell),
     body:has(.workspace-app-shell) > #root {
-      background: #183c37;
+      background: var(--archive-ink);
     }
   }
 
@@ -5229,7 +5351,7 @@ a {
     );
     margin: 0;
     backface-visibility: hidden;
-    background: var(--tracker-green);
+    background: var(--archive-ink);
     border-top: 1px solid rgb(255 255 255 / 8%);
     transform: translate3d(0, 0, 0);
     will-change: transform;
@@ -5256,7 +5378,7 @@ a {
     padding: 5px 2px;
     border: 0;
     box-shadow: none;
-    font-family: "Archivo Variable", system-ui, sans-serif;
+    font-family: "IBM Plex Sans Variable", sans-serif;
     font-size: 10px;
     font-weight: 560;
     letter-spacing: 0.02em;
@@ -5265,7 +5387,7 @@ a {
 
   .workspace-tab-button.active-navigation {
     background: rgb(255 253 248 / 7%);
-    box-shadow: inset 0 3px 0 var(--tracker-coral);
+    box-shadow: inset 0 3px 0 var(--archive-action);
   }
 
   .workspace-tab-button .workspace-nav-number {
@@ -5276,7 +5398,7 @@ a {
   }
 
   .workspace-tab-button.active-navigation .workspace-nav-number {
-    color: var(--tracker-coral);
+    color: var(--archive-action);
   }
 
   .workspace-nav-label {
@@ -5293,7 +5415,7 @@ a {
   .workspace-nav-label[data-mobile-label]::after {
     display: block;
     content: attr(data-mobile-label);
-    font-family: "Archivo Variable", system-ui, sans-serif;
+    font-family: "IBM Plex Sans Variable", sans-serif;
     font-size: 10px;
     font-weight: 520;
     letter-spacing: 0.02em;
@@ -5348,14 +5470,31 @@ a {
   }
 
   .applications-page .tracker-page-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
   }
 
   .applications-page .tracker-page-actions .tracker-button {
     padding-right: 6px;
     padding-left: 6px;
     line-height: 1.15;
+  }
+
+  .tracker-maintenance-actions > .tracker-button {
+    width: 100%;
+  }
+
+  .tracker-maintenance-menu {
+    width: min(240px, calc(100vw - 28px));
+    min-width: 0;
+  }
+
+  .today-card-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .tracker-dashboard-hero {
@@ -5835,7 +5974,7 @@ a {
   html:has(.workspace-app-shell),
   body:has(.workspace-app-shell),
   body:has(.workspace-app-shell) > #root {
-    background: #183c37;
+    background: var(--archive-ink);
   }
 
   .workspace-sidebar nav {
@@ -5849,7 +5988,7 @@ a {
       env(safe-area-inset-bottom, 0px)
     );
     overflow-y: visible;
-    background: var(--tracker-green);
+    background: var(--archive-ink);
     border-top: 1px solid rgb(255 255 255 / 8%);
     border-right: 0;
   }
@@ -5867,11 +6006,11 @@ a {
   }
 
   .workspace-tab-button.active-navigation {
-    box-shadow: inset 0 3px 0 var(--tracker-coral);
+    box-shadow: inset 0 3px 0 var(--archive-action);
   }
 
   .workspace-tab-button.active-navigation .workspace-nav-number {
-    color: var(--tracker-coral);
+    color: var(--archive-action);
   }
 
   .workspace-main,

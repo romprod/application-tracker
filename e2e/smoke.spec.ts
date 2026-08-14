@@ -370,6 +370,40 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     dashboardHero.getByRole("button", { name: "Log application" }),
   ).toBeVisible();
 
+  await page.setViewportSize({ width: 1024, height: 800 });
+  const tabletNavigationLabels = page.locator(".workspace-nav-label");
+  await expect(tabletNavigationLabels).toHaveCount(5);
+  expect(
+    await tabletNavigationLabels.evaluateAll((labels) =>
+      labels.every(
+        (label) =>
+          label.ownerDocument.defaultView?.getComputedStyle(label).display ===
+          "none",
+      ),
+    ),
+  ).toBe(true);
+  const tabletTodayNavigation = page.getByRole("button", { name: "Today" });
+  await tabletTodayNavigation.hover();
+  expect(
+    await tabletTodayNavigation.evaluate(
+      (button) =>
+        button.ownerDocument.defaultView?.getComputedStyle(button, "::after")
+          .content,
+    ),
+  ).toBe('"Today"');
+  expect(
+    await page.evaluate<number>("document.documentElement.scrollWidth"),
+  ).toBeLessThanOrEqual(1024);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const workspaceBrand = page.locator(".workspace-brand strong");
+  expect(
+    await workspaceBrand.evaluate(
+      (brand) => brand.scrollWidth <= brand.clientWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   await page.getByRole("button", { name: "Opportunities" }).click();
   await expect(
     page.getByRole("heading", { name: "Opportunities", exact: true }),
@@ -506,12 +540,32 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
   );
   const mobileTouchTargetHeights = await page
     .locator(
-      ".tracker-page-actions button, .tracker-mobile-register-tools select, .tracker-mobile-filter-row button",
+      ".tracker-page-actions > button, .tracker-page-actions > .tracker-maintenance-actions > button, .tracker-mobile-register-tools select, .tracker-mobile-filter-row button",
     )
     .evaluateAll((elements) =>
       elements.map((element) => element.getBoundingClientRect().height),
     );
   expect(Math.min(...mobileTouchTargetHeights)).toBeGreaterThanOrEqual(44);
+  const maintenanceTrigger = page.getByRole("button", {
+    name: "More actions",
+  });
+  await maintenanceTrigger.click();
+  const maintenanceActions = page.getByRole("group", {
+    name: "Application maintenance",
+  });
+  await expect(maintenanceActions).toBeInViewport();
+  expect(
+    Math.min(
+      ...(await maintenanceActions
+        .getByRole("button")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.getBoundingClientRect().height),
+        )),
+    ),
+  ).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Escape");
+  await expect(maintenanceActions).toBeHidden();
+  await expect(maintenanceTrigger).toBeFocused();
   await page
     .locator(".tracker-mobile-filter-row")
     .getByRole("button", { name: "Stage" })
@@ -687,6 +741,7 @@ test("completes setup and the OAuth-to-MCP connection lifecycle", async ({
     applicationsTable.getByRole("row").filter({ hasText: "Example Studio" }),
   ).toHaveCount(2);
 
+  await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: "Review duplicates" }).click();
   const duplicateDialog = page.getByRole("dialog", {
     name: "Review duplicate applications",
@@ -1693,10 +1748,12 @@ type MobileNavigationMetric = {
     height: number;
     width: number;
   };
+  compactLabel: string;
   labelOffset: number;
   mobileLabel: string | null;
   numberOffset: number;
   sourceFontSize: string;
+  sourceDisplay: string;
   typography: {
     fontFamily: string;
     fontSize: string;
@@ -1856,9 +1913,11 @@ async function auditMobileNavigation(
             height: buttonBox.height,
             width: buttonBox.width,
           },
+          compactLabel: getComputedStyle(button, "::after").content,
           labelOffset: labelBox.top - buttonBox.top,
           mobileLabel: label.getAttribute("data-mobile-label"),
           numberOffset: numberBox.top - buttonBox.top,
+          sourceDisplay: sourceStyle.display,
           sourceFontSize: sourceStyle.fontSize,
           typography: {
             fontFamily: labelStyle.fontFamily,
@@ -1887,19 +1946,10 @@ function navigationMetricFailures(
   const failures: string[] = [];
   const first = metrics[0];
   if (!first) return [`${context}: navigation metrics are empty`];
+  const compactRail = profile.width >= 720;
   const firstTypography = JSON.stringify(first.typography);
 
   for (const metric of metrics) {
-    if (!metric.mobileLabel) {
-      failures.push(
-        `${context}: ${metric.ariaLabel} does not use the shared mobile label`,
-      );
-    }
-    if (metric.sourceFontSize !== "0px") {
-      failures.push(
-        `${context}: ${metric.ariaLabel} exposes its desktop label at ${metric.sourceFontSize}`,
-      );
-    }
     if (Math.abs(metric.button.width - first.button.width) > 0.51) {
       failures.push(
         `${context}: ${metric.ariaLabel} width ${metric.button.width.toFixed(2)}px does not match ${first.button.width.toFixed(2)}px`,
@@ -1913,6 +1963,29 @@ function navigationMetricFailures(
     if (Math.abs(metric.numberOffset - first.numberOffset) > 0.51) {
       failures.push(
         `${context}: ${metric.ariaLabel} number offset ${metric.numberOffset.toFixed(2)}px does not match ${first.numberOffset.toFixed(2)}px`,
+      );
+    }
+    if (compactRail) {
+      if (metric.sourceDisplay !== "none") {
+        failures.push(
+          `${context}: ${metric.ariaLabel} exposes its label in the compact rail`,
+        );
+      }
+      if (metric.compactLabel !== `"${metric.ariaLabel}"`) {
+        failures.push(
+          `${context}: ${metric.ariaLabel} compact label ${metric.compactLabel} does not match its accessible name`,
+        );
+      }
+      continue;
+    }
+    if (!metric.mobileLabel) {
+      failures.push(
+        `${context}: ${metric.ariaLabel} does not use the shared mobile label`,
+      );
+    }
+    if (metric.sourceFontSize !== "0px") {
+      failures.push(
+        `${context}: ${metric.ariaLabel} exposes its desktop label at ${metric.sourceFontSize}`,
       );
     }
     if (Math.abs(metric.labelOffset - first.labelOffset) > 0.51) {
@@ -2357,6 +2430,7 @@ test("extends mobile navigation through the Android browser chin", async ({
       body: string;
       bottomGap: number;
       document: string;
+      header: string;
       height: number;
       navigation: string;
       paddingBottom: string;
@@ -2364,9 +2438,10 @@ test("extends mobile navigation through the Android browser chin", async ({
       width: number;
     }>(String.raw`
       (() => {
+        const header = document.querySelector(".workspace-sidebar");
         const navigation = document.querySelector(".workspace-sidebar nav");
         const tabBar = navigation?.querySelector(".workspace-tab-bar");
-        if (!navigation || !tabBar) {
+        if (!header || !navigation || !tabBar) {
           throw new Error("Mobile navigation is missing");
         }
 
@@ -2380,6 +2455,7 @@ test("extends mobile navigation through the Android browser chin", async ({
           body: getComputedStyle(document.body).backgroundColor,
           bottomGap: viewportBottom - navigationBox.bottom,
           document: getComputedStyle(document.documentElement).backgroundColor,
+          header: getComputedStyle(header).backgroundColor,
           height: navigationBox.height,
           navigation: getComputedStyle(navigation).backgroundColor,
           paddingBottom: getComputedStyle(navigation).paddingBottom,
@@ -2393,7 +2469,7 @@ test("extends mobile navigation through the Android browser chin", async ({
   expect(portrait.document).not.toBe("rgba(0, 0, 0, 0)");
   expect(portrait.body).toBe(portrait.navigation);
   expect(portrait.document).toBe(portrait.navigation);
-  expect(portrait.navigation).toBe("rgb(24, 60, 55)");
+  expect(portrait.navigation).toBe(portrait.header);
   expect(portrait.paddingBottom).toBe("24px");
   expect(portrait.tabBarHeight).toBe(56);
   expect(portrait.height - portrait.tabBarHeight).toBeGreaterThanOrEqual(24);
@@ -2410,7 +2486,7 @@ test("extends mobile navigation through the Android browser chin", async ({
   expect(
     shortLandscape.height - shortLandscape.tabBarHeight,
   ).toBeGreaterThanOrEqual(24);
-  expect(shortLandscape.navigation).toBe("rgb(24, 60, 55)");
+  expect(shortLandscape.navigation).toBe(shortLandscape.header);
   expect(shortLandscape.tabBarHeight).toBe(44);
   expect(shortLandscape.width).toBe(568);
   expect(Math.abs(shortLandscape.bottomGap)).toBeLessThanOrEqual(1);

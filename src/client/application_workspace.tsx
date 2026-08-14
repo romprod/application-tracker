@@ -797,6 +797,7 @@ function DashboardView({
                 error={attentionError}
                 page={attentionPage}
                 onOpen={onOpen}
+                onViewAll={onViewAll}
               />
               <TodayActionSection
                 applications={thisWeek}
@@ -1094,13 +1095,16 @@ function TodayActionSection({
 function AttentionQueueSection({
   error,
   onOpen,
+  onViewAll,
   page,
 }: {
   error: boolean;
   onOpen: (application: ApplicationRecord) => void;
+  onViewAll: () => void;
   page: ApplicationAttentionPage | undefined;
 }) {
   const applications = page?.applications ?? [];
+  const visibleApplications = applications.slice(0, 3);
   return (
     <section
       className="today-card today-actions attention"
@@ -1128,35 +1132,63 @@ function AttentionQueueSection({
           <p>No application currently matches an attention reason.</p>
         </div>
       ) : (
-        <ol className="today-action-list tracker-attention-queue">
-          {applications.slice(0, 6).map(({ application, reasons }) => (
-            <li key={application.id}>
-              <button type="button" onClick={() => onOpen(application)}>
-                <span className="today-action-copy">
-                  <strong>
-                    {application.nextAction ?? application.roleTitle}
-                  </strong>
-                  <small>
-                    <span>{applicationReference(application.id)}</span>
-                    {application.companyName} · {application.roleTitle}
-                  </small>
-                  <small className="tracker-attention-reasons">
-                    {reasons.map(({ label }) => label).join(" · ")}
-                  </small>
-                </span>
-                <span className="tracker-due-label due">
-                  {reasons.length} {reasons.length === 1 ? "reason" : "reasons"}
-                </span>
-                <span className="today-open-label">
-                  Open <span aria-hidden="true">→</span>
-                </span>
+        <>
+          <ol className="today-action-list tracker-attention-queue">
+            {visibleApplications.map(({ application, reasons }) => (
+              <li key={application.id}>
+                <button type="button" onClick={() => onOpen(application)}>
+                  <span className="today-action-copy">
+                    <strong>
+                      {application.nextAction ?? application.roleTitle}
+                    </strong>
+                    <small>
+                      <span>{applicationReference(application.id)}</span>
+                      {application.companyName} · {application.roleTitle}
+                    </small>
+                    <small className="tracker-attention-reasons">
+                      {attentionReasonSummary(
+                        reasons.map(({ label }) => label),
+                      )}
+                    </small>
+                  </span>
+                  <span className="tracker-due-label due">
+                    {reasons.length}{" "}
+                    {reasons.length === 1 ? "reason" : "reasons"}
+                  </span>
+                  <span className="today-open-label">
+                    Open <span aria-hidden="true">→</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {page.summary.queuedApplications > visibleApplications.length && (
+            <footer className="today-card-footer">
+              <span>
+                Showing {visibleApplications.length} of{" "}
+                {page.summary.queuedApplications}
+              </span>
+              <button
+                className="tracker-text-button"
+                type="button"
+                onClick={onViewAll}
+              >
+                View all in register <span aria-hidden="true">→</span>
               </button>
-            </li>
-          ))}
-        </ol>
+            </footer>
+          )}
+        </>
       )}
     </section>
   );
+}
+
+function attentionReasonSummary(labels: string[]): string {
+  const visible = labels.slice(0, 2);
+  const remaining = labels.length - visible.length;
+  return remaining > 0
+    ? `${visible.join(" · ")} · +${String(remaining)} more`
+    : visible.join(" · ");
 }
 
 function localDateKey(date: Date): string {
@@ -1190,6 +1222,9 @@ function ApplicationsPage({
   onReviewDuplicates: () => void;
   page: "applications" | "opportunities";
 }) {
+  const maintenanceActionsRef = useRef<HTMLDivElement>(null);
+  const maintenanceTriggerRef = useRef<HTMLButtonElement>(null);
+  const [maintenanceActionsOpen, setMaintenanceActionsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [columnFilters, setColumnFilters] = useState<ApplicationColumnFilters>(
@@ -1268,6 +1303,37 @@ function ApplicationsPage({
   }, [visibleApplications]);
   const selectedStages = columnFilters.status ?? [];
 
+  useEffect(() => {
+    if (!maintenanceActionsOpen) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !maintenanceActionsRef.current?.contains(event.target)
+      ) {
+        setMaintenanceActionsOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setMaintenanceActionsOpen(false);
+      maintenanceTriggerRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [maintenanceActionsOpen]);
+
+  function runMaintenanceAction(action: () => void) {
+    setMaintenanceActionsOpen(false);
+    action();
+  }
+
   return (
     <div className="workspace-page applications-page">
       <header className="tracker-page-header">
@@ -1286,26 +1352,6 @@ function ApplicationsPage({
         </div>
         <div className="tracker-page-actions">
           <button
-            className="tracker-button tracker-button-quiet"
-            type="button"
-            onFocus={() => void loadDeletedApplicationsDialog()}
-            onClick={onReviewDeleted}
-            onPointerDown={() => void loadDeletedApplicationsDialog()}
-            onPointerEnter={() => void loadDeletedApplicationsDialog()}
-          >
-            Deleted applications
-          </button>
-          <button
-            className="tracker-button tracker-button-quiet"
-            type="button"
-            onFocus={() => void loadDuplicateApplicationsDialog()}
-            onClick={onReviewDuplicates}
-            onPointerDown={() => void loadDuplicateApplicationsDialog()}
-            onPointerEnter={() => void loadDuplicateApplicationsDialog()}
-          >
-            Review duplicates
-          </button>
-          <button
             className="tracker-button tracker-button-primary"
             type="button"
             onClick={onAdd}
@@ -1313,6 +1359,57 @@ function ApplicationsPage({
             <span aria-hidden="true">+</span>
             Log application
           </button>
+          <div
+            ref={maintenanceActionsRef}
+            className="tracker-maintenance-actions"
+          >
+            <button
+              ref={maintenanceTriggerRef}
+              className="tracker-button tracker-button-quiet"
+              type="button"
+              aria-controls="application-maintenance-actions"
+              aria-expanded={maintenanceActionsOpen}
+              onFocus={() => {
+                void loadDeletedApplicationsDialog();
+                void loadDuplicateApplicationsDialog();
+              }}
+              onClick={() => setMaintenanceActionsOpen((current) => !current)}
+              onPointerEnter={() => {
+                void loadDeletedApplicationsDialog();
+                void loadDuplicateApplicationsDialog();
+              }}
+            >
+              <span aria-hidden="true">•••</span>
+              More actions
+            </button>
+            {maintenanceActionsOpen && (
+              <div
+                id="application-maintenance-actions"
+                className="tracker-maintenance-menu"
+                role="group"
+                aria-label="Application maintenance"
+              >
+                <button
+                  type="button"
+                  onFocus={() => void loadDuplicateApplicationsDialog()}
+                  onClick={() => runMaintenanceAction(onReviewDuplicates)}
+                  onPointerDown={() => void loadDuplicateApplicationsDialog()}
+                  onPointerEnter={() => void loadDuplicateApplicationsDialog()}
+                >
+                  Review duplicates
+                </button>
+                <button
+                  type="button"
+                  onFocus={() => void loadDeletedApplicationsDialog()}
+                  onClick={() => runMaintenanceAction(onReviewDeleted)}
+                  onPointerDown={() => void loadDeletedApplicationsDialog()}
+                  onPointerEnter={() => void loadDeletedApplicationsDialog()}
+                >
+                  Deleted applications
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
