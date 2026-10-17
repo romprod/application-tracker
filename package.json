@@ -55,7 +55,7 @@
     "@kenjiuno/msgreader": "1.28.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "12.11.1",
-    "compression": "1.8.1",
+    "compression": "1.8.2",
     "cookie": "2.0.1",
     "domhandler": "6.0.1",
     "express": "5.2.1",
